@@ -1,5 +1,8 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { AIAnalysis, KnowledgeCard } from "../types";
+
+// Vite uses import.meta.env for environment variables
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 const parseAIResponse = (responseText: string): AIAnalysis => {
   try {
@@ -20,8 +23,8 @@ const parseAIResponse = (responseText: string): AIAnalysis => {
 };
 
 export const analyzeContentWithGemini = async (content: string, toolName?: string): Promise<AIAnalysis> => {
-  if (!process.env.API_KEY) {
-    console.warn("No API Key found. Returning mock analysis.");
+  if (!API_KEY) {
+    console.warn("No API Key found (VITE_GEMINI_API_KEY). Returning mock analysis.");
     return {
       summary: "API Key missing. This is a simulated summary for the demo.",
       usageScenarios: ["Demo Scenario 1", "Demo Scenario 2"],
@@ -30,7 +33,7 @@ export const analyzeContentWithGemini = async (content: string, toolName?: strin
     };
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: API_KEY });
 
   const prompt = `
     Analyze the following social media post content about AI tools.
@@ -45,47 +48,47 @@ export const analyzeContentWithGemini = async (content: string, toolName?: strin
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview',
+      model: 'gemini-1.5-flash', // Switched to stable model
       contents: prompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-                summary: { type: Type.STRING },
-                usageScenarios: { type: Type.ARRAY, items: { type: Type.STRING } },
-                coreKnowledge: { type: Type.ARRAY, items: { type: Type.STRING } },
-                extractedPrompts: { type: Type.ARRAY, items: { type: Type.STRING } },
-            }
+          type: "object",
+          properties: {
+            summary: { type: "string" },
+            usageScenarios: { type: "array", items: { type: "string" } },
+            coreKnowledge: { type: "array", items: { type: "string" } },
+            extractedPrompts: { type: "array", items: { type: "string" } },
+          }
         }
       }
     });
 
     if (response.text) {
-        return JSON.parse(response.text);
+      return JSON.parse(response.text);
     }
     throw new Error("No response text");
 
   } catch (error) {
     console.error("Gemini API Error:", error);
     return {
-        summary: "Error analyzing content.",
-        usageScenarios: [],
-        coreKnowledge: [],
-        extractedPrompts: []
+      summary: "Error analyzing content.",
+      usageScenarios: [],
+      coreKnowledge: [],
+      extractedPrompts: []
     };
   }
 };
 
 export const queryKnowledgeBase = async (query: string, cards: KnowledgeCard[]): Promise<string> => {
-  if (!process.env.API_KEY) {
+  if (!API_KEY) {
     return "I am running in demo mode without an API Key. I can see you have " + cards.length + " items in your vault, but I cannot process them deeply. Please connect an API key to chat with your knowledge base.";
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: API_KEY });
 
   // 1. Context Construction (simplified for demo)
-  // In a real app, we might use RAG (Retrieval Augmented Generation) to select only relevant cards.
+  // in a real app, we might use RAG (Retrieval Augmented Generation) to select only relevant cards.
   const context = cards.slice(0, 20).map(c => `
     [ID: ${c.id}]
     Title: ${c.title}
@@ -108,7 +111,7 @@ export const queryKnowledgeBase = async (query: string, cards: KnowledgeCard[]):
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview',
+      model: 'gemini-1.5-flash', // Switched to stable model
       contents: `Context:\n${context}\n\nUser Question: ${query}`,
       config: {
         systemInstruction: systemInstruction,

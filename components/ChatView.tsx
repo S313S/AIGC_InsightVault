@@ -51,14 +51,14 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
 
     try {
       const responseText = await queryKnowledgeBase(userMsg.content, cards);
-      
+
       const aiMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: responseText,
         timestamp: Date.now()
       };
-      
+
       setMessages(prev => [...prev, aiMsg]);
     } catch (error) {
       console.error(error);
@@ -86,27 +86,35 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
       {/* Header */}
       <div className="bg-white border-b border-gray-100 p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${contextTitle === 'Entire Vault' ? 'bg-indigo-100 text-indigo-600' : 'bg-amber-100 text-amber-600'}`}>
+          <div className={`p-2 rounded-lg ${contextTitle === 'Entire Vault' ? 'bg-indigo-100 text-indigo-600' : 'bg-amber-100 text-amber-600'}`}>
             {contextTitle === 'Entire Vault' ? <Sparkles size={20} /> : <Folder size={20} />}
-            </div>
-            <div>
+          </div>
+          <div>
             <h2 className="font-semibold text-gray-900">Insight Assistant</h2>
             <div className="flex items-center gap-2 text-xs text-gray-500">
-                <span className="flex items-center gap-1">
-                    <Database size={10} /> Context: {contextTitle}
-                </span>
-                <span>•</span>
-                <span>{cards.length} items</span>
+              <span className="flex items-center gap-1">
+                <Database size={10} /> Context: {contextTitle}
+              </span>
+              <span>•</span>
+              <span>{cards.length} items</span>
             </div>
-            </div>
+          </div>
         </div>
       </div>
+
+      {/* Context Limit Warning */}
+      {cards.length > 20 && (
+        <div className="bg-amber-50 px-4 py-2 border-b border-amber-100 flex items-center gap-2 text-xs text-amber-700">
+          <span className="font-semibold">Note:</span>
+          To ensure speed, only the first 20 items are currently used as context.
+        </div>
+      )}
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-gray-50/50">
         {messages.map((msg) => (
-          <div 
-            key={msg.id} 
+          <div
+            key={msg.id}
             className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             {msg.role === 'assistant' && (
@@ -114,13 +122,12 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
                 <Bot size={16} className="text-white" />
               </div>
             )}
-            
-            <div 
-              className={`max-w-[85%] rounded-2xl px-5 py-3 text-sm leading-relaxed shadow-sm ${
-                msg.role === 'user' 
-                  ? 'bg-gray-900 text-white rounded-tr-none' 
+
+            <div
+              className={`max-w-[85%] rounded-2xl px-5 py-3 text-sm leading-relaxed shadow-sm ${msg.role === 'user'
+                  ? 'bg-gray-900 text-white rounded-tr-none'
                   : 'bg-white border border-gray-200 text-gray-800 rounded-tl-none'
-              }`}
+                }`}
             >
               <div className="whitespace-pre-wrap">{msg.content}</div>
             </div>
@@ -132,7 +139,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
             )}
           </div>
         ))}
-        
+
         {isLoading && (
           <div className="flex gap-3 justify-start">
             <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0">
