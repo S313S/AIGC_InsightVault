@@ -333,6 +333,10 @@ export const deleteTask = async (taskId: string): Promise<boolean> => {
 
 // ============ 初始化数据（首次运行时导入 mock 数据）============
 
+// 全局锁防止重复初始化（解决 React StrictMode 问题）
+let isInitializing = false;
+let initPromise: Promise<boolean> | null = null;
+
 export const initializeWithMockData = async (
     cards: KnowledgeCard[],
     trending: KnowledgeCard[],
@@ -341,91 +345,105 @@ export const initializeWithMockData = async (
 ): Promise<boolean> => {
     if (!isSupabaseConnected() || !supabase) return false;
 
-    try {
-        // 检查是否已有数据
-        const { count } = await supabase
-            .from('knowledge_cards')
-            .select('*', { count: 'exact', head: true });
-
-        if (count && count > 0) {
-            console.log('Database already has data, skipping initialization');
-            return true;
-        }
-
-        console.log('Initializing database with mock data...');
-
-        // 1. 先插入收藏集，建立 oldId -> newId 的映射
-        const collectionIdMap: Record<string, string> = {};
-
-        for (const col of collections) {
-            const { data, error } = await supabase
-                .from('collections')
-                .insert(collectionToDb(col, true))
-                .select('id')
-                .single();
-
-            if (error) {
-                console.error('Error inserting collection:', error);
-                continue;
-            }
-
-            if (data) {
-                collectionIdMap[col.id] = data.id;
-            }
-        }
-
-        console.log('Collections inserted, ID mapping:', collectionIdMap);
-
-        // 2. 插入知识卡片，替换 collection 引用
-        for (const card of cards) {
-            // 将旧的 collection ID 映射为新的 UUID
-            const mappedCollections = (card.collections || [])
-                .map(oldId => collectionIdMap[oldId])
-                .filter(Boolean);
-
-            const cardData = cardToDb({ ...card, collections: mappedCollections }, false, true);
-
-            const { error } = await supabase
-                .from('knowledge_cards')
-                .insert(cardData);
-
-            if (error) {
-                console.error('Error inserting card:', error);
-            }
-        }
-
-        // 3. 插入热门卡片
-        for (const card of trending) {
-            const mappedCollections = (card.collections || [])
-                .map(oldId => collectionIdMap[oldId])
-                .filter(Boolean);
-
-            const cardData = cardToDb({ ...card, collections: mappedCollections }, true, true);
-
-            const { error } = await supabase
-                .from('knowledge_cards')
-                .insert(cardData);
-
-            if (error) {
-                console.error('Error inserting trending card:', error);
-            }
-        }
-
-        // 4. 插入任务
-        for (const task of tasks) {
-            const { error } = await supabase
-                .from('tracking_tasks')
-                .insert(taskToDb(task, true));
-
-            if (error) {
-                console.error('Error inserting task:', error);
-            }
-        }
-
-        console.log('Mock data initialized successfully');
-        return true;
-    } catch (error) {
-        console.error('Error initializing mock data:', error);
-        return false;
+    // 如果已经在初始化中，返回现有的 Promise
+    if (isInitializing && initPromise) {
+        console.log('Initialization already in progress, waiting...');
+        return initPromise;
     }
+
+    // 创建初始化 Promise
+    isInitializing = true;
+    initPromise = (async () => {
+        try {
+            // 检查是否已有数据
+            const { count } = await supabase
+                .from('knowledge_cards')
+                .select('*', { count: 'exact', head: true });
+
+            if (count && count > 0) {
+                console.log('Database already has data, skipping initialization');
+                return true;
+            }
+
+            console.log('Initializing database with mock data...');
+
+            // 1. 先插入收藏集，建立 oldId -> newId 的映射
+            const collectionIdMap: Record<string, string> = {};
+
+            for (const col of collections) {
+                const { data, error } = await supabase
+                    .from('collections')
+                    .insert(collectionToDb(col, true))
+                    .select('id')
+                    .single();
+
+                if (error) {
+                    console.error('Error inserting collection:', error);
+                    continue;
+                }
+
+                if (data) {
+                    collectionIdMap[col.id] = data.id;
+                }
+            }
+
+            console.log('Collections inserted, ID mapping:', collectionIdMap);
+
+            // 2. 插入知识卡片，替换 collection 引用
+            for (const card of cards) {
+                // 将旧的 collection ID 映射为新的 UUID
+                const mappedCollections = (card.collections || [])
+                    .map(oldId => collectionIdMap[oldId])
+                    .filter(Boolean);
+
+                const cardData = cardToDb({ ...card, collections: mappedCollections }, false, true);
+
+                const { error } = await supabase
+                    .from('knowledge_cards')
+                    .insert(cardData);
+
+                if (error) {
+                    console.error('Error inserting card:', error);
+                }
+            }
+
+            // 3. 插入热门卡片
+            for (const card of trending) {
+                const mappedCollections = (card.collections || [])
+                    .map(oldId => collectionIdMap[oldId])
+                    .filter(Boolean);
+
+                const cardData = cardToDb({ ...card, collections: mappedCollections }, true, true);
+
+                const { error } = await supabase
+                    .from('knowledge_cards')
+                    .insert(cardData);
+
+                if (error) {
+                    console.error('Error inserting trending card:', error);
+                }
+            }
+
+            // 4. 插入任务
+            for (const task of tasks) {
+                const { error } = await supabase
+                    .from('tracking_tasks')
+                    .insert(taskToDb(task, true));
+
+                if (error) {
+                    console.error('Error inserting task:', error);
+                }
+            }
+
+            console.log('Mock data initialized successfully');
+            return true;
+        } catch (error) {
+            console.error('Error initializing mock data:', error);
+            return false;
+        } finally {
+            isInitializing = false;
+        }
+    })();
+
+    return initPromise;
 };
