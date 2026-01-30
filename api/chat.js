@@ -27,7 +27,9 @@ export default async function handler(req, res) {
     }
 
     try {
-        const ai = new GoogleGenAI({ apiKey });
+        // SDK expects GEMINI_API_KEY environment variable
+        process.env.GEMINI_API_KEY = apiKey;
+        const ai = new GoogleGenAI({});
 
         if (mode === 'analysis') {
             const prompt = `
@@ -42,7 +44,7 @@ export default async function handler(req, res) {
       `;
 
             const response = await ai.models.generateContent({
-                model: 'gemini-2.0-flash-exp',
+                model: 'gemini-2.5-flash',
                 contents: prompt,
                 config: { responseMimeType: "application/json" }
             });
@@ -64,7 +66,7 @@ export default async function handler(req, res) {
             const prompt = `Context:\n${context}\n\nUser Question: ${message}`;
 
             const response = await ai.models.generateContent({
-                model: 'gemini-2.0-flash-exp',
+                model: 'gemini-2.5-flash',
                 contents: prompt,
                 config: {
                     systemInstruction: systemInstruction,
