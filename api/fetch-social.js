@@ -37,7 +37,7 @@ export default async function handler(req, res) {
         let apiResponse;
 
         if (parsed.platform === 'xiaohongshu') {
-            apiResponse = await fetchXiaohongshu(parsed.id, token);
+            apiResponse = await fetchXiaohongshu(parsed.id, token, parsed.originalUrl);
         } else if (parsed.platform === 'twitter') {
             apiResponse = await fetchTwitter(parsed.id, token);
         }
@@ -62,7 +62,8 @@ function parseUrl(url) {
     // Xiaohongshu: https://www.xiaohongshu.com/explore/64f... or https://www.xiaohongshu.com/discovery/item/64f...
     const xhsMatch = url.match(/xiaohongshu\.com\/(?:explore|discovery\/item)\/([a-zA-Z0-9]+)/);
     if (xhsMatch) {
-        return { platform: 'xiaohongshu', id: xhsMatch[1] };
+        // Return both id and original URL for share link transfer
+        return { platform: 'xiaohongshu', id: xhsMatch[1], originalUrl: url };
     }
 
     // Twitter/X: https://twitter.com/user/status/123456789 or https://x.com/user/status/123456789
@@ -76,16 +77,40 @@ function parseUrl(url) {
 
 // ============ API Calls ============
 
-const API_BASE = 'https://api.justoneapi.com'; // Confirm this base URL
+const API_BASE = 'https://api.justoneapi.com';
 
-async function fetchXiaohongshu(noteId, token) {
+// Step 1: Convert share URL to get real noteId (for links with xsec_token etc.)
+async function transferShareUrl(shareUrl, token) {
+    const endpoint = `${API_BASE}/api/xiaohongshu/share-url-transfer/v1?token=${token}&shareUrl=${encodeURIComponent(shareUrl)}`;
+
+    const response = await fetch(endpoint);
+    const data = await response.json();
+
+    if (data.code !== 0) {
+        // If transfer fails, return null and try with original id
+        console.log('Share URL transfer failed:', data.message);
+        return null;
+    }
+
+    return data.data;
+}
+
+async function fetchXiaohongshu(noteId, token, originalUrl) {
+    // If original URL contains xsec_token, try to transfer it first
+    if (originalUrl && originalUrl.includes('xsec_token')) {
+        const transferResult = await transferShareUrl(originalUrl, token);
+        if (transferResult && transferResult.noteId) {
+            noteId = transferResult.noteId;
+        }
+    }
+
     const endpoint = `${API_BASE}/api/xiaohongshu/get-note-detail/v1?token=${token}&noteId=${noteId}`;
 
     const response = await fetch(endpoint);
     const data = await response.json();
 
     if (data.code !== 0) {
-        throw new Error(data.message || 'XHS API error');
+        throw new Error(data.message || `XHS API error (code: ${data.code})`);
     }
 
     return data.data;
