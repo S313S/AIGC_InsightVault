@@ -1,7 +1,6 @@
 // Vercel Serverless Function: Fetch Social Media Content via JustOneAPI
 // Environment Variable Required: JUSTONEAPI_TOKEN
 
-
 export default async function handler(req, res) {
     // CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
