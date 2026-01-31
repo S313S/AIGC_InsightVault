@@ -77,17 +77,21 @@ function parseUrl(url) {
 
 // ============ API Calls ============
 
-const API_BASE = 'https://api.justoneapi.com';
+const API_BASE_XHS = 'http://47.117.133.51:30015'; // JustOneAPI prod-cn for Xiaohongshu
 
-// Step 1: Convert share URL to get real noteId (for links with xsec_token etc.)
+// Step 1: Convert share URL to get real noteId (only for xhslink.com short links)
 async function transferShareUrl(shareUrl, token) {
-    const endpoint = `${API_BASE}/api/xiaohongshu/share-url-transfer/v1?token=${token}&shareUrl=${encodeURIComponent(shareUrl)}`;
+    // Share URL Transfer only works with xhslink.com short links
+    if (!shareUrl.includes('xhslink.com')) {
+        return null;
+    }
+
+    const endpoint = `${API_BASE_XHS}/api/xiaohongshu/share-url-transfer/v1?token=${token}&shareUrl=${encodeURIComponent(shareUrl)}`;
 
     const response = await fetch(endpoint);
     const data = await response.json();
 
     if (data.code !== 0) {
-        // If transfer fails, return null and try with original id
         console.log('Share URL transfer failed:', data.message);
         return null;
     }
@@ -96,15 +100,15 @@ async function transferShareUrl(shareUrl, token) {
 }
 
 async function fetchXiaohongshu(noteId, token, originalUrl) {
-    // If original URL contains xsec_token, try to transfer it first
-    if (originalUrl && originalUrl.includes('xsec_token')) {
+    // If original URL is a xhslink.com short link, transfer it first
+    if (originalUrl && originalUrl.includes('xhslink.com')) {
         const transferResult = await transferShareUrl(originalUrl, token);
         if (transferResult && transferResult.noteId) {
             noteId = transferResult.noteId;
         }
     }
 
-    const endpoint = `${API_BASE}/api/xiaohongshu/get-note-detail/v1?token=${token}&noteId=${noteId}`;
+    const endpoint = `${API_BASE_XHS}/api/xiaohongshu/get-note-detail/v1?token=${token}&noteId=${noteId}`;
 
     const response = await fetch(endpoint);
     const data = await response.json();
