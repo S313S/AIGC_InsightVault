@@ -115,7 +115,7 @@ async function fetchXiaohongshu(noteId, token, originalUrl) {
         if (transferResult && transferResult.noteId) {
             noteId = transferResult.noteId;
         } else {
-            throw new Error('Failed to resolve short link. Transfer API returned no noteId.');
+            throw new Error(`Transfer API returned: ${JSON.stringify(transferResult)}`);
         }
     }
 
