@@ -66,6 +66,13 @@ function parseUrl(url) {
         return { platform: 'xiaohongshu', id: xhsMatch[1], originalUrl: url };
     }
 
+    // Xiaohongshu short link: http://xhslink.com/xxx
+    const xhsShortMatch = url.match(/xhslink\.com\/[a-zA-Z0-9\/]+/);
+    if (xhsShortMatch) {
+        // Short link needs transfer API to get real noteId, pass null as id
+        return { platform: 'xiaohongshu', id: null, originalUrl: url };
+    }
+
     // Twitter/X: https://twitter.com/user/status/123456789 or https://x.com/user/status/123456789
     const twitterMatch = url.match(/(?:twitter\.com|x\.com)\/\w+\/status\/(\d+)/);
     if (twitterMatch) {
@@ -100,12 +107,18 @@ async function transferShareUrl(shareUrl, token) {
 }
 
 async function fetchXiaohongshu(noteId, token, originalUrl) {
-    // If original URL is a xhslink.com short link, transfer it first
+    // If original URL is a xhslink.com short link, transfer it first to get real noteId
     if (originalUrl && originalUrl.includes('xhslink.com')) {
         const transferResult = await transferShareUrl(originalUrl, token);
         if (transferResult && transferResult.noteId) {
             noteId = transferResult.noteId;
+        } else {
+            throw new Error('Failed to resolve short link. Transfer API returned no noteId.');
         }
+    }
+
+    if (!noteId) {
+        throw new Error('noteId is required to fetch Xiaohongshu content');
     }
 
     const endpoint = `${API_BASE_XHS}/api/xiaohongshu/get-note-detail/v1?token=${token}&noteId=${noteId}`;
