@@ -112,10 +112,20 @@ async function fetchXiaohongshu(noteId, token, originalUrl) {
     // If original URL is a xhslink.com short link, transfer it first to get real noteId
     if (originalUrl && originalUrl.includes('xhslink.com')) {
         const transferResult = await transferShareUrl(originalUrl, token);
+
+        // Try to get noteId directly, or extract from redirect_url
         if (transferResult && transferResult.noteId) {
             noteId = transferResult.noteId;
+        } else if (transferResult && transferResult.redirect_url) {
+            // Extract noteId from redirect_url like: /discovery/item/697877ba0000000009038355
+            const match = transferResult.redirect_url.match(/\/(?:discovery\/item|explore)\/([a-zA-Z0-9]+)/);
+            if (match) {
+                noteId = match[1];
+            } else {
+                throw new Error(`Cannot extract noteId from redirect_url: ${transferResult.redirect_url}`);
+            }
         } else {
-            throw new Error(`Transfer API returned: ${JSON.stringify(transferResult)}`);
+            throw new Error(`Transfer API returned unexpected format: ${JSON.stringify(transferResult)}`);
         }
     }
 
