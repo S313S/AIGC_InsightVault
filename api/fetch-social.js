@@ -117,16 +117,46 @@ async function fetchXiaohongshu(noteId, token, originalUrl) {
 }
 
 async function fetchTwitter(tweetId, token) {
-    const endpoint = `${API_BASE}/api/twitter/get-tweet-detail/v1?token=${token}&tweetId=${tweetId}`;
-
-    const response = await fetch(endpoint);
-    const data = await response.json();
-
-    if (data.code !== 0) {
-        throw new Error(data.message || 'Twitter API error');
+    // Use official X API v2
+    const xBearerToken = process.env.X_API_BEARER_TOKEN;
+    if (!xBearerToken) {
+        throw new Error('X API Bearer Token not configured');
     }
 
-    return data.data;
+    const endpoint = `https://api.x.com/2/tweets/${tweetId}?tweet.fields=created_at,public_metrics,author_id,text&expansions=author_id&user.fields=username,name,profile_image_url`;
+
+    const response = await fetch(endpoint, {
+        headers: {
+            'Authorization': `Bearer ${xBearerToken}`
+        }
+    });
+
+    const data = await response.json();
+
+    if (data.errors) {
+        throw new Error(data.errors[0]?.message || 'X API error');
+    }
+
+    if (!data.data) {
+        throw new Error('Tweet not found');
+    }
+
+    // Combine tweet data with user data from includes
+    const tweet = data.data;
+    const author = data.includes?.users?.find(u => u.id === tweet.author_id) || {};
+
+    return {
+        id: tweet.id,
+        text: tweet.text,
+        created_at: tweet.created_at,
+        public_metrics: tweet.public_metrics,
+        author: {
+            id: author.id,
+            username: author.username,
+            name: author.name,
+            profile_image_url: author.profile_image_url
+        }
+    };
 }
 
 // ============ Response Mapping ============
@@ -154,17 +184,17 @@ function mapToKnowledgeCard(data, platform) {
         return {
             platform: 'Twitter',
             title: '', // Twitter posts don't have titles
-            author: data.user?.screenName || '',
-            rawContent: data.fullText || '',
-            coverImage: data.media?.[0]?.url || '',
-            images: data.media?.filter(m => m.type === 'photo').map(m => m.url) || [],
+            author: data.author?.username || '',
+            rawContent: data.text || '',
+            coverImage: '', // X API v2 needs media.fields expansion for images
+            images: [],
             metrics: {
-                likes: data.stats?.favoriteCount || 0,
-                bookmarks: 0, // Twitter API might not expose this
-                comments: data.stats?.replyCount || 0,
+                likes: data.public_metrics?.like_count || 0,
+                bookmarks: data.public_metrics?.bookmark_count || 0,
+                comments: data.public_metrics?.reply_count || 0,
             },
-            tags: [], // Would need to parse hashtags from fullText
-            sourceUrl: `https://twitter.com/${data.user?.screenName}/status/${data.id}`,
+            tags: [], // Would need to parse hashtags from text
+            sourceUrl: `https://twitter.com/${data.author?.username}/status/${data.id}`,
         };
     }
 
