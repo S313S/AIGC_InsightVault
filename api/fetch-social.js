@@ -98,9 +98,11 @@ async function transferShareUrl(shareUrl, token) {
     const response = await fetch(endpoint);
     const data = await response.json();
 
+    console.log('Transfer API response:', JSON.stringify(data));
+
     if (data.code !== 0) {
         console.log('Share URL transfer failed:', data.message);
-        return null;
+        throw new Error(`Transfer API error: ${data.message || JSON.stringify(data)}`);
     }
 
     return data.data;
