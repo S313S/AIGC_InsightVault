@@ -110,6 +110,7 @@ async function transferShareUrl(shareUrl, token) {
 
 async function fetchXiaohongshu(noteId, token, originalUrl) {
     // If original URL is a xhslink.com short link, transfer it first to get real noteId
+    let xsecToken = null;
     if (originalUrl && originalUrl.includes('xhslink.com')) {
         const transferResult = await transferShareUrl(originalUrl, token);
 
@@ -118,11 +119,16 @@ async function fetchXiaohongshu(noteId, token, originalUrl) {
             noteId = transferResult.noteId;
         } else if (transferResult && transferResult.redirect_url) {
             // Extract noteId from redirect_url like: /discovery/item/697877ba0000000009038355
-            const match = transferResult.redirect_url.match(/\/(?:discovery\/item|explore)\/([a-zA-Z0-9]+)/);
-            if (match) {
-                noteId = match[1];
+            const noteMatch = transferResult.redirect_url.match(/\/(?:discovery\/item|explore)\/([a-zA-Z0-9]+)/);
+            if (noteMatch) {
+                noteId = noteMatch[1];
             } else {
                 throw new Error(`Cannot extract noteId from redirect_url: ${transferResult.redirect_url}`);
+            }
+            // Extract xsec_token from redirect_url
+            const tokenMatch = transferResult.redirect_url.match(/xsec_token=([^&]+)/);
+            if (tokenMatch) {
+                xsecToken = decodeURIComponent(tokenMatch[1]);
             }
         } else {
             throw new Error(`Transfer API returned unexpected format: ${JSON.stringify(transferResult)}`);
@@ -133,7 +139,11 @@ async function fetchXiaohongshu(noteId, token, originalUrl) {
         throw new Error('noteId is required to fetch Xiaohongshu content');
     }
 
-    const endpoint = `${API_BASE_XHS}/api/xiaohongshu/get-note-detail/v1?token=${token}&noteId=${noteId}`;
+    // Build endpoint with optional xsec_token
+    let endpoint = `${API_BASE_XHS}/api/xiaohongshu/get-note-detail/v1?token=${token}&noteId=${noteId}`;
+    if (xsecToken) {
+        endpoint += `&xsec_token=${encodeURIComponent(xsecToken)}`;
+    }
 
     const response = await fetch(endpoint);
     const data = await response.json();
