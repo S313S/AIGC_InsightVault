@@ -116,19 +116,24 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
 
     // Review: 优先使用缓存，缓存过期才重新搜索
     const handleReview = async (taskKeywords: string, taskId: string) => {
-        setKeywords(taskKeywords);
-        setReviewingTaskId(taskId); // 标记当前正在 Review 的任务
-
         // 检查缓存
         const cached = getCachedResults(taskKeywords);
         if (cached) {
+            setKeywords(taskKeywords);
             setSearchResults(cached);
             setShowResults(true);
-            setReviewingTaskId(null);
             return;
         }
 
-        // 缓存未命中，执行搜索
+        // 缓存未命中，询问用户
+        const shouldRefetch = window.confirm('原始查询数据已过期（超过1小时）。\n\n是否重新查询？\n重新查询将产生新的 API 调用费用。');
+        if (!shouldRefetch) {
+            return;
+        }
+
+        // 用户确认重新查询
+        setKeywords(taskKeywords);
+        setReviewingTaskId(taskId); // 标记当前正在 Review 的任务
         setIsSearching(true);
         setSearchError('');
         setSearchResults([]);
