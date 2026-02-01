@@ -27,6 +27,10 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
     const [searchError, setSearchError] = useState('');
     const [reviewingTaskId, setReviewingTaskId] = useState<string | null>(null);
 
+    // 过滤选项状态
+    const [minInteraction, setMinInteraction] = useState<string>(''); // 最小互动量
+    const [resultLimit, setResultLimit] = useState<number>(20); // 结果数量限制
+
     // 缓存工具函数
     const CACHE_KEY = 'search_cache';
     const CACHE_EXPIRY = 60 * 60 * 1000; // 1小时
@@ -80,7 +84,22 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                 throw new Error(data.error || '搜索失败');
             }
 
-            const results = data.results || [];
+            let results = data.results || [];
+
+            // 前端过滤：最小互动量
+            if (minInteraction && !isNaN(Number(minInteraction))) {
+                const min = Number(minInteraction);
+                results = results.filter((r: SearchResult) => {
+                    const total = (r.metrics.likes || 0) + (r.metrics.bookmarks || 0) + (r.metrics.comments || 0);
+                    return total >= min;
+                });
+            }
+
+            // 前端限制：结果数量
+            if (resultLimit > 0) {
+                results = results.slice(0, resultLimit);
+            }
+
             setSearchResults(results);
             setShowResults(true);
 
@@ -157,7 +176,22 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                 throw new Error(data.error || '搜索失败');
             }
 
-            const results = data.results || [];
+            let results = data.results || [];
+
+            // 前端过滤：最小互动量（注意：Review时也应用当前的过滤设置）
+            if (minInteraction && !isNaN(Number(minInteraction))) {
+                const min = Number(minInteraction);
+                results = results.filter((r: SearchResult) => {
+                    const total = (r.metrics.likes || 0) + (r.metrics.bookmarks || 0) + (r.metrics.comments || 0);
+                    return total >= min;
+                });
+            }
+
+            // 前端限制：结果数量
+            if (resultLimit > 0) {
+                results = results.slice(0, resultLimit);
+            }
+
             setSearchResults(results);
             setShowResults(true);
 
@@ -287,6 +321,38 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                 </div>
                             </div>
                         </div>
+
+                        {/* 第二行：高级过滤 */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-2 pt-4 border-t border-gray-100">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    最小互动量 (点赞+收藏+评论)
+                                    <span className="text-gray-400 font-normal ml-1 text-xs">可选</span>
+                                </label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="例如: 100"
+                                    value={minInteraction}
+                                    onChange={(e) => setMinInteraction(e.target.value)}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    结果数量限制
+                                </label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="50"
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="默认 20"
+                                    value={resultLimit}
+                                    onChange={(e) => setResultLimit(Math.max(1, Math.min(50, Number(e.target.value))))}
+                                />
+                            </div>
+                        </div>
                         {searchError && (
                             <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm">
                                 {searchError}
@@ -366,15 +432,17 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
             </div>
 
             {/* Search Results Modal */}
-            {showResults && (
-                <SearchResultsModal
-                    results={searchResults}
-                    keyword={keywords}
-                    isLoading={isSearching}
-                    onClose={() => setShowResults(false)}
-                    onSaveSelected={handleSaveSelected}
-                />
-            )}
-        </div>
+            {
+                showResults && (
+                    <SearchResultsModal
+                        results={searchResults}
+                        keyword={keywords}
+                        isLoading={isSearching}
+                        onClose={() => setShowResults(false)}
+                        onSaveSelected={handleSaveSelected}
+                    />
+                )
+            }
+        </div >
     );
 };
