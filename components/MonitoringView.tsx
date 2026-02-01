@@ -87,6 +87,41 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
         }
     };
 
+    // Review: 直接执行搜索并显示结果（不创建新任务）
+    const handleReview = async (taskKeywords: string) => {
+        setIsSearching(true);
+        setSearchError('');
+        setSearchResults([]);
+        setKeywords(taskKeywords);
+
+        try {
+            const response = await fetch('/api/search-social', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    keyword: taskKeywords,
+                    page: 1,
+                    sort: 'general',
+                    noteType: '_0',
+                    platform: 'xiaohongshu',
+                }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || '搜索失败');
+            }
+
+            setSearchResults(data.results || []);
+            setShowResults(true);
+        } catch (error: any) {
+            setSearchError(error.message || '搜索出错');
+        } finally {
+            setIsSearching(false);
+        }
+    };
+
     const handleSaveSelected = async (results: SearchResult[]) => {
         let saved = 0;
 
@@ -258,12 +293,11 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                 <div className="flex items-center gap-2">
                                     {task.status === TaskStatus.Completed && (
                                         <button
-                                            onClick={() => {
-                                                setKeywords(task.keywords);
-                                                setIsCreating(true);
-                                            }}
-                                            className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-lg hover:bg-indigo-100"
+                                            onClick={() => handleReview(task.keywords)}
+                                            disabled={isSearching}
+                                            className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-lg hover:bg-indigo-100 disabled:opacity-50 flex items-center gap-1"
                                         >
+                                            {isSearching && <Loader2 size={14} className="animate-spin" />}
                                             Review
                                         </button>
                                     )}
