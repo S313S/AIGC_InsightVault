@@ -24,12 +24,12 @@ const PlatformBadge: React.FC<{ platform: Platform }> = ({ platform }) => {
   );
 };
 
-export const Card: React.FC<CardProps> = ({ 
-  card, 
-  onClick, 
-  isSelectionMode = false, 
-  isSelected = false, 
-  onToggleSelect 
+export const Card: React.FC<CardProps> = ({
+  card,
+  onClick,
+  isSelectionMode = false,
+  isSelected = false,
+  onToggleSelect
 }) => {
   const hasPrompts = card.aiAnalysis.extractedPrompts.length > 0;
 
@@ -56,7 +56,7 @@ export const Card: React.FC<CardProps> = ({
             w-6 h-6 rounded-md flex items-center justify-center transition-colors shadow-sm
             ${isSelected ? 'bg-indigo-600 text-white' : 'bg-white/90 text-gray-400 hover:text-gray-600'}
           `}>
-             {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+            {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
           </div>
         </div>
       )}
@@ -64,8 +64,13 @@ export const Card: React.FC<CardProps> = ({
       {/* Cover Image */}
       <div className="relative h-40 w-full overflow-hidden bg-gray-100">
         <img
-          src={card.coverImage}
+          src={card.coverImage || 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop'}
           alt={card.title}
+          referrerPolicy="no-referrer"
+          onError={(e) => {
+            const target = e.target as HTMLImageElement;
+            target.src = 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop';
+          }}
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
         {hasPrompts && (
@@ -94,11 +99,11 @@ export const Card: React.FC<CardProps> = ({
 
         {/* Tags */}
         <div className="flex flex-wrap gap-1 mb-3">
-            {card.tags.slice(0, 3).map(tag => (
-                <span key={tag} className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
-                    #{tag}
-                </span>
-            ))}
+          {card.tags.slice(0, 3).map(tag => (
+            <span key={tag} className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+              #{tag}
+            </span>
+          ))}
         </div>
 
         {/* Metrics Footer */}

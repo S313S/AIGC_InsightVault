@@ -129,6 +129,23 @@ const App: React.FC = () => {
     });
   }, [cards, filters, currentCollectionId]);
 
+  // Delete Card Handler
+  const handleDeleteCard = async (cardId: string) => {
+    if (isSupabaseConnected()) {
+      const success = await db.deleteCard(cardId);
+      if (success) {
+        setCards(prev => prev.filter(c => c.id !== cardId));
+        setChatScope(prev => ({ ...prev, cards: prev.cards.filter(c => c.id !== cardId) }));
+        setSelectedCard(null); // Close modal if open
+      }
+    } else {
+      // Offline mode deletion
+      setCards(prev => prev.filter(c => c.id !== cardId));
+      setChatScope(prev => ({ ...prev, cards: prev.cards.filter(c => c.id !== cardId) }));
+      setSelectedCard(null);
+    }
+  };
+
   const handleAddCard = async (newCard: KnowledgeCard) => {
     setCards(prev => [newCard, ...prev]);
     if (isSupabaseConnected()) {
@@ -771,6 +788,7 @@ const App: React.FC = () => {
           allCollections={collections}
           onClose={() => setSelectedCard(null)}
           onUpdate={handleUpdateCard}
+          onDelete={handleDeleteCard}
         />
       )}
 

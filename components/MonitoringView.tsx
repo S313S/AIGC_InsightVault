@@ -210,10 +210,17 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
 
         for (const result of results) {
             try {
+                // Auto-generate basic metadata
+                const summary = result.desc
+                    ? (result.desc.length > 150 ? result.desc.slice(0, 150) + '...' : result.desc)
+                    : '暂无摘要';
+
+                const extractedTags = (result.desc || '').match(/#[^\s#]+/g)?.map(t => t.slice(1)) || [];
+
                 // Map search result to KnowledgeCard
                 const card: KnowledgeCard = {
                     id: crypto.randomUUID(),
-                    title: result.title || result.desc?.slice(0, 50) || '无标题',
+                    title: result.title || result.desc?.slice(0, 30) || '无标题',
                     sourceUrl: result.sourceUrl,
                     platform: Platform.Xiaohongshu,
                     author: result.author,
@@ -222,8 +229,13 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                     metrics: result.metrics,
                     contentType: ContentType.PromptShare,
                     rawContent: result.desc || '',
-                    aiAnalysis: { summary: '', usageScenarios: [], coreKnowledge: [], extractedPrompts: [] },
-                    tags: [],
+                    aiAnalysis: {
+                        summary: summary, // Use extracted summary
+                        usageScenarios: [],
+                        coreKnowledge: [],
+                        extractedPrompts: []
+                    },
+                    tags: extractedTags.slice(0, 5), // Limit tags
                     userNotes: '',
                     collections: [],
                 };
