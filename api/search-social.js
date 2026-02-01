@@ -75,14 +75,18 @@ function mapSearchResult(note) {
     // Extract publish time from corner_tag_info
     const publishTimeTag = note.corner_tag_info?.find(tag => tag.type === 'publish_time');
 
+    // Get cover image - prefer url_size_large for better loading
+    const firstImage = note.images_list?.[0];
+    const coverImage = firstImage?.url_size_large || firstImage?.url || '';
+
     return {
         noteId: note.id,
         title: note.title || '',
         desc: note.desc || '',
         author: note.user?.nickname || '',
         authorAvatar: note.user?.images || '',
-        coverImage: note.images_list?.[0]?.url || note.images_list?.[0]?.url_size_large || '',
-        images: (note.images_list || []).map(img => img.url || img.url_size_large).filter(Boolean),
+        coverImage: coverImage,
+        images: (note.images_list || []).map(img => img.url_size_large || img.url).filter(Boolean),
         metrics: {
             likes: note.liked_count || 0,
             bookmarks: note.collected_count || 0,
@@ -91,6 +95,8 @@ function mapSearchResult(note) {
         },
         publishTime: publishTimeTag?.text || '',
         xsecToken: note.xsec_token || '',
-        sourceUrl: `https://www.xiaohongshu.com/explore/${note.id}`,
+        // 使用discovery链接，配合xsec_token参数
+        sourceUrl: `https://www.xiaohongshu.com/discovery/item/${note.id}?xsec_token=${encodeURIComponent(note.xsec_token || '')}`,
     };
 }
+

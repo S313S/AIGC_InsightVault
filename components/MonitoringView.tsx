@@ -24,22 +24,16 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
     const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
     const [showResults, setShowResults] = useState(false);
     const [searchError, setSearchError] = useState('');
-    const [console, setConsole] = useState<string[]>([]);
-
-    const addLog = (msg: string) => {
-        setConsole(prev => [...prev.slice(-9), `[${new Date().toLocaleTimeString()}] ${msg}`]);
-    };
 
     const handleSearch = async () => {
         if (!keywords.trim()) {
-            addLog('❌ 请输入搜索关键词');
+            setSearchError('请输入搜索关键词');
             return;
         }
 
         setIsSearching(true);
         setSearchError('');
         setSearchResults([]);
-        addLog(`🔍 开始搜索: "${keywords}"`);
 
         try {
             const response = await fetch('/api/search-social', {
@@ -61,13 +55,11 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                 throw new Error(data.error || '搜索失败');
             }
 
-            addLog(`✅ 找到 ${data.results?.length || 0} 条结果`);
             setSearchResults(data.results || []);
             setShowResults(true);
 
         } catch (error: any) {
             const errorMsg = error.message || '搜索出错';
-            addLog(`❌ 错误: ${errorMsg}`);
             setSearchError(errorMsg);
         } finally {
             setIsSearching(false);
@@ -75,7 +67,6 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
     };
 
     const handleSaveSelected = async (results: SearchResult[]) => {
-        addLog(`📥 开始保存 ${results.length} 条内容...`);
         let saved = 0;
 
         for (const result of results) {
@@ -100,13 +91,11 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
 
                 await saveCard(card);
                 saved++;
-                addLog(`✅ 已保存: ${card.title.slice(0, 20)}...`);
             } catch (error: any) {
-                addLog(`❌ 保存失败: ${result.title?.slice(0, 20) || result.noteId}`);
+                console.error('Save error:', error);
             }
         }
 
-        addLog(`📦 保存完成: ${saved}/${results.length}`);
         onCardsAdded?.(saved);
     };
 
@@ -217,22 +206,6 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                     </div>
                 )}
 
-                {/* Console Log */}
-                {console.length > 0 && (
-                    <div className="bg-gray-900 rounded-xl p-4 mb-6 font-mono text-sm">
-                        <div className="flex items-center gap-2 text-gray-400 mb-2">
-                            <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                            <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                            <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                            <span className="ml-2">Console</span>
-                        </div>
-                        <div className="space-y-1 text-gray-300">
-                            {console.map((log, i) => (
-                                <div key={i}>{log}</div>
-                            ))}
-                        </div>
-                    </div>
-                )}
 
                 {/* Task List */}
                 <div className="space-y-4">
