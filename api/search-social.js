@@ -75,9 +75,12 @@ function mapSearchResult(note) {
     // Extract publish time from corner_tag_info
     const publishTimeTag = note.corner_tag_info?.find(tag => tag.type === 'publish_time');
 
-    // Get cover image - prefer url_size_large for better loading
-    const firstImage = note.images_list?.[0];
-    const coverImage = firstImage?.url_size_large || firstImage?.url || '';
+    // Get cover image - try multiple fields
+    const coverImage = note.cover?.url_size_large ||
+        note.cover?.url ||
+        note.cover?.url_default ||
+        note.images_list?.[0]?.url_size_large ||
+        note.images_list?.[0]?.url || '';
 
     return {
         noteId: note.id,
