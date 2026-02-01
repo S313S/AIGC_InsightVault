@@ -83,24 +83,29 @@ function mapSearchResult(note) {
         return `https://sns-img-bd.xhscdn.com/${fileid}?imageView2/2/w/660/format/jpg/q/75`;
     };
 
-    // Get cover image using cover_image_index, falling back to first image
-    const coverIndex = note.cover_image_index || 0;
-    const coverImg = note.images_list?.[coverIndex] || note.images_list?.[0];
-
     // Prefer constructing a clean URL from fileid; fall back to signed URL with HEIF→JPG conversion
     const convertToJpg = (url) => {
         if (!url) return '';
         return url.replaceAll('format/heif', 'format/jpg');
     };
 
-    let coverImage = '';
-    if (coverImg?.fileid) {
-        coverImage = buildImageUrl(coverImg.fileid);
-    } else if (note.cover?.url_size_large || note.cover?.url || note.cover?.url_default) {
-        coverImage = convertToJpg(note.cover.url_size_large || note.cover.url || note.cover.url_default);
-    } else {
-        coverImage = convertToJpg(coverImg?.url_size_large || coverImg?.url || '');
-    }
+    const extractCoverUrl = (cover) => {
+        if (!cover) return '';
+        if (typeof cover === 'string') return convertToJpg(cover);
+        if (cover.fileid) return buildImageUrl(cover.fileid);
+        const url = cover.url_size_large || cover.url || cover.url_default || cover.url_pre || cover.url_original;
+        return convertToJpg(url || '');
+    };
+
+    // Get cover image using explicit cover when available, otherwise fall back to cover_image_index
+    const coverFromNote = extractCoverUrl(note.cover);
+    const coverIndex = Number.isFinite(Number(note.cover_image_index)) ? Number(note.cover_image_index) : 0;
+    const coverImg = note.images_list?.[coverIndex] || note.images_list?.[0];
+    const coverFromImages = coverImg?.fileid
+        ? buildImageUrl(coverImg.fileid)
+        : convertToJpg(coverImg?.url_size_large || coverImg?.url || '');
+
+    const coverImage = coverFromNote || coverFromImages;
 
     const images = (note.images_list || [])
         .map(img => {
@@ -129,4 +134,3 @@ function mapSearchResult(note) {
         sourceUrl: `https://www.xiaohongshu.com/discovery/item/${note.id}?xsec_token=${encodeURIComponent(note.xsec_token || '')}`,
     };
 }
-

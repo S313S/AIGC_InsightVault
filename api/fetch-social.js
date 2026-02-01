@@ -219,16 +219,24 @@ function mapToKnowledgeCard(data, platform) {
         const noteId = data.id;
         const user = data._user || data.user || {};
 
-        // Build cover image: prefer fileid-based URL (non-expiring), fall back to signed URL
-        const coverIndex = data.cover_image_index || 0;
+        const convertToJpg = (url) => (url || '').replaceAll('format/heif', 'format/jpg');
+        const extractCoverUrl = (cover) => {
+            if (!cover) return '';
+            if (typeof cover === 'string') return convertToJpg(cover);
+            if (cover.fileid) return buildXhsImageUrl(cover.fileid);
+            const url = cover.url_size_large || cover.url || cover.url_default || cover.url_pre || cover.url_original;
+            return convertToJpg(url || '');
+        };
+
+        // Build cover image: prefer explicit cover, fall back to cover_image_index or share_info
+        const coverFromNote = extractCoverUrl(data.cover);
+        const coverIndex = Number.isFinite(Number(data.cover_image_index)) ? Number(data.cover_image_index) : 0;
         const coverImg = data.images_list?.[coverIndex] || data.images_list?.[0];
-        let coverImage = '';
-        if (coverImg?.fileid) {
-            coverImage = buildXhsImageUrl(coverImg.fileid);
-        } else {
-            coverImage = (coverImg?.url || data.share_info?.image || '')
-                .replaceAll('format/heif', 'format/jpg');
-        }
+        const coverFromImages = coverImg?.fileid
+            ? buildXhsImageUrl(coverImg.fileid)
+            : convertToJpg(coverImg?.url || '');
+        const coverFromShare = convertToJpg(data.share_info?.image || '');
+        const coverImage = coverFromNote || coverFromImages || coverFromShare;
 
         const images = (data.images_list || []).map(img => {
             if (img.fileid) return buildXhsImageUrl(img.fileid);
