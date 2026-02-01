@@ -55,8 +55,28 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                 throw new Error(data.error || '搜索失败');
             }
 
-            setSearchResults(data.results || []);
+            const results = data.results || [];
+            setSearchResults(results);
             setShowResults(true);
+
+            // 自动创建任务卡片
+            const today = new Date();
+            const endDate = new Date(today);
+            endDate.setDate(endDate.getDate() + 1); // 1天后过期
+
+            const newTask: TrackingTask = {
+                id: Date.now().toString(),
+                keywords: keywords,
+                platforms: [Platform.Xiaohongshu],
+                dateRange: {
+                    start: today.toISOString().split('T')[0],
+                    end: endDate.toISOString().split('T')[0],
+                },
+                status: TaskStatus.Completed,
+                itemsFound: results.length,
+                lastRun: '刚刚',
+            };
+            onAddTask(newTask);
 
         } catch (error: any) {
             const errorMsg = error.message || '搜索出错';
