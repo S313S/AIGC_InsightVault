@@ -25,6 +25,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
     const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
     const [showResults, setShowResults] = useState(false);
     const [searchError, setSearchError] = useState('');
+    const [reviewingTaskId, setReviewingTaskId] = useState<string | null>(null);
 
     // 缓存工具函数
     const CACHE_KEY = 'search_cache';
@@ -114,14 +115,16 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
     };
 
     // Review: 优先使用缓存，缓存过期才重新搜索
-    const handleReview = async (taskKeywords: string) => {
+    const handleReview = async (taskKeywords: string, taskId: string) => {
         setKeywords(taskKeywords);
+        setReviewingTaskId(taskId); // 标记当前正在 Review 的任务
 
         // 检查缓存
         const cached = getCachedResults(taskKeywords);
         if (cached) {
             setSearchResults(cached);
             setShowResults(true);
+            setReviewingTaskId(null);
             return;
         }
 
@@ -159,6 +162,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
             setSearchError(error.message || '搜索出错');
         } finally {
             setIsSearching(false);
+            setReviewingTaskId(null);
         }
     };
 
@@ -335,11 +339,11 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                 <div className="flex items-center gap-2">
                                     {task.status === TaskStatus.Completed && (
                                         <button
-                                            onClick={() => handleReview(task.keywords)}
-                                            disabled={isSearching}
+                                            onClick={() => handleReview(task.keywords, task.id)}
+                                            disabled={isSearching || reviewingTaskId !== null}
                                             className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-lg hover:bg-indigo-100 disabled:opacity-50 flex items-center gap-1"
                                         >
-                                            {isSearching && <Loader2 size={14} className="animate-spin" />}
+                                            {reviewingTaskId === task.id && <Loader2 size={14} className="animate-spin" />}
                                             Review
                                         </button>
                                     )}
