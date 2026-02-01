@@ -51,6 +51,28 @@ export default async function handler(req, res) {
 
             return res.status(200).json({ result: response.text });
 
+        } else if (mode === 'classify') {
+            const prompt = `
+        You are classifying a social media post into one category.
+        Allowed categories (must be exactly one of these strings):
+        - "Image Gen"
+        - "Video Gen"
+        - "Vibe Coding"
+        - "Other"
+
+        Return strict JSON only: {"category": "<one of the allowed values>"}
+
+        Content: "${message}"
+      `;
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+                config: { responseMimeType: "application/json" }
+            });
+
+            return res.status(200).json({ result: response.text });
+
         } else {
             const systemInstruction = `
 你是「Insight Vault 知识助手」，一个专业、友好的 AI 助理。

@@ -71,6 +71,21 @@ export const analyzeContentWithGemini = async (content: string, toolName?: strin
   }
 };
 
+export const classifyContentWithGemini = async (content: string): Promise<string> => {
+  try {
+    const responseText = await callProxyAPI({
+      mode: 'classify',
+      message: content
+    });
+
+    const parsed = JSON.parse(responseText);
+    return parsed?.category || '';
+  } catch (error) {
+    console.error("Classification Failed:", error);
+    return '';
+  }
+};
+
 export const queryKnowledgeBase = async (query: string, cards: KnowledgeCard[]): Promise<string> => {
 
   // 1. Context Construction

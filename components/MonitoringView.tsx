@@ -3,6 +3,61 @@ import { TrackingTask, Platform, TaskStatus, KnowledgeCard, ContentType } from '
 import { Play, Clock, Check, Plus, Trash2, Calendar, Activity, Loader2, Search } from './Icons';
 import { SearchResultsModal, SearchResult } from './SearchResultsModal';
 import { saveCard } from '../services/supabaseService';
+import { analyzeContentWithGemini, classifyContentWithGemini } from '../services/geminiService';
+
+const CATEGORY_TAGS = ['Image Gen', 'Video Gen', 'Vibe Coding'];
+
+const normalizeCategory = (value: string) => {
+    const v = (value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!v || v === 'other') return '';
+    if (v.includes('image')) return 'Image Gen';
+    if (v.includes('video')) return 'Video Gen';
+    if (v.includes('vibe')) return 'Vibe Coding';
+    return '';
+};
+
+const scoreCategory = (text: string) => {
+    const t = (text || '').toLowerCase();
+    const scores = { image: 0, video: 0, vibe: 0 };
+
+    const imageKeywords = [
+        'image', 'img', 'photo', 'picture', '图', '图片', '绘画', '生图', '海报', '头像',
+        'midjourney', 'mj', 'stable diffusion', 'sd', 'comfyui', 'flux', 'krea',
+        'lora', 'controlnet', 'prompt', '风格化', '修图', '上色'
+    ];
+    const videoKeywords = [
+        'video', '视频', 'animation', '动画', '短片', '剪辑', '运动', '镜头',
+        'runway', 'gen-3', 'gen3', 'kling', '可灵', 'pika', 'sora', 'veo', 'luma'
+    ];
+    const vibeKeywords = [
+        'code', 'coding', '程序', '编程', '开发', '工程', 'repo', 'github', 'git',
+        'cursor', 'claude code', 'vibe coding', 'vscode', 'ide', 'agent', 'workflow',
+        '自动化', '前端', '后端', 'python', 'node', 'typescript', 'react', 'prompt engineering'
+    ];
+
+    for (const k of imageKeywords) if (t.includes(k)) scores.image += 1;
+    for (const k of videoKeywords) if (t.includes(k)) scores.video += 1;
+    for (const k of vibeKeywords) if (t.includes(k)) scores.vibe += 1;
+
+    return scores;
+};
+
+const classifyByHeuristic = (text: string) => {
+    const scores = scoreCategory(text);
+    const entries: Array<[string, number]> = [
+        ['Image Gen', scores.image],
+        ['Video Gen', scores.video],
+        ['Vibe Coding', scores.vibe],
+    ];
+
+    entries.sort((a, b) => b[1] - a[1]);
+    const [top, topScore] = entries[0];
+    const secondScore = entries[1][1];
+
+    if (topScore === 0) return '';
+    if (topScore === secondScore) return '';
+    return top;
+};
 
 interface MonitoringViewProps {
     tasks: TrackingTask[];
@@ -250,12 +305,35 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
 
         for (const result of results) {
             try {
-                // Auto-generate basic metadata
-                const summary = result.desc
-                    ? (result.desc.length > 150 ? result.desc.slice(0, 150) + '...' : result.desc)
+                const rawText = result.desc || result.title || '';
+
+                // Run AI analysis for structured fields
+                const analysis = await analyzeContentWithGemini(rawText);
+                const summaryFallback = rawText
+                    ? (rawText.length > 150 ? rawText.slice(0, 150) + '...' : rawText)
                     : '暂无摘要';
 
                 const extractedTags = (result.desc || '').match(/#[^\s#]+/g)?.map(t => t.slice(1)) || [];
+
+                // Category tagging: heuristic first, then AI fallback
+                const combinedText = [
+                    result.title,
+                    result.desc,
+                    analysis?.summary,
+                    (analysis?.coreKnowledge || []).join(' ')
+                ].filter(Boolean).join('\n');
+
+                let category = combinedText.trim() ? classifyByHeuristic(combinedText) : '';
+                if (!category && combinedText.trim()) {
+                    const aiCategory = await classifyContentWithGemini(combinedText);
+                    category = normalizeCategory(aiCategory);
+                }
+
+                const tagSet = new Set<string>();
+                for (const t of extractedTags.slice(0, 5)) {
+                    if (t && !CATEGORY_TAGS.includes(t)) tagSet.add(t);
+                }
+                if (category) tagSet.add(category);
 
                 // Map search result to KnowledgeCard
                 const card: KnowledgeCard = {
@@ -270,12 +348,12 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                     contentType: ContentType.PromptShare,
                     rawContent: result.desc || '',
                     aiAnalysis: {
-                        summary: summary, // Use extracted summary
-                        usageScenarios: [],
-                        coreKnowledge: [],
-                        extractedPrompts: []
+                        summary: analysis?.summary || summaryFallback,
+                        usageScenarios: analysis?.usageScenarios || [],
+                        coreKnowledge: analysis?.coreKnowledge || [],
+                        extractedPrompts: analysis?.extractedPrompts || []
                     },
-                    tags: extractedTags.slice(0, 5), // Limit tags
+                    tags: Array.from(tagSet),
                     userNotes: '',
                     collections: [],
                 };
