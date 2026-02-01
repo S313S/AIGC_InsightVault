@@ -122,6 +122,11 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                 status: TaskStatus.Completed,
                 itemsFound: results.length,
                 lastRun: '刚刚',
+                config: {
+                    sort,
+                    noteTime,
+                    minInteraction
+                }
             };
             onAddTask(newTask);
 
@@ -134,11 +139,19 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
     };
 
     // Review: 优先使用缓存，缓存过期才重新搜索
-    const handleReview = async (taskKeywords: string, taskId: string) => {
+    const handleReview = async (task: TrackingTask) => {
+        const { keywords: taskKeywords, id: taskId, config } = task;
+
         // 检查缓存
         const cached = getCachedResults(taskKeywords);
         if (cached) {
             setKeywords(taskKeywords);
+            // Restore filters for display or future searches
+            if (config) {
+                if (config.sort) setSort(config.sort);
+                if (config.noteTime) setNoteTime(config.noteTime);
+                if (config.minInteraction) setMinInteraction(config.minInteraction);
+            }
             setSearchResults(cached);
             setShowResults(true);
             return;
@@ -164,8 +177,9 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                 body: JSON.stringify({
                     keyword: taskKeywords,
                     page: 1,
-                    sort: 'general',
-                    noteType: '_0',
+                    sort: config?.sort || 'general',
+                    noteType: config?.noteType || '_0',
+                    noteTime: config?.noteTime || undefined,
                     platform: 'xiaohongshu',
                 }),
             });
@@ -179,8 +193,9 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
             let results = data.results || [];
 
             // 前端过滤：最小互动量（注意：Review时也应用当前的过滤设置）
-            if (minInteraction && !isNaN(Number(minInteraction))) {
-                const min = Number(minInteraction);
+            const minInter = config?.minInteraction || minInteraction;
+            if (minInter && !isNaN(Number(minInter))) {
+                const min = Number(minInter);
                 results = results.filter((r: SearchResult) => {
                     const total = (r.metrics.likes || 0) + (r.metrics.bookmarks || 0) + (r.metrics.comments || 0);
                     return total >= min;
@@ -292,7 +307,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                     placeholder="输入搜索关键词，如 'Claude' 或 'AI绘画'"
                                     value={keywords}
                                     onChange={(e) => setKeywords(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                // onKeyDown removed to prevent accidental submission
                                 />
                             </div>
                             <div>
@@ -401,11 +416,19 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                 <div>
                                     <h4 className="font-semibold text-gray-900">{task.keywords}</h4>
                                     <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-                                        <span className="flex items-center gap-1"><Calendar size={12} /> {task.dateRange.start} - {task.dateRange.end}</span>
+                                        <span className="flex items-center gap-1">
+                                            <Calendar size={12} />
+                                            {task.config?.noteTime || '全部时间'}
+                                            {/* (API doesn't return date range, so we show the filter used) */}
+                                        </span>
                                         <span className="flex items-center gap-1">|</span>
                                         <span>{task.platforms.join(', ')}</span>
                                         <span className="flex items-center gap-1">|</span>
-                                        <span className="text-indigo-500">综合排序</span>
+                                        <span className="text-indigo-500">
+                                            {task.config?.sort === 'popularity_descending' ? '最热搜索' :
+                                                task.config?.sort === 'time_descending' ? '最新发布' :
+                                                    '综合排序'}
+                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -422,7 +445,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                 <div className="flex items-center gap-2">
                                     {task.status === TaskStatus.Completed && (
                                         <button
-                                            onClick={() => handleReview(task.keywords, task.id)}
+                                            onClick={() => handleReview(task)}
                                             disabled={isSearching || reviewingTaskId !== null}
                                             className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-lg hover:bg-indigo-100 disabled:opacity-50 flex items-center gap-1"
                                         >

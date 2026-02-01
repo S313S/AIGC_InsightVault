@@ -56,6 +56,12 @@ export interface TrackingTask {
   status: TaskStatus;
   itemsFound: number;
   lastRun: string;
+  config?: {
+    sort?: string;
+    noteTime?: string;
+    noteType?: string;
+    minInteraction?: string;
+  };
 }
 
 export interface Collection {
