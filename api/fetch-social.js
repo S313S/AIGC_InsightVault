@@ -152,8 +152,11 @@ async function fetchXiaohongshu(noteId, token, originalUrl) {
         throw new Error(data.message || `XHS API error (code: ${data.code})`);
     }
 
-    // API returns data as array, take the first element
-    const noteData = Array.isArray(data.data) ? data.data[0] : data.data;
+    // API returns: data: [{ user: {...}, note_list: [{...}] }]
+    const wrapper = Array.isArray(data.data) ? data.data[0] : data.data;
+    const noteData = wrapper?.note_list?.[0] || wrapper;
+    // Merge user info into note data for mapping
+    noteData._user = wrapper?.user;
     return noteData;
 }
 
@@ -204,21 +207,24 @@ async function fetchTwitter(tweetId, token) {
 
 function mapToKnowledgeCard(data, platform) {
     if (platform === 'xiaohongshu') {
-        // Handle various field naming conventions from API
-        const noteId = data.note_id || data.noteId || data.id;
+        // Based on actual API response structure:
+        // data.id, data.title, data.desc, data.images_list[], data.liked_count, 
+        // data.collected_count, data.comments_count, data.hash_tag[], data._user
+        const noteId = data.id;
+        const user = data._user || data.user || {};
         return {
             platform: 'Xiaohongshu',
-            title: data.title || data.display_title || '',
-            author: data.user?.name || data.user?.nickname || '',
-            rawContent: data.desc || data.note_desc || '',
-            coverImage: data.imageList?.[0]?.url || data.image_list?.[0]?.url || data.cover?.url || data.video?.coverUrl || '',
-            images: (data.imageList || data.image_list || []).map(img => img.url || img.info_list?.[0]?.url).filter(Boolean),
+            title: data.title || data.share_info?.title || '',
+            author: user.name || user.nickname || '',
+            rawContent: data.desc || '',
+            coverImage: data.images_list?.[0]?.url || data.share_info?.image || '',
+            images: (data.images_list || []).map(img => img.url).filter(Boolean),
             metrics: {
-                likes: data.interactStatus?.likedCount || data.interact_info?.liked_count || 0,
-                bookmarks: data.interactStatus?.collectedCount || data.interact_info?.collected_count || 0,
-                comments: data.interactStatus?.commentCount || data.interact_info?.comment_count || 0,
+                likes: data.liked_count || 0,
+                bookmarks: data.collected_count || 0,
+                comments: data.comments_count || 0,
             },
-            tags: (data.tagList || data.tag_list || []).map(tag => tag.name),
+            tags: (data.hash_tag || []).map(tag => tag.name),
             sourceUrl: `https://www.xiaohongshu.com/explore/${noteId}`,
         };
     }
