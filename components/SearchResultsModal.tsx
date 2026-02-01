@@ -105,26 +105,17 @@ export const SearchResultsModal: React.FC<SearchResultsModalProps> = ({
                                     key={result.noteId}
                                     onClick={() => toggleSelect(result.noteId)}
                                     className={`flex gap-4 p-4 rounded-xl border cursor-pointer transition-all ${selectedIds.has(result.noteId)
-                                            ? 'border-indigo-500 bg-indigo-50'
-                                            : 'border-gray-200 hover:border-gray-300 bg-white'
+                                        ? 'border-indigo-500 bg-indigo-50'
+                                        : 'border-gray-200 hover:border-gray-300 bg-white'
                                         }`}
                                 >
                                     {/* Checkbox */}
                                     <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 mt-1 ${selectedIds.has(result.noteId)
-                                            ? 'bg-indigo-600 border-indigo-600'
-                                            : 'border-gray-300'
+                                        ? 'bg-indigo-600 border-indigo-600'
+                                        : 'border-gray-300'
                                         }`}>
                                         {selectedIds.has(result.noteId) && <Check size={14} className="text-white" />}
                                     </div>
-
-                                    {/* Cover Image */}
-                                    {result.coverImage && (
-                                        <img
-                                            src={result.coverImage}
-                                            alt={result.title}
-                                            className="w-20 h-20 object-cover rounded-lg flex-shrink-0"
-                                        />
-                                    )}
 
                                     {/* Info */}
                                     <div className="flex-1 min-w-0">
