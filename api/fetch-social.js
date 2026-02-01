@@ -205,20 +205,43 @@ async function fetchTwitter(tweetId, token) {
 
 // ============ Response Mapping ============
 
+// Build a clean, non-expiring image URL from fileid
+function buildXhsImageUrl(fileid) {
+    if (!fileid) return '';
+    return `https://sns-img-bd.xhscdn.com/${fileid}?imageView2/2/w/660/format/jpg/q/75`;
+}
+
 function mapToKnowledgeCard(data, platform) {
     if (platform === 'xiaohongshu') {
         // Based on actual API response structure:
-        // data.id, data.title, data.desc, data.images_list[], data.liked_count, 
+        // data.id, data.title, data.desc, data.images_list[], data.liked_count,
         // data.collected_count, data.comments_count, data.hash_tag[], data._user
         const noteId = data.id;
         const user = data._user || data.user || {};
+
+        // Build cover image: prefer fileid-based URL (non-expiring), fall back to signed URL
+        const coverIndex = data.cover_image_index || 0;
+        const coverImg = data.images_list?.[coverIndex] || data.images_list?.[0];
+        let coverImage = '';
+        if (coverImg?.fileid) {
+            coverImage = buildXhsImageUrl(coverImg.fileid);
+        } else {
+            coverImage = (coverImg?.url || data.share_info?.image || '')
+                .replaceAll('format/heif', 'format/jpg');
+        }
+
+        const images = (data.images_list || []).map(img => {
+            if (img.fileid) return buildXhsImageUrl(img.fileid);
+            return (img.url || '').replaceAll('format/heif', 'format/jpg');
+        }).filter(Boolean);
+
         return {
             platform: 'Xiaohongshu',
             title: data.title || data.share_info?.title || '',
             author: user.name || user.nickname || '',
             rawContent: data.desc || '',
-            coverImage: data.images_list?.[0]?.url || data.share_info?.image || '',
-            images: (data.images_list || []).map(img => img.url).filter(Boolean),
+            coverImage,
+            images,
             metrics: {
                 likes: data.liked_count || 0,
                 bookmarks: data.collected_count || 0,

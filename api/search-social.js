@@ -75,22 +75,38 @@ function mapSearchResult(note) {
     // Extract publish time from corner_tag_info
     const publishTimeTag = note.corner_tag_info?.find(tag => tag.type === 'publish_time');
 
-    // Get cover image - try multiple fields
-    let coverImage = note.cover?.url_size_large ||
-        note.cover?.url ||
-        note.cover?.url_default ||
-        note.images_list?.[0]?.url_size_large ||
-        note.images_list?.[0]?.url || '';
-
-    // Convert HEIF to JPG for browser compatibility
-    const convertToJpg = (url) => {
-        if (!url) return '';
-        return url.replace('format/heif', 'format/jpg');
+    // Build a clean, non-expiring image URL from fileid.
+    // The signed URLs (with sign= & t= params) expire quickly, causing broken images
+    // in the knowledge base. Constructing from fileid avoids this issue.
+    const buildImageUrl = (fileid) => {
+        if (!fileid) return '';
+        return `https://sns-img-bd.xhscdn.com/${fileid}?imageView2/2/w/660/format/jpg/q/75`;
     };
 
-    coverImage = convertToJpg(coverImage);
+    // Get cover image using cover_image_index, falling back to first image
+    const coverIndex = note.cover_image_index || 0;
+    const coverImg = note.images_list?.[coverIndex] || note.images_list?.[0];
+
+    // Prefer constructing a clean URL from fileid; fall back to signed URL with HEIF→JPG conversion
+    const convertToJpg = (url) => {
+        if (!url) return '';
+        return url.replaceAll('format/heif', 'format/jpg');
+    };
+
+    let coverImage = '';
+    if (coverImg?.fileid) {
+        coverImage = buildImageUrl(coverImg.fileid);
+    } else if (note.cover?.url_size_large || note.cover?.url || note.cover?.url_default) {
+        coverImage = convertToJpg(note.cover.url_size_large || note.cover.url || note.cover.url_default);
+    } else {
+        coverImage = convertToJpg(coverImg?.url_size_large || coverImg?.url || '');
+    }
+
     const images = (note.images_list || [])
-        .map(img => convertToJpg(img.url_size_large || img.url))
+        .map(img => {
+            if (img.fileid) return buildImageUrl(img.fileid);
+            return convertToJpg(img.url_size_large || img.url);
+        })
         .filter(Boolean);
 
     return {
