@@ -35,10 +35,10 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
     const CACHE_KEY = 'search_cache';
     const CACHE_EXPIRY = 60 * 60 * 1000; // 1小时
 
-    const getCachedResults = (keyword: string): SearchResult[] | null => {
+    const getCachedResults = (taskId: string): SearchResult[] | null => {
         try {
             const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
-            const entry = cache[keyword];
+            const entry = cache[taskId];
             if (entry && Date.now() - entry.timestamp < CACHE_EXPIRY) {
                 return entry.results;
             }
@@ -46,10 +46,11 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
         return null;
     };
 
-    const setCachedResults = (keyword: string, results: SearchResult[]) => {
+    const setCachedResults = (taskId: string, results: SearchResult[]) => {
         try {
             const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
-            cache[keyword] = { results, timestamp: Date.now() };
+            cache[taskId] = { results, timestamp: Date.now() };
+            // Optional: Clean up old cache entries here if needed
             localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
         } catch { }
     };
@@ -126,9 +127,6 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
             setSearchResults(results);
             setShowResults(true);
 
-            // 缓存结果
-            setCachedResults(keywords, results);
-
             // 自动创建任务卡片
             const today = new Date();
             const endDate = new Date(today);
@@ -151,6 +149,10 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                     minInteraction
                 }
             };
+
+            // 缓存结果 (Use Task ID as key)
+            setCachedResults(newTask.id, results);
+
             onAddTask(newTask);
 
         } catch (error: any) {
@@ -165,8 +167,8 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
     const handleReview = async (task: TrackingTask) => {
         const { keywords: taskKeywords, id: taskId, config } = task;
 
-        // 检查缓存
-        const cached = getCachedResults(taskKeywords);
+        // 检查缓存 (Use Task ID)
+        const cached = getCachedResults(taskId);
         if (cached) {
             setKeywords(taskKeywords);
             // Restore filters for display or future searches
@@ -233,8 +235,8 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
             setSearchResults(results);
             setShowResults(true);
 
-            // 缓存结果
-            setCachedResults(taskKeywords, results);
+            // 缓存结果 (Use Task ID)
+            setCachedResults(taskId, results);
         } catch (error: any) {
             setSearchError(error.message || '搜索出错');
         } finally {
