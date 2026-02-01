@@ -309,6 +309,15 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
 
                 // Run AI analysis for structured fields
                 const analysis = await analyzeContentWithGemini(rawText);
+                const analysisOk = Boolean(analysis?.summary) && (
+                    (analysis?.usageScenarios?.length || 0) > 0 ||
+                    (analysis?.coreKnowledge?.length || 0) > 0 ||
+                    (analysis?.extractedPrompts?.length || 0) > 0
+                );
+                console.info('[Import][Gemini] analysis', {
+                    noteId: result.noteId,
+                    ok: analysisOk
+                });
                 const summaryFallback = rawText
                     ? (rawText.length > 150 ? rawText.slice(0, 150) + '...' : rawText)
                     : '暂无摘要';
