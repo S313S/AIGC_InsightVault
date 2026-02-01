@@ -142,8 +142,13 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
         <div className="w-full md:w-2/5 bg-gray-50 p-6 overflow-y-auto border-r border-gray-100">
           <div className="rounded-xl overflow-hidden shadow-md mb-6 bg-white">
             <img
-              src={card.coverImage}
+              src={card.coverImage || 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop'}
               alt={card.title}
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.src = 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop';
+              }}
               className="w-full h-auto object-cover"
             />
           </div>
