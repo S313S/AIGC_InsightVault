@@ -26,6 +26,29 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
     const [showResults, setShowResults] = useState(false);
     const [searchError, setSearchError] = useState('');
 
+    // 缓存工具函数
+    const CACHE_KEY = 'search_cache';
+    const CACHE_EXPIRY = 60 * 60 * 1000; // 1小时
+
+    const getCachedResults = (keyword: string): SearchResult[] | null => {
+        try {
+            const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+            const entry = cache[keyword];
+            if (entry && Date.now() - entry.timestamp < CACHE_EXPIRY) {
+                return entry.results;
+            }
+        } catch { }
+        return null;
+    };
+
+    const setCachedResults = (keyword: string, results: SearchResult[]) => {
+        try {
+            const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+            cache[keyword] = { results, timestamp: Date.now() };
+            localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+        } catch { }
+    };
+
     const handleSearch = async () => {
         if (!keywords.trim()) {
             setSearchError('请输入搜索关键词');
@@ -60,6 +83,9 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
             setSearchResults(results);
             setShowResults(true);
 
+            // 缓存结果
+            setCachedResults(keywords, results);
+
             // 自动创建任务卡片
             const today = new Date();
             const endDate = new Date(today);
@@ -87,12 +113,22 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
         }
     };
 
-    // Review: 直接执行搜索并显示结果（不创建新任务）
+    // Review: 优先使用缓存，缓存过期才重新搜索
     const handleReview = async (taskKeywords: string) => {
+        setKeywords(taskKeywords);
+
+        // 检查缓存
+        const cached = getCachedResults(taskKeywords);
+        if (cached) {
+            setSearchResults(cached);
+            setShowResults(true);
+            return;
+        }
+
+        // 缓存未命中，执行搜索
         setIsSearching(true);
         setSearchError('');
         setSearchResults([]);
-        setKeywords(taskKeywords);
 
         try {
             const response = await fetch('/api/search-social', {
@@ -113,8 +149,12 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                 throw new Error(data.error || '搜索失败');
             }
 
-            setSearchResults(data.results || []);
+            const results = data.results || [];
+            setSearchResults(results);
             setShowResults(true);
+
+            // 缓存结果
+            setCachedResults(taskKeywords, results);
         } catch (error: any) {
             setSearchError(error.message || '搜索出错');
         } finally {
