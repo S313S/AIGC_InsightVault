@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { TrackingTask, Platform, TaskStatus, KnowledgeCard, ContentType } from '../types';
 import { Play, Clock, Check, Plus, Trash2, Calendar, Activity, Loader2, Search } from './Icons';
 import { SearchResultsModal, SearchResult } from './SearchResultsModal';
@@ -68,6 +68,8 @@ interface MonitoringViewProps {
 
 export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask, onDeleteTask, onCardsAdded }) => {
     const [isCreating, setIsCreating] = useState(false);
+    const [taskPage, setTaskPage] = useState(1);
+    const TASKS_PER_PAGE = 6;
 
     // Form State
     const [keywords, setKeywords] = useState('');
@@ -215,6 +217,28 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
             setSearchError(errorMsg);
         } finally {
             setIsSearching(false);
+        }
+    };
+
+    const totalTaskPages = Math.max(1, Math.ceil(tasks.length / TASKS_PER_PAGE));
+    const safeTaskPage = Math.min(taskPage, totalTaskPages);
+    const taskStart = (safeTaskPage - 1) * TASKS_PER_PAGE;
+    const pagedTasks = tasks.slice(taskStart, taskStart + TASKS_PER_PAGE);
+
+    useEffect(() => {
+        if (taskPage > totalTaskPages) setTaskPage(totalTaskPages);
+    }, [taskPage, totalTaskPages]);
+
+    const handleDeletePage = async () => {
+        if (!onDeleteTask || pagedTasks.length === 0) return;
+        const ok = window.confirm(`确定要删除当前页的 ${pagedTasks.length} 条任务吗？`);
+        if (!ok) return;
+        for (const task of pagedTasks) {
+            try {
+                await onDeleteTask(task.id);
+            } catch (e) {
+                console.error('Delete task failed:', task.id, e);
+            }
         }
     };
 
@@ -519,7 +543,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
 
                 {/* Task List */}
                 <div className="space-y-4">
-                    {tasks.map(task => (
+                    {pagedTasks.map(task => (
                         <div key={task.id} className="bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between hover:shadow-md transition-shadow">
                             <div className="flex items-center gap-4">
                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${task.status === TaskStatus.Running ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-500'}`}>
@@ -541,6 +565,14 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                                 task.config?.sort === 'time_descending' ? '最新发布' :
                                                     '综合排序'}
                                         </span>
+                                        {task.config?.minInteraction && (
+                                            <>
+                                                <span className="flex items-center gap-1">|</span>
+                                                <span className="text-gray-600">
+                                                    最小互动量 {task.config.minInteraction}
+                                                </span>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -576,6 +608,40 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                         </div>
                     ))}
                 </div>
+
+                {tasks.length > TASKS_PER_PAGE && (
+                    <div className="flex items-center justify-between mt-4">
+                        <div className="text-xs text-gray-500">
+                            {taskStart + 1}-{Math.min(taskStart + TASKS_PER_PAGE, tasks.length)} / {tasks.length}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={handleDeletePage}
+                                disabled={!onDeleteTask || pagedTasks.length === 0}
+                                className="px-3 py-1.5 text-sm rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                            >
+                                删除本页
+                            </button>
+                            <button
+                                onClick={() => setTaskPage(p => Math.max(1, p - 1))}
+                                disabled={safeTaskPage <= 1}
+                                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                            >
+                                上一页
+                            </button>
+                            <div className="text-sm text-gray-600">
+                                {safeTaskPage} / {totalTaskPages}
+                            </div>
+                            <button
+                                onClick={() => setTaskPage(p => Math.min(totalTaskPages, p + 1))}
+                                disabled={safeTaskPage >= totalTaskPages}
+                                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                            >
+                                下一页
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Search Results Modal */}

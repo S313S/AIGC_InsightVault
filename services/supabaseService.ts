@@ -83,9 +83,10 @@ const dbToTask = (row: any): TrackingTask => ({
     status: row.status as TaskStatus,
     itemsFound: row.items_found || 0,
     lastRun: row.last_run || '',
+    config: row.config || undefined,
 });
 
-const taskToDb = (task: TrackingTask, skipId: boolean = false) => {
+const taskToDb = (task: TrackingTask, skipId: boolean = false, includeConfig: boolean = true) => {
     const dbRow: any = {
         keywords: task.keywords,
         platforms: task.platforms,
@@ -94,6 +95,10 @@ const taskToDb = (task: TrackingTask, skipId: boolean = false) => {
         items_found: task.itemsFound,
         last_run: task.lastRun,
     };
+
+    if (includeConfig && task.config) {
+        dbRow.config = task.config;
+    }
 
     if (!skipId && isValidUUID(task.id)) {
         dbRow.id = task.id;
@@ -305,9 +310,20 @@ export const saveTask = async (task: TrackingTask): Promise<boolean> => {
 
     const { error } = await supabase
         .from('tracking_tasks')
-        .upsert(taskToDb(task));
+        .upsert(taskToDb(task, false, true));
 
     if (error) {
+        const msg = `${error.message || ''} ${error.details || ''}`.toLowerCase();
+        if (msg.includes('config')) {
+            const { error: retryError } = await supabase
+                .from('tracking_tasks')
+                .upsert(taskToDb(task, false, false));
+            if (retryError) {
+                console.error('Error saving task (retry without config):', retryError);
+                return false;
+            }
+            return true;
+        }
         console.error('Error saving task:', error);
         return false;
     }
