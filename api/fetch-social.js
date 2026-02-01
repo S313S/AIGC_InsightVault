@@ -152,7 +152,9 @@ async function fetchXiaohongshu(noteId, token, originalUrl) {
         throw new Error(data.message || `XHS API error (code: ${data.code})`);
     }
 
-    return data.data;
+    // API returns data as array, take the first element
+    const noteData = Array.isArray(data.data) ? data.data[0] : data.data;
+    return noteData;
 }
 
 async function fetchTwitter(tweetId, token) {
@@ -202,20 +204,22 @@ async function fetchTwitter(tweetId, token) {
 
 function mapToKnowledgeCard(data, platform) {
     if (platform === 'xiaohongshu') {
+        // Handle various field naming conventions from API
+        const noteId = data.note_id || data.noteId || data.id;
         return {
             platform: 'Xiaohongshu',
-            title: data.title || '',
-            author: data.user?.nickname || '',
-            rawContent: data.desc || '',
-            coverImage: data.imageList?.[0]?.url || data.video?.coverUrl || '',
-            images: data.imageList?.map(img => img.url) || [],
+            title: data.title || data.display_title || '',
+            author: data.user?.name || data.user?.nickname || '',
+            rawContent: data.desc || data.note_desc || '',
+            coverImage: data.imageList?.[0]?.url || data.image_list?.[0]?.url || data.cover?.url || data.video?.coverUrl || '',
+            images: (data.imageList || data.image_list || []).map(img => img.url || img.info_list?.[0]?.url).filter(Boolean),
             metrics: {
-                likes: data.interactStatus?.likedCount || 0,
-                bookmarks: data.interactStatus?.collectedCount || 0,
-                comments: data.interactStatus?.commentCount || 0,
+                likes: data.interactStatus?.likedCount || data.interact_info?.liked_count || 0,
+                bookmarks: data.interactStatus?.collectedCount || data.interact_info?.collected_count || 0,
+                comments: data.interactStatus?.commentCount || data.interact_info?.comment_count || 0,
             },
-            tags: data.tagList?.map(tag => tag.name) || [],
-            sourceUrl: `https://www.xiaohongshu.com/explore/${data.id}`,
+            tags: (data.tagList || data.tag_list || []).map(tag => tag.name),
+            sourceUrl: `https://www.xiaohongshu.com/explore/${noteId}`,
         };
     }
 
