@@ -76,11 +76,22 @@ function mapSearchResult(note) {
     const publishTimeTag = note.corner_tag_info?.find(tag => tag.type === 'publish_time');
 
     // Get cover image - try multiple fields
-    const coverImage = note.cover?.url_size_large ||
+    let coverImage = note.cover?.url_size_large ||
         note.cover?.url ||
         note.cover?.url_default ||
         note.images_list?.[0]?.url_size_large ||
         note.images_list?.[0]?.url || '';
+
+    // Convert HEIF to JPG for browser compatibility
+    const convertToJpg = (url) => {
+        if (!url) return '';
+        return url.replace('format/heif', 'format/jpg');
+    };
+
+    coverImage = convertToJpg(coverImage);
+    const images = (note.images_list || [])
+        .map(img => convertToJpg(img.url_size_large || img.url))
+        .filter(Boolean);
 
     return {
         noteId: note.id,
@@ -89,7 +100,7 @@ function mapSearchResult(note) {
         author: note.user?.nickname || '',
         authorAvatar: note.user?.images || '',
         coverImage: coverImage,
-        images: (note.images_list || []).map(img => img.url_size_large || img.url).filter(Boolean),
+        images: images,
         metrics: {
             likes: note.liked_count || 0,
             bookmarks: note.collected_count || 0,
