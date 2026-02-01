@@ -132,6 +132,13 @@ const App: React.FC = () => {
     }
   };
 
+  const handleDeleteTask = async (taskId: string) => {
+    setTasks(prev => prev.filter(t => t.id !== taskId));
+    if (isSupabaseConnected()) {
+      await db.deleteTask(taskId);
+    }
+  };
+
   const handleSaveTrendingToVault = async (card: KnowledgeCard) => {
     // Add to main cards list
     const savedCard = { ...card, id: isSupabaseConnected() ? card.id : Date.now().toString() };
@@ -578,7 +585,7 @@ const App: React.FC = () => {
 
           {activeView === 'monitoring' && (
             <div className="h-full overflow-y-auto p-6">
-              <MonitoringView tasks={tasks} onAddTask={handleAddTask} />
+              <MonitoringView tasks={tasks} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} />
             </div>
           )}
 

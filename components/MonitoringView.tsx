@@ -7,10 +7,11 @@ import { saveCard } from '../services/supabaseService';
 interface MonitoringViewProps {
     tasks: TrackingTask[];
     onAddTask: (task: TrackingTask) => void;
+    onDeleteTask?: (taskId: string) => void;
     onCardsAdded?: (count: number) => void;
 }
 
-export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask, onCardsAdded }) => {
+export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask, onDeleteTask, onCardsAdded }) => {
     const [isCreating, setIsCreating] = useState(false);
 
     // Form State
@@ -256,11 +257,20 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                 </div>
                                 <div className="flex items-center gap-2">
                                     {task.status === TaskStatus.Completed && (
-                                        <button className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-lg hover:bg-indigo-100">
+                                        <button
+                                            onClick={() => {
+                                                setKeywords(task.keywords);
+                                                setIsCreating(true);
+                                            }}
+                                            className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-lg hover:bg-indigo-100"
+                                        >
                                             Review
                                         </button>
                                     )}
-                                    <button className="p-2 text-gray-400 hover:text-red-500 transition-colors">
+                                    <button
+                                        onClick={() => onDeleteTask?.(task.id)}
+                                        className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                                    >
                                         <Trash2 size={18} />
                                     </button>
                                 </div>
