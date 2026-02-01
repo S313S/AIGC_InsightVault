@@ -84,7 +84,7 @@ function parseUrl(url) {
 
 // ============ API Calls ============
 
-const API_BASE_XHS = 'http://47.117.133.51:30015'; // JustOneAPI prod-cn for Xiaohongshu
+const API_BASE_XHS = 'https://api.justoneapi.com'; // JustOneAPI prod-global for Xiaohongshu
 
 // Step 1: Convert share URL to get real noteId (only for xhslink.com short links)
 async function transferShareUrl(shareUrl, token) {
