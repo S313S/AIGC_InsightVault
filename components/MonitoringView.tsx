@@ -54,6 +54,29 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
         } catch { }
     };
 
+    // Helper for relative time
+    const formatTimeAgo = (dateStr: string) => {
+        if (!dateStr) return '';
+        if (dateStr === '刚刚') return '刚刚'; // Backwards compatibility
+
+        try {
+            const date = new Date(dateStr);
+            const now = new Date();
+            const diffMs = now.getTime() - date.getTime();
+            const diffMins = Math.floor(diffMs / 60000);
+
+            if (diffMins < 1) return '刚刚';
+            if (diffMins < 60) return `${diffMins}分钟前`;
+
+            const diffHours = Math.floor(diffMins / 60);
+            if (diffHours < 24) return `${diffHours}小时前`;
+
+            return `${date.getMonth() + 1}月${date.getDate()}日`;
+        } catch (e) {
+            return dateStr;
+        }
+    };
+
     const handleSearch = async () => {
         if (!keywords.trim()) {
             setSearchError('请输入搜索关键词');
@@ -121,7 +144,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                 },
                 status: TaskStatus.Completed,
                 itemsFound: results.length,
-                lastRun: '刚刚',
+                lastRun: new Date().toISOString(),
                 config: {
                     sort,
                     noteTime,
@@ -440,7 +463,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                 </div>
                                 <div className="text-right hidden sm:block">
                                     <div className="text-xs text-gray-500">Last Run</div>
-                                    <div className="text-gray-700 text-sm">{task.lastRun}</div>
+                                    <div className="text-gray-700 text-sm">{formatTimeAgo(task.lastRun)}</div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     {task.status === TaskStatus.Completed && (
