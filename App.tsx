@@ -91,6 +91,17 @@ const App: React.FC = () => {
     loadData();
   }, []);
 
+  // 刷新知识库卡片
+  const refreshCards = async () => {
+    if (isSupabaseConnected()) {
+      const dbCards = await db.getKnowledgeCards();
+      setCards(dbCards);
+      setChatScope(prev => ({ ...prev, cards: dbCards })); // Update chat scope if needed
+    }
+    // 离线模式下暂时无法真正保存新卡片，除非我们修改内存中的 STATE。
+    // 但鉴于 saveCard 在离线时返回 false，这里主要处理在线逻辑。
+  };
+
   // Check if a card belongs to a collection
   // Logic updated to check the card.collections array
   const isCardInCollection = (card: KnowledgeCard, collectionId: string) => {
@@ -585,7 +596,12 @@ const App: React.FC = () => {
 
           {activeView === 'monitoring' && (
             <div className="h-full overflow-y-auto p-6">
-              <MonitoringView tasks={tasks} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} />
+              <MonitoringView
+                tasks={tasks}
+                onAddTask={handleAddTask}
+                onDeleteTask={handleDeleteTask}
+                onCardsAdded={refreshCards}
+              />
             </div>
           )}
 
