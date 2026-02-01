@@ -210,7 +210,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                         <Activity className="text-indigo-600" />
                         Monitoring Console
                     </h2>
-                    <p className="text-sm text-gray-500 mt-1">搜索并批量导入社交媒体内容到知识库</p>
+                    <p className="text-sm text-gray-500 mt-1">搜索并批量导入社交媒体内容到知识库 · 缓存有效期：1小时</p>
                 </div>
                 <button
                     onClick={() => setIsCreating(true)}
@@ -317,6 +317,8 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                         <span className="flex items-center gap-1"><Calendar size={12} /> {task.dateRange.start} - {task.dateRange.end}</span>
                                         <span className="flex items-center gap-1">|</span>
                                         <span>{task.platforms.join(', ')}</span>
+                                        <span className="flex items-center gap-1">|</span>
+                                        <span className="text-indigo-500">综合排序</span>
                                     </div>
                                 </div>
                             </div>
