@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { TrackingTask, Platform, TaskStatus, KnowledgeCard, ContentType } from '../types';
 import { Play, Clock, Check, Plus, Trash2, Calendar, Activity, Loader2, Search } from './Icons';
 import { SearchResultsModal, SearchResult } from './SearchResultsModal';
-import { addCard } from '../services/supabaseService';
+import { saveCard } from '../services/supabaseService';
 
 interface MonitoringViewProps {
     tasks: TrackingTask[];
@@ -90,7 +90,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                     date: result.publishTime,
                     coverImage: result.coverImage,
                     metrics: result.metrics,
-                    contentType: ContentType.Post,
+                    contentType: ContentType.PromptShare,
                     rawContent: result.desc || '',
                     aiAnalysis: { summary: '', usageScenarios: [], coreKnowledge: [], extractedPrompts: [] },
                     tags: [],
@@ -98,7 +98,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                     collections: [],
                 };
 
-                await addCard(card);
+                await saveCard(card);
                 saved++;
                 addLog(`✅ 已保存: ${card.title.slice(0, 20)}...`);
             } catch (error: any) {
