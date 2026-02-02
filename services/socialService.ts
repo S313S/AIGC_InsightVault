@@ -2,6 +2,10 @@
 
 const FETCH_SOCIAL_API = '/api/fetch-social';
 
+// 重试配置
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1500;
+
 export interface SocialMediaContent {
     platform: 'Twitter' | 'Xiaohongshu' | string;
     title: string;
@@ -19,9 +23,31 @@ export interface SocialMediaContent {
     error?: string;
 }
 
+/**
+ * 带重试机制的 fetch 请求
+ * 如果请求失败（超时/网络错误），会自动重试最多 MAX_RETRIES 次
+ */
+async function fetchWithRetry(
+    url: string,
+    options: RequestInit,
+    retries: number = MAX_RETRIES
+): Promise<Response> {
+    try {
+        const response = await fetch(url, options);
+        return response;
+    } catch (error) {
+        if (retries > 0) {
+            console.warn(`Fetch failed, retrying... (${MAX_RETRIES - retries + 1}/${MAX_RETRIES})`);
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+            return fetchWithRetry(url, options, retries - 1);
+        }
+        throw error;
+    }
+}
+
 export async function fetchSocialContent(url: string): Promise<SocialMediaContent> {
     try {
-        const response = await fetch(FETCH_SOCIAL_API, {
+        const response = await fetchWithRetry(FETCH_SOCIAL_API, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

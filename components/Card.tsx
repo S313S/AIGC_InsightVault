@@ -79,6 +79,14 @@ export const Card: React.FC<CardProps> = ({
             <span>Prompts</span>
           </div>
         )}
+
+        {/* AI Generated Badge */}
+        {card.isAiGenerated && (
+          <div className="absolute top-2 left-2 bg-indigo-600/80 backdrop-blur-sm text-white text-[10px] uppercase font-bold px-2 py-1 rounded-md flex items-center gap-1 shadow-sm border border-indigo-400/30">
+            <Sparkles size={10} className="text-white" />
+            <span>AI Cover</span>
+          </div>
+        )}
       </div>
 
       {/* Content */}
