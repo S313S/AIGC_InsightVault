@@ -43,7 +43,7 @@ export default async function handler(req, res) {
         }
 
         // Map to unified format
-        const result = mapToKnowledgeCard(apiResponse, parsed.platform);
+        const result = await mapToKnowledgeCard(apiResponse, parsed.platform);
 
         return res.status(200).json(result);
 
@@ -211,7 +211,7 @@ function buildXhsImageUrl(fileid) {
     return `https://sns-img-bd.xhscdn.com/${fileid}?imageView2/2/w/660/format/jpg/q/75`;
 }
 
-function mapToKnowledgeCard(data, platform) {
+async function mapToKnowledgeCard(data, platform) {
     if (platform === 'xiaohongshu') {
         // Based on actual API response structure:
         // data.id, data.title, data.desc, data.images_list[], data.liked_count,
@@ -261,12 +261,24 @@ function mapToKnowledgeCard(data, platform) {
     }
 
     if (platform === 'twitter') {
+        // 对于 Twitter，尝试调用百炼生成封面图
+        let coverImage = '';
+        const textForImage = data.text || '';
+        if (textForImage) {
+            try {
+                coverImage = await generateCoverImage(textForImage);
+            } catch (err) {
+                console.warn('Failed to generate cover image via Bailian:', err.message);
+                // Fallback: leave coverImage empty, frontend will use default
+            }
+        }
+
         return {
             platform: 'Twitter',
             title: '', // Twitter posts don't have titles
             author: data.author?.username || '',
             rawContent: data.text || '',
-            coverImage: '', // X API v2 needs media.fields expansion for images
+            coverImage, // Now populated by Bailian AI generation
             images: [],
             metrics: {
                 likes: data.public_metrics?.like_count || 0,
@@ -280,3 +292,75 @@ function mapToKnowledgeCard(data, platform) {
 
     return { error: 'Unknown platform' };
 }
+
+// ============ Bailian (DashScope) Cover Image Generation ============
+
+/**
+ * Call Alibaba Bailian (DashScope) Agent App to generate a cover image based on post text.
+ * Returns the image URL or empty string on failure.
+ */
+async function generateCoverImage(postText) {
+    const apiKey = process.env.DASHSCOPE_API_KEY;
+    const appId = process.env.DASHSCOPE_APP_ID;
+
+    if (!apiKey || !appId) {
+        console.warn('Bailian API not configured, skipping cover generation');
+        return '';
+    }
+
+    const endpoint = `https://dashscope.aliyuncs.com/api/v1/apps/${appId}/completion`;
+
+    // Truncate text if too long (to avoid token limits)
+    const truncatedText = postText.length > 500 ? postText.substring(0, 500) + '...' : postText;
+
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            input: {
+                prompt: truncatedText
+            },
+            parameters: {},
+            debug: {}
+        }),
+    });
+
+    const data = await response.json();
+
+    // Debug: log response structure
+    console.log('Bailian response:', JSON.stringify(data, null, 2));
+
+    if (!response.ok || data.code) {
+        throw new Error(data.message || `Bailian API error: ${response.status}`);
+    }
+
+    // Extract image URL from response
+    // The response structure depends on Bailian app output. 
+    // Typical structure: data.output.text contains markdown with image, or data.output.images
+    const output = data.output;
+
+    // Case 1: Direct images array
+    if (output?.images && output.images.length > 0) {
+        return output.images[0].url || output.images[0];
+    }
+
+    // Case 2: Image URL in text (markdown format ![...](url))
+    if (output?.text) {
+        const imgMatch = output.text.match(/!\[.*?\]\((https?:\/\/[^\)]+)\)/);
+        if (imgMatch) {
+            return imgMatch[1];
+        }
+        // Case 3: Plain URL in text
+        const urlMatch = output.text.match(/(https?:\/\/[^\s\)]+\.(png|jpg|jpeg|webp|gif))/i);
+        if (urlMatch) {
+            return urlMatch[1];
+        }
+    }
+
+    console.warn('Could not extract image URL from Bailian response');
+    return '';
+}
+
