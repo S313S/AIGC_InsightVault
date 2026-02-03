@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 const DEFAULT_MONITOR_KEYWORDS = ['AI', 'AIGC', '人工智能', '大模型', 'LLM', 'GPT', 'Claude'];
 const DEFAULT_PLATFORMS = ['xiaohongshu', 'twitter'];
 const DEFAULT_LIMIT = 20;
+const DEFAULT_MIN_INTERACTION = 10000;
 
 const inferCategoryTag = (text) => {
   const t = (text || '').toLowerCase();
@@ -251,38 +252,55 @@ export default async function handler(req, res) {
     }];
 
     const allResults = [];
+    const platformStats = [];
+    const platformErrors = [];
     const updatedTasks = [];
 
     for (const task of tasks) {
       const platforms = (task.platforms && task.platforms.length > 0) ? task.platforms : DEFAULT_PLATFORMS;
       const responses = await Promise.all(
         platforms.map(async (p) => {
-          const isTwitter = p === 'Twitter' || p === 'twitter';
-          if (isTwitter) {
-            if (!xBearerToken) return [];
-            return await searchTwitter(task.keywords, DEFAULT_LIMIT, xBearerToken);
+          const platformName = p === 'Twitter' || p === 'twitter' ? 'twitter' : 'xiaohongshu';
+          try {
+            if (platformName === 'twitter') {
+              if (!xBearerToken) {
+                platformErrors.push({ platform: 'twitter', error: 'X API Bearer Token not configured' });
+                return [];
+              }
+              const results = await searchTwitter(task.keywords, DEFAULT_LIMIT, xBearerToken);
+              platformStats.push({ platform: 'twitter', count: results.length });
+              return results;
+            }
+            if (!justOneToken) {
+              platformErrors.push({ platform: 'xiaohongshu', error: 'JustOneAPI token not configured' });
+              return [];
+            }
+            const results = await searchXiaohongshu(
+              task.keywords,
+              1,
+              task.config?.sort || 'popularity_descending',
+              task.config?.noteType || '_0',
+              task.config?.noteTime || undefined,
+              justOneToken,
+              DEFAULT_LIMIT
+            );
+            platformStats.push({ platform: 'xiaohongshu', count: results.length });
+            return results;
+          } catch (err) {
+            platformErrors.push({ platform: platformName, error: err.message || 'Unknown error' });
+            return [];
           }
-          if (!justOneToken) return [];
-          return await searchXiaohongshu(
-            task.keywords,
-            1,
-            task.config?.sort || 'popularity_descending',
-            task.config?.noteType || '_0',
-            task.config?.noteTime || undefined,
-            justOneToken,
-            DEFAULT_LIMIT
-          );
         })
       );
 
       let results = responses.flat();
 
       const minInter = task.config?.minInteraction;
-      if (minInter && !isNaN(Number(minInter))) {
-        const min = Number(minInter);
+      const minValue = (!minInter || isNaN(Number(minInter))) ? DEFAULT_MIN_INTERACTION : Number(minInter);
+      if (minValue > 0) {
         results = results.filter((r) => {
           const total = (r.metrics?.likes || 0) + (r.metrics?.bookmarks || 0) + (r.metrics?.comments || 0);
-          return total >= min;
+          return total >= minValue;
         });
       }
 
@@ -309,7 +327,12 @@ export default async function handler(req, res) {
     const candidates = Array.from(uniqueByUrl.values());
 
     if (candidates.length === 0) {
-      return res.status(200).json({ inserted: 0, updatedTasks: updatedTasks.length });
+      return res.status(200).json({
+        inserted: 0,
+        updatedTasks: updatedTasks.length,
+        platformStats,
+        platformErrors
+      });
     }
 
     const candidateUrls = candidates.map(c => c.sourceUrl).filter(Boolean);
@@ -347,6 +370,8 @@ export default async function handler(req, res) {
       inserted: toInsert.length,
       updatedTasks: updatedTasks.length,
       candidates: candidates.length,
+      platformStats,
+      platformErrors
     });
   } catch (err) {
     console.error('Cron monitor error:', err);
