@@ -62,18 +62,150 @@ const buildTrendingRow = (result) => {
   };
 };
 
-const buildBaseUrl = (req) => {
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  const proto = req.headers['x-forwarded-proto'] || 'https';
-  return `${proto}://${host}`;
-};
-
 const getSupabaseClient = () => {
   const url = process.env.VITE_SUPABASE_URL;
   const key = process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
+};
+
+const API_BASE_XHS = 'https://api.justoneapi.com';
+
+const buildXhsImageUrl = (fileid) => {
+  if (!fileid) return '';
+  return `https://sns-img-bd.xhscdn.com/${fileid}?imageView2/2/w/660/format/jpg/q/75`;
+};
+
+const convertToJpg = (url) => (url || '').replaceAll('format/heif', 'format/jpg');
+
+const extractCoverUrl = (cover) => {
+  if (!cover) return '';
+  if (typeof cover === 'string') return convertToJpg(cover);
+  if (cover.fileid) return buildXhsImageUrl(cover.fileid);
+  const url = cover.url_size_large || cover.url || cover.url_default || cover.url_pre || cover.url_original;
+  return convertToJpg(url || '');
+};
+
+const mapSearchResult = (note) => {
+  const publishTimeTag = note.corner_tag_info?.find(tag => tag.type === 'publish_time');
+  const coverFromNote = extractCoverUrl(note.cover);
+  const coverIndex = Number.isFinite(Number(note.cover_image_index)) ? Number(note.cover_image_index) : 0;
+  const coverImg = note.images_list?.[coverIndex] || note.images_list?.[0];
+  const coverFromImages = coverImg?.fileid
+    ? buildXhsImageUrl(coverImg.fileid)
+    : convertToJpg(coverImg?.url_size_large || coverImg?.url || '');
+  const coverImage = coverFromNote || coverFromImages;
+
+  const images = (note.images_list || [])
+    .map(img => {
+      if (img.fileid) return buildXhsImageUrl(img.fileid);
+      return convertToJpg(img.url_size_large || img.url);
+    })
+    .filter(Boolean);
+
+  return {
+    noteId: note.id,
+    title: note.title || '',
+    desc: note.desc || '',
+    author: note.user?.nickname || '',
+    authorAvatar: note.user?.images || '',
+    coverImage,
+    images,
+    metrics: {
+      likes: note.liked_count || 0,
+      bookmarks: note.collected_count || 0,
+      comments: note.comments_count || 0,
+      shares: note.shared_count || 0,
+    },
+    publishTime: publishTimeTag?.text || '',
+    xsecToken: note.xsec_token || '',
+    platform: 'Xiaohongshu',
+    sourceUrl: `https://www.xiaohongshu.com/discovery/item/${note.id}?xsec_token=${encodeURIComponent(note.xsec_token || '')}`,
+  };
+};
+
+const mapTwitterSearchResult = (tweet, userById, mediaByKey) => {
+  const user = userById.get(tweet.author_id) || {};
+  const mediaKeys = tweet.attachments?.media_keys || [];
+  const images = mediaKeys
+    .map(key => mediaByKey.get(key))
+    .filter(m => m && (m.type === 'photo' || m.type === 'animated_gif' || m.type === 'video'))
+    .map(m => m.url || m.preview_image_url)
+    .filter(Boolean);
+
+  const coverImage = images[0] || '';
+
+  return {
+    noteId: tweet.id,
+    title: '',
+    desc: tweet.text || '',
+    author: user.username || user.name || '',
+    authorAvatar: user.profile_image_url || '',
+    coverImage,
+    images,
+    metrics: {
+      likes: tweet.public_metrics?.like_count || 0,
+      bookmarks: tweet.public_metrics?.bookmark_count || 0,
+      comments: tweet.public_metrics?.reply_count || 0,
+      shares: tweet.public_metrics?.retweet_count || 0,
+    },
+    publishTime: tweet.created_at || '',
+    xsecToken: '',
+    platform: 'Twitter',
+    sourceUrl: user.username ? `https://twitter.com/${user.username}/status/${tweet.id}` : `https://twitter.com/i/web/status/${tweet.id}`,
+  };
+};
+
+const searchXiaohongshu = async (keyword, page, sort, noteType, noteTime, token, limit) => {
+  let url = `${API_BASE_XHS}/api/xiaohongshu/search-note/v2?token=${token}&keyword=${encodeURIComponent(keyword)}&page=${page}&sort=${sort}&noteType=${noteType}`;
+  if (noteTime) {
+    url += `&noteTime=${encodeURIComponent(noteTime)}`;
+  }
+
+  const response = await fetch(url);
+  const data = await response.json();
+
+  if (data.code !== 0) {
+    throw new Error(data.message || `Search API error (code: ${data.code})`);
+  }
+
+  const items = data.data?.items || [];
+  let notes = items
+    .filter(item => item.model_type === 'note' && item.note)
+    .map(item => mapSearchResult(item.note));
+
+  if (limit && Number.isFinite(Number(limit))) {
+    notes = notes.slice(0, Number(limit));
+  }
+
+  return notes;
+};
+
+const searchTwitter = async (keyword, limit, bearerToken) => {
+  const maxResults = Math.min(Math.max(Number(limit) || 20, 10), 100);
+  const query = `${keyword} -is:retweet`;
+  const endpoint = `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=${maxResults}&tweet.fields=created_at,public_metrics,author_id,attachments&expansions=author_id,attachments.media_keys&user.fields=username,name,profile_image_url&media.fields=type,url,preview_image_url`;
+
+  const response = await fetch(endpoint, {
+    headers: {
+      'Authorization': `Bearer ${bearerToken}`
+    }
+  });
+
+  const data = await response.json();
+  if (!response.ok || data.errors) {
+    const message = data.errors?.[0]?.message || `X API error: ${response.status}`;
+    throw new Error(message);
+  }
+
+  const tweets = data.data || [];
+  const users = data.includes?.users || [];
+  const media = data.includes?.media || [];
+
+  const userById = new Map(users.map(u => [u.id, u]));
+  const mediaByKey = new Map(media.map(m => [m.media_key, m]));
+
+  return tweets.map(tweet => mapTwitterSearchResult(tweet, userById, mediaByKey));
 };
 
 export default async function handler(req, res) {
@@ -95,7 +227,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    const baseUrl = buildBaseUrl(req);
+    const justOneToken = process.env.JUSTONEAPI_TOKEN;
+    const xBearerToken = process.env.X_API_BEARER_TOKEN;
+
+    if (!justOneToken && !xBearerToken) {
+      return res.status(500).json({ error: 'No upstream API tokens configured' });
+    }
 
     const { data: taskRows, error: taskError } = await supabase
       .from('tracking_tasks')
@@ -120,26 +257,21 @@ export default async function handler(req, res) {
       const platforms = (task.platforms && task.platforms.length > 0) ? task.platforms : DEFAULT_PLATFORMS;
       const responses = await Promise.all(
         platforms.map(async (p) => {
-          const payload = {
-            keyword: task.keywords,
-            platform: p === 'Twitter' || p === 'twitter' ? 'twitter' : 'xiaohongshu',
-            page: 1,
-            sort: task.config?.sort || 'popularity_descending',
-            noteType: task.config?.noteType || '_0',
-            noteTime: task.config?.noteTime || undefined,
-            limit: DEFAULT_LIMIT,
-          };
-
-          const resp = await fetch(`${baseUrl}/api/search-social`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-          const data = await resp.json();
-          if (!resp.ok) {
-            throw new Error(data.error || 'Search failed');
+          const isTwitter = p === 'Twitter' || p === 'twitter';
+          if (isTwitter) {
+            if (!xBearerToken) return [];
+            return await searchTwitter(task.keywords, DEFAULT_LIMIT, xBearerToken);
           }
-          return data.results || [];
+          if (!justOneToken) return [];
+          return await searchXiaohongshu(
+            task.keywords,
+            1,
+            task.config?.sort || 'popularity_descending',
+            task.config?.noteType || '_0',
+            task.config?.noteTime || undefined,
+            justOneToken,
+            DEFAULT_LIMIT
+          );
         })
       );
 
