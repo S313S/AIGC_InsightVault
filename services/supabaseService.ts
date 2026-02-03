@@ -240,19 +240,22 @@ export const getCollections = async (): Promise<Collection[]> => {
     return collections;
 };
 
-export const saveCollection = async (collection: Collection): Promise<boolean> => {
-    if (!isSupabaseConnected() || !supabase) return false;
+export const saveCollection = async (collection: Collection): Promise<string | null> => {
+    if (!isSupabaseConnected() || !supabase) return null;
 
-    const { error } = await supabase
+    // 使用 insert 而非 upsert，因为新建收藏夹时不应该覆盖已有记录
+    const { data, error } = await supabase
         .from('collections')
-        .upsert(collectionToDb(collection));
+        .insert(collectionToDb(collection, true)) // skipId = true，让数据库生成 UUID
+        .select('id')
+        .single();
 
     if (error) {
         console.error('Error saving collection:', error);
-        return false;
+        return null;
     }
 
-    return true;
+    return data?.id || null; // 返回数据库生成的 UUID
 };
 
 export const updateCollection = async (collection: Collection): Promise<boolean> => {

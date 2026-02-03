@@ -1,6 +1,7 @@
 // Frontend service to fetch social media content via our backend proxy
 
 const FETCH_SOCIAL_API = '/api/fetch-social';
+const SEARCH_SOCIAL_API = '/api/search-social';
 
 export interface SocialMediaContent {
     platform: 'Twitter' | 'Xiaohongshu' | string;
@@ -17,6 +18,33 @@ export interface SocialMediaContent {
     tags: string[];
     sourceUrl: string;
     error?: string;
+}
+
+export interface SocialSearchParams {
+    keyword: string;
+    platform: 'xiaohongshu' | 'twitter';
+    page?: number;
+    sort?: string;
+    noteType?: string;
+    noteTime?: string;
+    limit?: number;
+}
+
+export async function searchSocial(params: SocialSearchParams) {
+    const response = await fetch(SEARCH_SOCIAL_API, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(params),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.error || 'Search failed');
+    }
+
+    return data;
 }
 
 export async function fetchSocialContent(url: string): Promise<SocialMediaContent> {

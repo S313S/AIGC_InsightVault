@@ -76,6 +76,26 @@ export interface FilterState {
   selectedTopic: string;
 }
 
+export interface SocialSearchResult {
+  noteId: string;
+  title: string;
+  desc: string;
+  author: string;
+  authorAvatar: string;
+  coverImage: string;
+  images: string[];
+  metrics: {
+    likes: number;
+    bookmarks: number;
+    comments: number;
+    shares: number;
+  };
+  publishTime: string;
+  xsecToken?: string;
+  sourceUrl: string;
+  platform: Platform;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';

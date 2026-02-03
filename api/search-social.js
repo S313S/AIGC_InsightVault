@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     }
 
     try {
-        const { keyword, page = 1, sort = 'general', noteType = '_0', noteTime, platform = 'xiaohongshu' } = req.body;
+        const { keyword, page = 1, sort = 'general', noteType = '_0', noteTime, platform = 'xiaohongshu', limit } = req.body;
 
         if (!keyword) {
             return res.status(400).json({ error: 'keyword is required' });
@@ -30,11 +30,15 @@ export default async function handler(req, res) {
         }
 
         if (platform === 'xiaohongshu') {
-            const results = await searchXiaohongshu(keyword, page, sort, noteType, noteTime, token);
+            const results = await searchXiaohongshu(keyword, page, sort, noteType, noteTime, token, limit);
             return res.status(200).json(results);
         }
 
-        // TODO: Add Twitter search support
+        if (platform === 'twitter') {
+            const results = await searchTwitter(keyword, limit);
+            return res.status(200).json(results);
+        }
+
         return res.status(400).json({ error: `Platform ${platform} not supported for search` });
 
     } catch (error) {
@@ -43,7 +47,7 @@ export default async function handler(req, res) {
     }
 }
 
-async function searchXiaohongshu(keyword, page, sort, noteType, noteTime, token) {
+async function searchXiaohongshu(keyword, page, sort, noteType, noteTime, token, limit) {
     // Build search URL
     let url = `${API_BASE}/api/xiaohongshu/search-note/v2?token=${token}&keyword=${encodeURIComponent(keyword)}&page=${page}&sort=${sort}&noteType=${noteType}`;
 
@@ -60,14 +64,57 @@ async function searchXiaohongshu(keyword, page, sort, noteType, noteTime, token)
 
     // Parse items from response
     const items = data.data?.items || [];
-    const notes = items
+    let notes = items
         .filter(item => item.model_type === 'note' && item.note)
         .map(item => mapSearchResult(item.note));
+
+    if (limit && Number.isFinite(Number(limit))) {
+        notes = notes.slice(0, Number(limit));
+    }
 
     return {
         total: notes.length,
         page,
         results: notes,
+    };
+}
+
+async function searchTwitter(keyword, limit) {
+    const xBearerToken = process.env.X_API_BEARER_TOKEN;
+    if (!xBearerToken) {
+        throw new Error('X API Bearer Token not configured');
+    }
+
+    const maxResults = Math.min(Math.max(Number(limit) || 20, 10), 100);
+    const query = `${keyword} -is:retweet`;
+    const endpoint = `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=${maxResults}&tweet.fields=created_at,public_metrics,author_id,attachments&expansions=author_id,attachments.media_keys&user.fields=username,name,profile_image_url&media.fields=type,url,preview_image_url`;
+
+    const response = await fetch(endpoint, {
+        headers: {
+            'Authorization': `Bearer ${xBearerToken}`
+        }
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || data.errors) {
+        const message = data.errors?.[0]?.message || `X API error: ${response.status}`;
+        throw new Error(message);
+    }
+
+    const tweets = data.data || [];
+    const users = data.includes?.users || [];
+    const media = data.includes?.media || [];
+
+    const userById = new Map(users.map(u => [u.id, u]));
+    const mediaByKey = new Map(media.map(m => [m.media_key, m]));
+
+    const results = tweets.map(tweet => mapTwitterSearchResult(tweet, userById, mediaByKey));
+
+    return {
+        total: results.length,
+        page: 1,
+        results,
     };
 }
 
@@ -130,7 +177,40 @@ function mapSearchResult(note) {
         },
         publishTime: publishTimeTag?.text || '',
         xsecToken: note.xsec_token || '',
+        platform: 'Xiaohongshu',
         // 使用discovery链接，配合xsec_token参数
         sourceUrl: `https://www.xiaohongshu.com/discovery/item/${note.id}?xsec_token=${encodeURIComponent(note.xsec_token || '')}`,
+    };
+}
+
+function mapTwitterSearchResult(tweet, userById, mediaByKey) {
+    const user = userById.get(tweet.author_id) || {};
+    const mediaKeys = tweet.attachments?.media_keys || [];
+    const images = mediaKeys
+        .map(key => mediaByKey.get(key))
+        .filter(m => m && (m.type === 'photo' || m.type === 'animated_gif' || m.type === 'video'))
+        .map(m => m.url || m.preview_image_url)
+        .filter(Boolean);
+
+    const coverImage = images[0] || '';
+
+    return {
+        noteId: tweet.id,
+        title: '',
+        desc: tweet.text || '',
+        author: user.username || user.name || '',
+        authorAvatar: user.profile_image_url || '',
+        coverImage,
+        images,
+        metrics: {
+            likes: tweet.public_metrics?.like_count || 0,
+            bookmarks: tweet.public_metrics?.bookmark_count || 0,
+            comments: tweet.public_metrics?.reply_count || 0,
+            shares: tweet.public_metrics?.retweet_count || 0,
+        },
+        publishTime: tweet.created_at || '',
+        xsecToken: '',
+        platform: 'Twitter',
+        sourceUrl: user.username ? `https://twitter.com/${user.username}/status/${tweet.id}` : `https://twitter.com/i/web/status/${tweet.id}`,
     };
 }

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { LayoutGrid, Plus, Search, Database, Menu, MessageSquare, Activity, Home, Folder, X, Check, MoreVertical, Edit2, Trash2, CheckSquare, FolderPlus, Sparkles, Loader2 } from './components/Icons';
 import { Card } from './components/Card';
 import { DetailModal } from './components/DetailModal';
@@ -7,14 +7,19 @@ import { ChatView } from './components/ChatView';
 import { MonitoringView } from './components/MonitoringView';
 import { DashboardView } from './components/DashboardView';
 import { INITIAL_DATA, INITIAL_TASKS, TRENDING_DATA, INITIAL_COLLECTIONS } from './mockData';
-import { KnowledgeCard, FilterState, TrackingTask, Collection, ContentType } from './types';
+import { KnowledgeCard, FilterState, TrackingTask, Collection, ContentType, Platform, SocialSearchResult, TaskStatus } from './types';
 import { isSupabaseConnected } from './services/supabaseClient';
 import * as db from './services/supabaseService';
+import { searchSocial } from './services/socialService';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 
 // Updated categories
 const POPULAR_TOPICS = ['All', 'Image Gen', 'Video Gen', 'Vibe Coding'];
+
+const AUTO_MONITOR_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000;
+const ENABLE_CLIENT_MONITORING = false;
+const DEFAULT_MONITOR_KEYWORDS = ['AI', 'AIGC', '人工智能', '大模型', 'LLM', 'GPT', 'Claude'];
 
 const App: React.FC = () => {
   const [cards, setCards] = useState<KnowledgeCard[]>([]);
@@ -28,6 +33,10 @@ const App: React.FC = () => {
 
   // Loading State
   const [isLoading, setIsLoading] = useState(true);
+  const autoMonitoringRef = useRef(false);
+  const tasksRef = useRef<TrackingTask[]>([]);
+  const cardsRef = useRef<KnowledgeCard[]>([]);
+  const trendingRef = useRef<KnowledgeCard[]>([]);
 
   // Chat Context State
   const [chatScope, setChatScope] = useState<{ cards: KnowledgeCard[], title: string }>({
@@ -90,6 +99,175 @@ const App: React.FC = () => {
 
     loadData();
   }, []);
+
+  useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
+
+  useEffect(() => {
+    cardsRef.current = cards;
+  }, [cards]);
+
+  useEffect(() => {
+    trendingRef.current = trending;
+  }, [trending]);
+
+  const inferCategoryTag = (text: string) => {
+    const t = (text || '').toLowerCase();
+    const imageKeywords = [
+      'image', 'img', 'photo', 'picture', '图', '图片', '绘画', '生图', '海报', '头像',
+      'midjourney', 'mj', 'stable diffusion', 'sd', 'comfyui', 'flux', 'krea',
+      'lora', 'controlnet', 'prompt', '风格化', '修图', '上色'
+    ];
+    const videoKeywords = [
+      'video', '视频', 'animation', '动画', '短片', '剪辑', '镜头',
+      'runway', 'gen-3', 'gen3', 'kling', '可灵', 'pika', 'sora', 'veo', 'luma'
+    ];
+    const vibeKeywords = [
+      'code', 'coding', '程序', '编程', '开发', '工程', 'repo', 'github', 'git',
+      'cursor', 'claude code', 'vibe coding', 'vscode', 'ide', 'agent', 'workflow',
+      '自动化', '前端', '后端', 'python', 'node', 'typescript', 'react', 'prompt engineering'
+    ];
+
+    const hasAny = (arr: string[]) => arr.some(k => t.includes(k));
+    if (hasAny(imageKeywords)) return 'Image Gen';
+    if (hasAny(videoKeywords)) return 'Video Gen';
+    if (hasAny(vibeKeywords)) return 'Vibe Coding';
+    return '';
+  };
+
+  const buildTrendingCard = (result: SocialSearchResult): KnowledgeCard => {
+    const baseText = result.desc || result.title || '';
+    const summary = baseText
+      ? (baseText.length > 160 ? baseText.slice(0, 160) + '...' : baseText)
+      : '暂无摘要';
+    const extractedTags = (result.desc || '').match(/#[^\s#]+/g)?.map(t => t.slice(1)) || [];
+    const category = inferCategoryTag(baseText);
+    const tags = category ? Array.from(new Set([category, ...extractedTags])) : extractedTags;
+
+    return {
+      id: crypto.randomUUID(),
+      title: result.title || result.desc?.slice(0, 40) || '无标题',
+      sourceUrl: result.sourceUrl,
+      platform: result.platform,
+      author: result.author,
+      date: result.publishTime || '',
+      coverImage: result.coverImage || result.images?.[0] || '',
+      metrics: result.metrics,
+      contentType: ContentType.PromptShare,
+      rawContent: result.desc || '',
+      aiAnalysis: {
+        summary,
+        usageScenarios: [],
+        coreKnowledge: [],
+        extractedPrompts: []
+      },
+      tags,
+      userNotes: '',
+      collections: [],
+    };
+  };
+
+  const runAutoMonitoring = async () => {
+    if (autoMonitoringRef.current) return;
+    if (document.hidden) return;
+
+    autoMonitoringRef.current = true;
+    try {
+      const activeTasks: TrackingTask[] = tasksRef.current.length > 0 ? tasksRef.current : [{
+        id: 'default',
+        keywords: DEFAULT_MONITOR_KEYWORDS.join(' '),
+        platforms: [Platform.Xiaohongshu, Platform.Twitter],
+        dateRange: { start: '', end: '' },
+        status: TaskStatus.Running,
+        itemsFound: 0,
+        lastRun: '',
+        config: { sort: 'popularity_descending', noteTime: '一周内' }
+      }];
+
+      const knownSourceUrls = new Set(
+        [...cardsRef.current, ...trendingRef.current].map(c => c.sourceUrl).filter(Boolean)
+      );
+
+      const newTrending: KnowledgeCard[] = [];
+      const updatedTasks: TrackingTask[] = [];
+
+      for (const task of activeTasks) {
+        const platforms = task.platforms?.length ? task.platforms : [Platform.Xiaohongshu, Platform.Twitter];
+        const responses = await Promise.all(
+          platforms.map(p => searchSocial({
+            keyword: task.keywords,
+            platform: p === Platform.Twitter ? 'twitter' : 'xiaohongshu',
+            page: 1,
+            sort: task.config?.sort || 'popularity_descending',
+            noteType: task.config?.noteType || '_0',
+            noteTime: task.config?.noteTime || undefined,
+            limit: 20,
+          }))
+        );
+
+        let results: SocialSearchResult[] = responses.flatMap(r => r.results || []);
+
+        const minInter = task.config?.minInteraction;
+        if (minInter && !isNaN(Number(minInter))) {
+          const min = Number(minInter);
+          results = results.filter((r: SocialSearchResult) => {
+            const total = (r.metrics.likes || 0) + (r.metrics.bookmarks || 0) + (r.metrics.comments || 0);
+            return total >= min;
+          });
+        }
+
+        for (const result of results) {
+          if (!result?.sourceUrl || knownSourceUrls.has(result.sourceUrl)) continue;
+          knownSourceUrls.add(result.sourceUrl);
+          newTrending.push(buildTrendingCard(result));
+        }
+
+        if (task.id !== 'default') {
+          const updatedTask: TrackingTask = {
+            ...task,
+            status: TaskStatus.Completed,
+            itemsFound: results.length,
+            lastRun: new Date().toISOString(),
+          };
+          updatedTasks.push(updatedTask);
+        }
+      }
+
+      if (newTrending.length > 0) {
+        setTrending(prev => [...newTrending, ...prev].slice(0, 60));
+        if (isSupabaseConnected()) {
+          for (const card of newTrending) {
+            await db.saveCard(card, true);
+          }
+        }
+      }
+
+      if (updatedTasks.length > 0) {
+        setTasks(prev => prev.map(t => {
+          const updated = updatedTasks.find(u => u.id === t.id);
+          return updated || t;
+        }));
+        if (isSupabaseConnected()) {
+          for (const task of updatedTasks) {
+            await db.saveTask(task);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Auto monitoring failed:', err);
+    } finally {
+      autoMonitoringRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!ENABLE_CLIENT_MONITORING) return;
+    runAutoMonitoring();
+    const timer = setInterval(runAutoMonitoring, AUTO_MONITOR_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [isLoading]);
 
   // 刷新知识库卡片
   const refreshCards = async () => {
@@ -224,19 +402,38 @@ const App: React.FC = () => {
 
   const confirmCreateCollection = async () => {
     if (newCollectionName.trim()) {
+      // 使用固定的 placeholder 图片，避免刷新时变化
+      const placeholderImages = [
+        'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=200&h=200&fit=crop', // books
+        'https://images.unsplash.com/photo-1507842217343-583bb7270b66?w=200&h=200&fit=crop', // library
+        'https://images.unsplash.com/photo-1532012197267-da84d127e765?w=200&h=200&fit=crop', // book stack
+        'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?w=200&h=200&fit=crop', // coffee & book
+        'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=200&h=200&fit=crop', // study desk
+      ];
+      const randomIndex = collections.length % placeholderImages.length;
+
       const newCollection: Collection = {
-        id: `c_${Date.now()}`,
+        id: `c_${Date.now()}`, // 临时 ID，数据库会返回真正的 UUID
         name: newCollectionName,
-        coverImage: `https://picsum.photos/200/200?random=${Date.now()}`,
+        coverImage: placeholderImages[randomIndex],
         itemCount: 0
       };
-      setCollections(prev => [...prev, newCollection]);
-      setNewCollectionName('');
-      setIsCreatingCollection(false);
 
       if (isSupabaseConnected()) {
-        await db.saveCollection(newCollection);
+        const newId = await db.saveCollection(newCollection);
+        if (newId) {
+          // 使用数据库返回的真实 UUID
+          setCollections(prev => [...prev, { ...newCollection, id: newId }]);
+        } else {
+          // 如果保存失败，仍然添加到本地（离线模式）
+          setCollections(prev => [...prev, newCollection]);
+        }
+      } else {
+        setCollections(prev => [...prev, newCollection]);
       }
+
+      setNewCollectionName('');
+      setIsCreatingCollection(false);
     }
   };
 

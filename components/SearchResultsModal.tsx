@@ -1,31 +1,13 @@
 import React, { useState } from 'react';
 import { X, Check, ExternalLink, Loader2, Heart, Bookmark, MessageCircle } from './Icons';
-
-export interface SearchResult {
-    noteId: string;
-    title: string;
-    desc: string;
-    author: string;
-    authorAvatar: string;
-    coverImage: string;
-    images: string[];
-    metrics: {
-        likes: number;
-        bookmarks: number;
-        comments: number;
-        shares: number;
-    };
-    publishTime: string;
-    xsecToken: string;
-    sourceUrl: string;
-}
+import { SocialSearchResult } from '../types';
 
 interface SearchResultsModalProps {
-    results: SearchResult[];
+    results: SocialSearchResult[];
     keyword: string;
     isLoading: boolean;
     onClose: () => void;
-    onSaveSelected: (results: SearchResult[]) => void;
+    onSaveSelected: (results: SocialSearchResult[]) => void;
 }
 
 export const SearchResultsModal: React.FC<SearchResultsModalProps> = ({

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { TrackingTask, Platform, TaskStatus, KnowledgeCard, ContentType } from '../types';
+import { TrackingTask, Platform, TaskStatus, KnowledgeCard, ContentType, SocialSearchResult } from '../types';
 import { Play, Clock, Check, Plus, Trash2, Calendar, Activity, Loader2, Search } from './Icons';
-import { SearchResultsModal, SearchResult } from './SearchResultsModal';
+import { SearchResultsModal } from './SearchResultsModal';
 import { saveCard } from '../services/supabaseService';
 import { analyzeContentWithGemini, classifyContentWithGemini } from '../services/geminiService';
+import { searchSocial } from '../services/socialService';
 
 const CATEGORY_TAGS = ['Image Gen', 'Video Gen', 'Vibe Coding'];
 
@@ -79,7 +80,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
 
     // Search State
     const [isSearching, setIsSearching] = useState(false);
-    const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+    const [searchResults, setSearchResults] = useState<SocialSearchResult[]>([]);
     const [showResults, setShowResults] = useState(false);
     const [searchError, setSearchError] = useState('');
     const [reviewingTaskId, setReviewingTaskId] = useState<string | null>(null);
@@ -92,7 +93,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
     const CACHE_KEY = 'search_cache';
     const CACHE_EXPIRY = 60 * 60 * 1000; // 1小时
 
-    const getCachedResults = (taskId: string): SearchResult[] | null => {
+    const getCachedResults = (taskId: string): SocialSearchResult[] | null => {
         try {
             const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
             const entry = cache[taskId];
@@ -103,7 +104,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
         return null;
     };
 
-    const setCachedResults = (taskId: string, results: SearchResult[]) => {
+    const setCachedResults = (taskId: string, results: SocialSearchResult[]) => {
         try {
             const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
             cache[taskId] = { results, timestamp: Date.now() };
@@ -146,31 +147,27 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
         setSearchResults([]);
 
         try {
-            const response = await fetch('/api/search-social', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    keyword: keywords,
-                    page: 1,
-                    sort,
-                    noteType: '_0',
-                    noteTime: noteTime || undefined,
-                    platform: 'xiaohongshu',
-                }),
-            });
+            const platforms = selectedPlatforms.length > 0 ? selectedPlatforms : [Platform.Xiaohongshu];
+            const responses = await Promise.all(
+                platforms.map((p) =>
+                    searchSocial({
+                        keyword: keywords,
+                        page: 1,
+                        sort,
+                        noteType: '_0',
+                        noteTime: noteTime || undefined,
+                        platform: p === Platform.Twitter ? 'twitter' : 'xiaohongshu',
+                        limit: resultLimit,
+                    })
+                )
+            );
 
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || '搜索失败');
-            }
-
-            let results = data.results || [];
+            let results = responses.flatMap((r) => r.results || []);
 
             // 前端过滤：最小互动量
             if (minInteraction && !isNaN(Number(minInteraction))) {
                 const min = Number(minInteraction);
-                results = results.filter((r: SearchResult) => {
+                results = results.filter((r: SocialSearchResult) => {
                     const total = (r.metrics.likes || 0) + (r.metrics.bookmarks || 0) + (r.metrics.comments || 0);
                     return total >= min;
                 });
@@ -192,7 +189,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
             const newTask: TrackingTask = {
                 id: Date.now().toString(),
                 keywords: keywords,
-                platforms: [Platform.Xiaohongshu],
+                platforms: platforms,
                 dateRange: {
                     start: today.toISOString().split('T')[0],
                     end: endDate.toISOString().split('T')[0],
@@ -275,36 +272,32 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
         setSearchResults([]);
 
         try {
-            const response = await fetch('/api/search-social', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    keyword: taskKeywords,
-                    page: 1,
-                    sort: config?.sort || 'general',
-                    noteType: config?.noteType || '_0',
-                    noteTime: config?.noteTime || undefined,
-                    platform: 'xiaohongshu',
-                }),
-            });
+                const platforms = task.platforms.length > 0 ? task.platforms : [Platform.Xiaohongshu];
+                const responses = await Promise.all(
+                    platforms.map((p) =>
+                        searchSocial({
+                            keyword: taskKeywords,
+                            page: 1,
+                            sort: config?.sort || 'general',
+                            noteType: config?.noteType || '_0',
+                            noteTime: config?.noteTime || undefined,
+                            platform: p === Platform.Twitter ? 'twitter' : 'xiaohongshu',
+                            limit: resultLimit,
+                        })
+                    )
+                );
 
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || '搜索失败');
-            }
-
-            let results = data.results || [];
+                let results = responses.flatMap((r) => r.results || []);
 
             // 前端过滤：最小互动量（注意：Review时也应用当前的过滤设置）
-            const minInter = config?.minInteraction || minInteraction;
-            if (minInter && !isNaN(Number(minInter))) {
-                const min = Number(minInter);
-                results = results.filter((r: SearchResult) => {
-                    const total = (r.metrics.likes || 0) + (r.metrics.bookmarks || 0) + (r.metrics.comments || 0);
-                    return total >= min;
-                });
-            }
+                const minInter = config?.minInteraction || minInteraction;
+                if (minInter && !isNaN(Number(minInter))) {
+                    const min = Number(minInter);
+                    results = results.filter((r: SocialSearchResult) => {
+                        const total = (r.metrics.likes || 0) + (r.metrics.bookmarks || 0) + (r.metrics.comments || 0);
+                        return total >= min;
+                    });
+                }
 
             // 前端限制：结果数量
             if (resultLimit > 0) {
@@ -324,7 +317,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
         }
     };
 
-    const handleSaveSelected = async (results: SearchResult[]) => {
+    const handleSaveSelected = async (results: SocialSearchResult[]) => {
         let saved = 0;
 
         for (const result of results) {
@@ -373,10 +366,10 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                     id: crypto.randomUUID(),
                     title: result.title || result.desc?.slice(0, 30) || '无标题',
                     sourceUrl: result.sourceUrl,
-                    platform: Platform.Xiaohongshu,
+                    platform: result.platform,
                     author: result.author,
                     date: result.publishTime,
-                    coverImage: result.coverImage,
+                    coverImage: result.coverImage || result.images?.[0] || '',
                     metrics: result.metrics,
                     contentType: ContentType.PromptShare,
                     rawContent: result.desc || '',
@@ -445,6 +438,26 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                     onChange={(e) => setKeywords(e.target.value)}
                                 // onKeyDown removed to prevent accidental submission
                                 />
+                            </div>
+                            <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">平台</label>
+                                <div className="flex gap-2 flex-wrap">
+                                    {[
+                                        { value: Platform.Xiaohongshu, label: '小红书' },
+                                        { value: Platform.Twitter, label: 'Twitter / X' },
+                                    ].map(opt => (
+                                        <button
+                                            key={opt.value}
+                                            onClick={() => togglePlatform(opt.value)}
+                                            className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${selectedPlatforms.includes(opt.value)
+                                                ? 'bg-indigo-50 border-indigo-500 text-indigo-700'
+                                                : 'bg-white border-gray-200 text-gray-600'
+                                                }`}
+                                        >
+                                            {opt.label}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">时间范围</label>
