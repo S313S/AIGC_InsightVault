@@ -177,12 +177,13 @@ const isRecentEnough = (dateStr, windowDays = RECENT_DAYS) => {
 const computeInteraction = (item) => {
   if (!item) return 0;
   if (item.platform === 'Twitter') {
-    const likes = item.metrics?.likes || 0;
-    const replies = item.metrics?.comments || 0;
-    const retweets = item.metrics?.shares || 0;
-    const bookmarks = item.metrics?.bookmarks || 0;
-    const quoteCount = item.metrics?.quotes || 0;
-    return likes + replies + retweets + bookmarks + quoteCount;
+    const raw = item.metricsRaw || {};
+    const likes = raw.like_count ?? item.metrics?.likes ?? 0;
+    const replies = raw.reply_count ?? item.metrics?.comments ?? 0;
+    const retweets = raw.retweet_count ?? item.metrics?.shares ?? 0;
+    const quotes = raw.quote_count ?? item.metrics?.quotes ?? 0;
+    const bookmarks = raw.bookmark_count ?? item.metrics?.bookmarks ?? 0;
+    return likes + replies + retweets + quotes + bookmarks;
   }
   // Xiaohongshu + others
   return (item.metrics?.likes || 0) + (item.metrics?.bookmarks || 0) + (item.metrics?.comments || 0);
@@ -315,6 +316,7 @@ const mapTwitterSearchResult = (tweet, userById, mediaByKey) => {
       shares: tweet.public_metrics?.retweet_count || 0,
       quotes: tweet.public_metrics?.quote_count || 0,
     },
+    metricsRaw: tweet.public_metrics || {},
     publishTime: tweet.created_at || '',
     xsecToken: '',
     platform: 'Twitter',
