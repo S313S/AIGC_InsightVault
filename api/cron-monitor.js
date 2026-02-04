@@ -334,6 +334,13 @@ export default async function handler(req, res) {
     const allResults = [];
     const platformStats = [];
     const platformErrors = [];
+    const funnel = {
+      fetched: 0,
+      afterMinInteraction: 0,
+      afterRecent: 0,
+      afterAI: 0,
+      candidates: 0
+    };
     const snapshotId = new Date().toISOString();
     const snapshotTag = `snapshot:${snapshotId}`;
     const updatedTasks = [];
@@ -376,6 +383,7 @@ export default async function handler(req, res) {
       );
 
       let results = responses.flat();
+      funnel.fetched += results.length;
 
       const minInter = task.config?.minInteraction;
       const minValue = (!minInter || isNaN(Number(minInter))) ? effectiveMinInteraction : Number(minInter);
@@ -385,9 +393,12 @@ export default async function handler(req, res) {
           return total >= minValue;
         });
       }
+      funnel.afterMinInteraction += results.length;
 
       results = results.filter((r) => isRecentEnough(r.publishTime, effectiveRecentDays));
+      funnel.afterRecent += results.length;
       results = results.filter((r) => isAIRelevant(`${r.title || ''}\n${r.desc || ''}`));
+      funnel.afterAI += results.length;
 
       allResults.push(...results);
 
@@ -410,6 +421,7 @@ export default async function handler(req, res) {
       if (r?.sourceUrl) uniqueByUrl.set(r.sourceUrl, r);
     }
     const candidates = Array.from(uniqueByUrl.values());
+    funnel.candidates = candidates.length;
 
     if (candidates.length === 0) {
       return res.status(200).json({
@@ -550,6 +562,7 @@ export default async function handler(req, res) {
         limit: effectiveLimit,
         tasks: effectiveMaxTasks
       },
+      funnel,
       platformStats,
       platformErrors
     });
