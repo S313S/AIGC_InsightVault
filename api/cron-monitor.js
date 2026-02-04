@@ -174,6 +174,20 @@ const isRecentEnough = (dateStr, windowDays = RECENT_DAYS) => {
   return diffDays <= windowDays;
 };
 
+const computeInteraction = (item) => {
+  if (!item) return 0;
+  if (item.platform === 'Twitter') {
+    const likes = item.metrics?.likes || 0;
+    const replies = item.metrics?.comments || 0;
+    const retweets = item.metrics?.shares || 0;
+    const bookmarks = item.metrics?.bookmarks || 0;
+    const quoteCount = item.metrics?.quotes || 0;
+    return likes + replies + retweets + bookmarks + quoteCount;
+  }
+  // Xiaohongshu + others
+  return (item.metrics?.likes || 0) + (item.metrics?.bookmarks || 0) + (item.metrics?.comments || 0);
+};
+
 const buildTrendingRow = (result, snapshotTag) => {
   const baseText = result.desc || result.title || '';
   const summary = baseText
@@ -296,9 +310,10 @@ const mapTwitterSearchResult = (tweet, userById, mediaByKey) => {
     images: images.length > 0 ? images : (user.profile_image_url ? [user.profile_image_url] : []),
     metrics: {
       likes: tweet.public_metrics?.like_count || 0,
-      bookmarks: tweet.public_metrics?.retweet_count || 0,
+      bookmarks: tweet.public_metrics?.bookmark_count || 0,
       comments: tweet.public_metrics?.reply_count || 0,
       shares: tweet.public_metrics?.retweet_count || 0,
+      quotes: tweet.public_metrics?.quote_count || 0,
     },
     publishTime: tweet.created_at || '',
     xsecToken: '',
@@ -565,10 +580,7 @@ export default async function handler(req, res) {
 
       const minValue = effectiveMinInteraction;
       if (minValue > 0) {
-        results = results.filter((r) => {
-          const total = (r.metrics?.likes || 0) + (r.metrics?.bookmarks || 0) + (r.metrics?.comments || 0);
-          return total >= minValue;
-        });
+        results = results.filter((r) => computeInteraction(r) >= minValue);
       }
       funnel.afterMinInteraction += results.length;
       for (const item of results) {
