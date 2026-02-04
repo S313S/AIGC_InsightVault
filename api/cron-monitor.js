@@ -2,18 +2,56 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const DEFAULT_MONITOR_KEYWORDS = ['AI', 'AIGC', '人工智能', '大模型', 'LLM', 'GPT', 'Claude'];
+// Search keywords: high-volume terms covering all 3 categories (used for API searches)
+const DEFAULT_MONITOR_KEYWORDS = [
+  // Core AI terms
+  'AI', 'AIGC', '人工智能', '大模型',
+  // Image Gen - high-volume search terms
+  'Midjourney', 'AI绘画', 'Stable Diffusion', 'AI绘图',
+  // Video Gen - high-volume search terms
+  '可灵', 'Sora', 'AI视频', 'Runway', '即梦',
+  // Vibe Coding - high-volume search terms
+  'Claude Code', 'Cursor', 'Vibe Coding', 'AI编程'
+];
 const DEFAULT_PLATFORMS = ['xiaohongshu', 'twitter'];
 const DEFAULT_LIMIT = 10;
 const DEFAULT_MIN_INTERACTION = 5000;
 const RECENT_DAYS = 3;
 const MAX_TASKS_PER_RUN = 3;
 
+// Expanded AI keyword pool for better coverage (from research on Twitter/X and Xiaohongshu trends)
 const AI_KEYWORDS = [
-  'ai', 'a.i.', '人工智能', '大模型', 'llm', 'gpt', 'claude', 'openai',
-  'midjourney', 'stable diffusion', 'sd', 'comfyui', 'flux', 'krea',
-  'runway', 'gen-3', 'gen3', 'sora', 'veo', 'pika', 'luma', 'kling', '可灵',
-  'chatbot', 'agent', 'prompt', '模型', '算法', '训练', '推理', '生成', '文生图', '图生图', '文生视频'
+  // === Core AI Terms ===
+  'ai', 'a.i.', '人工智能', '大模型', 'llm', 'gpt', 'claude', 'openai', 'anthropic', 'gemini', 'deepseek',
+  'chatbot', 'agent', 'prompt', '模型', '算法', '训练', '推理', '生成',
+
+  // === Image Gen - Tools (EN) ===
+  'midjourney', 'mj', 'stable diffusion', 'sd', 'sdxl', 'comfyui', 'flux', 'krea',
+  'dall-e', 'dalle', 'leonardo', 'firefly', 'ideogram', 'playground',
+  'lora', 'controlnet', 'nijijourney', 'synthography',
+  // Image Gen - Hashtags (EN)
+  'aiart', 'aiartcommunity', 'aiartist', 'generativeart', 'promptshare', 'aigeneratedart',
+  // Image Gen - Chinese
+  'ai绘画', 'ai绘图', 'ai生图', 'ai头像', 'ai壁纸', 'ai海报', '文生图', '图生图',
+  'ai写真', 'ai换脸', '治愈系插画', '国潮插画', '妙鸭', '此刻', 'trik',
+
+  // === Video Gen - Tools (EN) ===
+  'runway', 'gen-3', 'gen3', 'sora', 'veo', 'veo3', 'pika', 'luma',
+  'haiper', 'hailuo', 'minimax', 'ray2', 'stability video',
+  // Video Gen - Hashtags (EN)
+  'aivideo', 'videogeneration', 'textovideo',
+  // Video Gen - Chinese
+  'kling', '可灵', '即梦', '海螺', 'pixverse', '混元视频',
+  'ai视频', 'ai生成视频', '文生视频', '图生视频', 'ai动画', 'ai短片', 'ai特效', '一键生成视频',
+
+  // === Vibe Coding - Tools (EN) ===
+  'cursor', 'claude code', 'vibe coding', 'copilot', 'codex', 'replit',
+  'windsurf', 'aider', 'codeium', 'tabnine', 'v0', 'bolt', 'lovable', 'devin', 'continue', 'cody',
+  // Vibe Coding - Hashtags (EN)
+  'vibecoding', 'aicoding', 'aicode', 'codingwithai',
+  // Vibe Coding - Chinese
+  'marscode', '通义灵码', 'codegeex',
+  'ai编程', 'ai写代码', 'ai开发', 'ai工程师', '一人公司', 'ai超级个体', '独立开发者', '零代码'
 ];
 
 const isAIRelevant = (text) => {
@@ -24,19 +62,56 @@ const isAIRelevant = (text) => {
 const inferCategoryTag = (text) => {
   if (!isAIRelevant(text)) return '';
   const t = (text || '').toLowerCase();
+
+  // === Image Gen Keywords (Complete) ===
   const imageKeywords = [
-    'image', 'img', 'photo', 'picture', '图', '图片', '绘画', '生图', '海报', '头像',
-    'midjourney', 'mj', 'stable diffusion', 'sd', 'comfyui', 'flux', 'krea',
-    'lora', 'controlnet', 'prompt', '风格化', '修图', '上色'
+    // Core terms
+    'image', 'img', 'photo', 'picture', '图', '图片', '绘画', '生图', '海报', '头像', '壁纸', '写真',
+    // Tools (EN)
+    'midjourney', 'mj', 'stable diffusion', 'sd', 'sdxl', 'comfyui', 'flux', 'krea',
+    'dall-e', 'dalle', 'leonardo', 'firefly', 'ideogram', 'playground',
+    // Techniques
+    'lora', 'controlnet', 'prompt', '风格化', '修图', '上色', 'nijijourney', 'synthography',
+    // Hashtags (EN)
+    'aiart', 'aiartcommunity', 'aiartist', 'generativeart', 'promptshare', 'aigeneratedart',
+    'midjourneyart', 'midjourneyai', 'stablediffusionart',
+    // Chinese specific
+    'ai绘画', 'ai绘图', 'ai生图', 'ai头像', 'ai壁纸', 'ai海报', '文生图', '图生图', 'ai写真', 'ai换脸',
+    '治愈系插画', '国潮插画', '妙鸭', '此刻', 'trik', '莫兰迪色'
   ];
+
+  // === Video Gen Keywords (Complete) ===
   const videoKeywords = [
-    'video', '视频', 'animation', '动画', '短片', '剪辑', '镜头',
-    'runway', 'gen-3', 'gen3', 'kling', '可灵', 'pika', 'sora', 'veo', 'luma'
+    // Core terms
+    'video', '视频', 'animation', '动画', '短片', '剪辑', '镜头', '特效',
+    // Tools (EN)
+    'runway', 'runwaygen3', 'runwayml', 'gen-3', 'gen3', 'sora', 'openaisora', 'veo', 'veo3',
+    'pika', 'pikalabs', 'luma', 'lumadream', 'haiper', 'hailuo', 'minimax', 'ray2', 'stability video',
+    // Hashtags (EN)
+    'aivideo', 'videogeneration', 'textovideo', 'klingai',
+    // Tools & Terms (CN)
+    'kling', '可灵', '即梦', '海螺', 'pixverse', '混元视频',
+    'ai视频', 'ai生成视频', '文生视频', '图生视频', 'ai动画', 'ai短片', 'ai特效', '一键生成视频'
   ];
+
+  // === Vibe Coding Keywords (Complete) ===
   const vibeKeywords = [
+    // Core terms
     'code', 'coding', '程序', '编程', '开发', '工程', 'repo', 'github', 'git',
-    'cursor', 'claude code', 'vibe coding', 'vscode', 'ide', 'agent', 'workflow',
-    '自动化', '前端', '后端', 'python', 'node', 'typescript', 'react', 'prompt engineering'
+    // Tools (EN)
+    'cursor', 'cursorai', 'claude code', 'vibe coding', 'copilot', 'githubcopilot',
+    'codex', 'openaicodex', 'replit', 'replitagent', 'windsurf', 'aider', 'codeium', 'tabnine',
+    'v0', 'v0dev', 'bolt', 'lovable', 'devin', 'continue', 'cody',
+    // Hashtags (EN)
+    'vibecoding', 'aicoding', 'aicode', 'codingwithai',
+    // Tools (CN)
+    'marscode', '通义灵码', 'codegeex',
+    // IDE & Environment
+    'vscode', 'ide', 'terminal', 'cli',
+    // Concepts
+    'agent', 'workflow', '自动化', '前端', '后端', 'python', 'node', 'typescript', 'react', 'prompt engineering',
+    // Chinese specific
+    'ai编程', 'ai写代码', 'ai开发', 'ai工程师', '一人公司', 'ai超级个体', '独立开发者', '零代码'
   ];
 
   const hasAny = (arr) => arr.some((k) => t.includes(k));
@@ -140,6 +215,7 @@ const getSupabaseClient = () => {
 };
 
 const API_BASE_XHS = 'https://api.justoneapi.com';
+const DEFAULT_TIMEOUT_MS = 8000;
 
 const buildXhsImageUrl = (fileid) => {
   if (!fileid) return '';
@@ -226,14 +302,25 @@ const mapTwitterSearchResult = (tweet, userById, mediaByKey) => {
   };
 };
 
+const fetchJson = async (url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const data = await response.json();
+    return { response, data };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const searchXiaohongshu = async (keyword, page, sort, noteType, noteTime, token, limit) => {
   let url = `${API_BASE_XHS}/api/xiaohongshu/search-note/v2?token=${token}&keyword=${encodeURIComponent(keyword)}&page=${page}&sort=${sort}&noteType=${noteType}`;
   if (noteTime) {
     url += `&noteTime=${encodeURIComponent(noteTime)}`;
   }
 
-  const response = await fetch(url);
-  const data = await response.json();
+  const { data } = await fetchJson(url);
 
   if (data.code !== 0) {
     throw new Error(data.message || `Search API error (code: ${data.code})`);
@@ -256,13 +343,11 @@ const searchTwitter = async (keyword, limit, bearerToken) => {
   const query = `${keyword} -is:retweet`;
   const endpoint = `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=${maxResults}&tweet.fields=created_at,public_metrics,author_id,attachments&expansions=author_id,attachments.media_keys&user.fields=username,name,profile_image_url&media.fields=type,url,preview_image_url`;
 
-  const response = await fetch(endpoint, {
+  const { response, data } = await fetchJson(endpoint, {
     headers: {
       'Authorization': `Bearer ${bearerToken}`
     }
   });
-
-  const data = await response.json();
   if (!response.ok || data.errors) {
     const message = data.errors?.[0]?.message || `X API error: ${response.status}`;
     throw new Error(message);
@@ -302,11 +387,13 @@ export default async function handler(req, res) {
     const overrideMin = Number(query.min);
     const overrideLimit = Number(query.limit);
     const overrideTasks = Number(query.tasks);
+    const overrideParallel = String(query.parallel || '').toLowerCase();
 
     const effectiveRecentDays = Number.isFinite(overrideDays) && overrideDays > 0 ? overrideDays : RECENT_DAYS;
     const effectiveMinInteraction = Number.isFinite(overrideMin) && overrideMin >= 0 ? overrideMin : DEFAULT_MIN_INTERACTION;
     const effectiveLimit = Number.isFinite(overrideLimit) && overrideLimit > 0 ? overrideLimit : DEFAULT_LIMIT;
     const effectiveMaxTasks = Number.isFinite(overrideTasks) && overrideTasks > 0 ? overrideTasks : MAX_TASKS_PER_RUN;
+    const parallel = overrideParallel === '1' || overrideParallel === 'true';
     const justOneToken = process.env.JUSTONEAPI_TOKEN;
     const xBearerToken = process.env.X_API_BEARER_TOKEN;
 
@@ -314,22 +401,12 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'No upstream API tokens configured' });
     }
 
-    const { data: taskRows, error: taskError } = await supabase
-      .from('tracking_tasks')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (taskError) {
-      throw new Error(taskError.message || 'Failed to load tasks');
-    }
-
-    const tasks = taskRows && taskRows.length > 0 ? taskRows : [{
-      id: 'default',
-      keywords: DEFAULT_MONITOR_KEYWORDS.join(' '),
-      platforms: DEFAULT_PLATFORMS,
-      config: { sort: 'popularity_descending', noteTime: '一周内' }
-    }];
-    const tasksToRun = tasks.slice(0, effectiveMaxTasks);
+    // Fixed keyword-pool mode: always run against DEFAULT_MONITOR_KEYWORDS
+    const keywordJobs = DEFAULT_MONITOR_KEYWORDS.map(keyword => ({
+      keyword,
+      platforms: DEFAULT_PLATFORMS
+    }));
+    const tasksToRun = keywordJobs.slice(0, effectiveMaxTasks);
 
     const allResults = [];
     const platformStats = [];
@@ -347,46 +424,52 @@ export default async function handler(req, res) {
 
     for (const task of tasksToRun) {
       const platforms = (task.platforms && task.platforms.length > 0) ? task.platforms : DEFAULT_PLATFORMS;
-      const responses = await Promise.all(
-        platforms.map(async (p) => {
-          const platformName = p === 'Twitter' || p === 'twitter' ? 'twitter' : 'xiaohongshu';
-          try {
-            if (platformName === 'twitter') {
-              if (!xBearerToken) {
-                platformErrors.push({ platform: 'twitter', error: 'X API Bearer Token not configured' });
-                return [];
-              }
-              const results = await searchTwitter(task.keywords, effectiveLimit, xBearerToken);
-              platformStats.push({ platform: 'twitter', count: results.length });
-              return results;
-            }
-            if (!justOneToken) {
-              platformErrors.push({ platform: 'xiaohongshu', error: 'JustOneAPI token not configured' });
+      const runOne = async (p) => {
+        const platformName = p === 'Twitter' || p === 'twitter' ? 'twitter' : 'xiaohongshu';
+        try {
+          if (platformName === 'twitter') {
+            if (!xBearerToken) {
+              platformErrors.push({ platform: 'twitter', error: 'X API Bearer Token not configured' });
               return [];
             }
-            const results = await searchXiaohongshu(
-              task.keywords,
-              1,
-              task.config?.sort || 'popularity_descending',
-              task.config?.noteType || '_0',
-              task.config?.noteTime || undefined,
-              justOneToken,
-              effectiveLimit
-            );
-            platformStats.push({ platform: 'xiaohongshu', count: results.length });
+            const results = await searchTwitter(task.keyword, effectiveLimit, xBearerToken);
+            platformStats.push({ platform: 'twitter', count: results.length });
             return results;
-          } catch (err) {
-            platformErrors.push({ platform: platformName, error: err.message || 'Unknown error' });
+          }
+          if (!justOneToken) {
+            platformErrors.push({ platform: 'xiaohongshu', error: 'JustOneAPI token not configured' });
             return [];
           }
-        })
-      );
+          const results = await searchXiaohongshu(
+            task.keyword,
+            1,
+            'popularity_descending',
+            '_0',
+            undefined,
+            justOneToken,
+            effectiveLimit
+          );
+          platformStats.push({ platform: 'xiaohongshu', count: results.length });
+          return results;
+        } catch (err) {
+          platformErrors.push({ platform: platformName, error: err.message || 'Unknown error' });
+          return [];
+        }
+      };
+
+      let responses = [];
+      if (parallel) {
+        responses = await Promise.all(platforms.map(runOne));
+      } else {
+        for (const p of platforms) {
+          responses.push(await runOne(p));
+        }
+      }
 
       let results = responses.flat();
       funnel.fetched += results.length;
 
-      const minInter = task.config?.minInteraction;
-      const minValue = (!minInter || isNaN(Number(minInter))) ? effectiveMinInteraction : Number(minInter);
+      const minValue = effectiveMinInteraction;
       if (minValue > 0) {
         results = results.filter((r) => {
           const total = (r.metrics?.likes || 0) + (r.metrics?.bookmarks || 0) + (r.metrics?.comments || 0);
@@ -402,18 +485,7 @@ export default async function handler(req, res) {
 
       allResults.push(...results);
 
-      if (task.id !== 'default') {
-        updatedTasks.push({
-          id: task.id,
-          keywords: task.keywords,
-          platforms: task.platforms || DEFAULT_PLATFORMS,
-          date_range: task.date_range || { start: '', end: '' },
-          status: 'Completed',
-          items_found: results.length,
-          last_run: new Date().toISOString(),
-          config: task.config || undefined,
-        });
-      }
+      // No tracking_tasks updates in keyword-pool mode
     }
 
     const uniqueByUrl = new Map();
@@ -541,14 +613,7 @@ export default async function handler(req, res) {
       }
     }
 
-    if (updatedTasks.length > 0) {
-      const { error: updateError } = await supabase
-        .from('tracking_tasks')
-        .upsert(updatedTasks);
-      if (updateError) {
-        throw new Error(updateError.message || 'Failed to update tasks');
-      }
-    }
+    // Skip tracking_tasks updates in keyword-pool mode
 
     return res.status(200).json({
       inserted: toInsert.length,
@@ -560,7 +625,8 @@ export default async function handler(req, res) {
         days: effectiveRecentDays,
         minInteraction: effectiveMinInteraction,
         limit: effectiveLimit,
-        tasks: effectiveMaxTasks
+        tasks: effectiveMaxTasks,
+        parallel
       },
       funnel,
       platformStats,
