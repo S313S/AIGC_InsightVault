@@ -393,6 +393,7 @@ export default async function handler(req, res) {
     const overrideLimit = Number(query.limit);
     const overrideTasks = Number(query.tasks);
     const overrideParallel = String(query.parallel || '').toLowerCase();
+    const rebuildOnly = String(query.rebuild || '').toLowerCase() === '1' || String(query.rebuild || '').toLowerCase() === 'true';
 
     const effectiveRecentDays = Number.isFinite(overrideDays) && overrideDays > 0 ? overrideDays : RECENT_DAYS;
     const effectiveMinInteraction = Number.isFinite(overrideMin) && overrideMin >= 0 ? overrideMin : DEFAULT_MIN_INTERACTION;
@@ -401,6 +402,80 @@ export default async function handler(req, res) {
     const parallel = overrideParallel === '1' || overrideParallel === 'true';
     const justOneToken = process.env.JUSTONEAPI_TOKEN;
     const xBearerToken = process.env.X_API_BEARER_TOKEN;
+
+    if (rebuildOnly) {
+      const snapshotId = new Date().toISOString();
+      const snapshotTag = `snapshot:${snapshotId}`;
+
+      const { data: trendRows, error: trendError } = await supabase
+        .from('knowledge_cards')
+        .select('id, tags')
+        .eq('is_trending', true);
+
+      if (trendError) {
+        throw new Error(trendError.message || 'Failed to load trending cards');
+      }
+
+      let updatedExisting = 0;
+      for (const row of trendRows || []) {
+        const tags = Array.isArray(row.tags) ? row.tags : [];
+        const mergedTags = tags.includes(snapshotTag)
+          ? tags
+          : Array.from(new Set([...tags, snapshotTag]));
+        const { error: updateError } = await supabase
+          .from('knowledge_cards')
+          .update({ tags: mergedTags, is_trending: true })
+          .eq('id', row.id);
+        if (updateError) {
+          throw new Error(updateError.message || 'Failed to update trending snapshot tags');
+        }
+        updatedExisting += 1;
+      }
+
+      // Keep only the latest 5 snapshots (re-read to include the new snapshot tag)
+      const { data: refreshedRows, error: refreshError } = await supabase
+        .from('knowledge_cards')
+        .select('id, tags')
+        .eq('is_trending', true);
+
+      if (refreshError) {
+        throw new Error(refreshError.message || 'Failed to reload trending cards');
+      }
+
+      const snapshotToIds = new Map();
+      for (const row of refreshedRows || []) {
+        const tags = Array.isArray(row.tags) ? row.tags : [];
+        const snap = tags.find(t => typeof t === 'string' && t.startsWith('snapshot:')) || 'snapshot:legacy';
+        if (!snapshotToIds.has(snap)) snapshotToIds.set(snap, []);
+        snapshotToIds.get(snap).push(row.id);
+      }
+      const snapshots = Array.from(snapshotToIds.keys()).sort((a, b) => {
+        if (a === 'snapshot:legacy') return 1;
+        if (b === 'snapshot:legacy') return -1;
+        return a > b ? -1 : a < b ? 1 : 0;
+      });
+      const keep = new Set(snapshots.slice(0, 5));
+      const idsToDelete = [];
+      for (const [snap, ids] of snapshotToIds.entries()) {
+        if (!keep.has(snap)) idsToDelete.push(...ids);
+      }
+      if (idsToDelete.length > 0) {
+        const { error: cleanupError } = await supabase
+          .from('knowledge_cards')
+          .delete()
+          .in('id', idsToDelete);
+        if (cleanupError) {
+          throw new Error(cleanupError.message || 'Failed to cleanup old snapshots');
+        }
+      }
+
+      return res.status(200).json({
+        mode: 'rebuild',
+        updatedExisting,
+        totalTrending: (refreshedRows || []).length,
+        snapshot: snapshotTag
+      });
+    }
 
     if (!justOneToken && !xBearerToken) {
       return res.status(500).json({ error: 'No upstream API tokens configured' });
