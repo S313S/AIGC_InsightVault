@@ -6,8 +6,22 @@ const DEFAULT_MONITOR_KEYWORDS = ['AI', 'AIGC', '人工智能', '大模型', 'LL
 const DEFAULT_PLATFORMS = ['xiaohongshu', 'twitter'];
 const DEFAULT_LIMIT = 20;
 const DEFAULT_MIN_INTERACTION = 10000;
+const RECENT_DAYS = 14;
+
+const AI_KEYWORDS = [
+  'ai', 'a.i.', '人工智能', '大模型', 'llm', 'gpt', 'claude', 'openai',
+  'midjourney', 'stable diffusion', 'sd', 'comfyui', 'flux', 'krea',
+  'runway', 'gen-3', 'gen3', 'sora', 'veo', 'pika', 'luma', 'kling', '可灵',
+  'chatbot', 'agent', 'prompt', '模型', '算法', '训练', '推理', '生成', '文生图', '图生图', '文生视频'
+];
+
+const isAIRelevant = (text) => {
+  const t = (text || '').toLowerCase();
+  return AI_KEYWORDS.some(k => t.includes(k));
+};
 
 const inferCategoryTag = (text) => {
+  if (!isAIRelevant(text)) return '';
   const t = (text || '').toLowerCase();
   const imageKeywords = [
     'image', 'img', 'photo', 'picture', '图', '图片', '绘画', '生图', '海报', '头像',
@@ -29,6 +43,59 @@ const inferCategoryTag = (text) => {
   if (hasAny(videoKeywords)) return 'Video Gen';
   if (hasAny(vibeKeywords)) return 'Vibe Coding';
   return '';
+};
+
+const parsePublishTime = (dateStr) => {
+  if (!dateStr) return null;
+  const now = new Date();
+  if (dateStr === '刚刚') return now;
+
+  const minsMatch = dateStr.match(/(\d+)\s*分钟/);
+  if (minsMatch) return new Date(now.getTime() - Number(minsMatch[1]) * 60 * 1000);
+
+  const hoursMatch = dateStr.match(/(\d+)\s*小时/);
+  if (hoursMatch) return new Date(now.getTime() - Number(hoursMatch[1]) * 60 * 60 * 1000);
+
+  const daysMatch = dateStr.match(/(\d+)\s*天/);
+  if (daysMatch) return new Date(now.getTime() - Number(daysMatch[1]) * 24 * 60 * 60 * 1000);
+
+  const iso = new Date(dateStr);
+  if (!Number.isNaN(iso.getTime())) return iso;
+
+  const ymd = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (ymd) {
+    return new Date(`${ymd[1]}-${ymd[2]}-${ymd[3]}T00:00:00`);
+  }
+
+  const md = dateStr.match(/^(\d{2})-(\d{2})$/);
+  if (md) {
+    const year = now.getFullYear();
+    let dt = new Date(`${year}-${md[1]}-${md[2]}T00:00:00`);
+    if (dt.getTime() - now.getTime() > 24 * 60 * 60 * 1000) {
+      dt = new Date(`${year - 1}-${md[1]}-${md[2]}T00:00:00`);
+    }
+    return dt;
+  }
+
+  const mdCn = dateStr.match(/(\d{1,2})月(\d{1,2})日/);
+  if (mdCn) {
+    const year = now.getFullYear();
+    let dt = new Date(`${year}-${String(mdCn[1]).padStart(2, '0')}-${String(mdCn[2]).padStart(2, '0')}T00:00:00`);
+    if (dt.getTime() - now.getTime() > 24 * 60 * 60 * 1000) {
+      dt = new Date(`${year - 1}-${String(mdCn[1]).padStart(2, '0')}-${String(mdCn[2]).padStart(2, '0')}T00:00:00`);
+    }
+    return dt;
+  }
+
+  return null;
+};
+
+const isRecentEnough = (dateStr) => {
+  const dt = parsePublishTime(dateStr);
+  if (!dt) return true;
+  const now = new Date();
+  const diffDays = (now.getTime() - dt.getTime()) / (24 * 60 * 60 * 1000);
+  return diffDays <= RECENT_DAYS;
 };
 
 const buildTrendingRow = (result) => {
@@ -303,6 +370,9 @@ export default async function handler(req, res) {
           return total >= minValue;
         });
       }
+
+      results = results.filter((r) => isRecentEnough(r.publishTime));
+      results = results.filter((r) => isAIRelevant(`${r.title || ''}\n${r.desc || ''}`));
 
       allResults.push(...results);
 

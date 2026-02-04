@@ -20,21 +20,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
     const totalItemsFound = tasks.reduce((acc, t) => acc + t.itemsFound, 0);
 
+    const uniqueTrending = React.useMemo(() => {
+        const seen = new Set<string>();
+        const unique: KnowledgeCard[] = [];
+        for (const item of trendingItems) {
+            const key = item.sourceUrl || `${item.title}|${item.author}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            unique.push(item);
+        }
+        return unique;
+    }, [trendingItems]);
+
     // 1. Hot Picks Data (Top 6 items for the 2x3 grid)
-    const hotPicks = trendingItems.slice(0, 6);
+    const hotPicks = uniqueTrending.slice(0, 6);
 
     // 2. Categorized Rankings Data - Limited to Top 3 as requested
-    const imageGenRankings = trendingItems
+    const imageGenRankings = uniqueTrending
         .filter(item => item.tags.includes('Image Gen'))
         .sort((a, b) => b.metrics.likes - a.metrics.likes)
         .slice(0, 3);
 
-    const videoGenRankings = trendingItems
+    const videoGenRankings = uniqueTrending
         .filter(item => item.tags.includes('Video Gen'))
         .sort((a, b) => b.metrics.likes - a.metrics.likes)
         .slice(0, 3);
 
-    const vibeCodingRankings = trendingItems
+    const vibeCodingRankings = uniqueTrending
         .filter(item => item.tags.includes('Vibe Coding'))
         .sort((a, b) => b.metrics.likes - a.metrics.likes)
         .slice(0, 3);
