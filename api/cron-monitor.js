@@ -419,6 +419,7 @@ export default async function handler(req, res) {
     const overrideLimit = Number(query.limit);
     const overrideTasks = Number(query.tasks);
     const overrideParallel = String(query.parallel || '').toLowerCase();
+    const overridePlatform = String(query.platform || '').toLowerCase();
     const rebuildOnly = String(query.rebuild || '').toLowerCase() === '1' || String(query.rebuild || '').toLowerCase() === 'true';
 
     const effectiveRecentDays = Number.isFinite(overrideDays) && overrideDays > 0 ? overrideDays : RECENT_DAYS;
@@ -426,6 +427,11 @@ export default async function handler(req, res) {
     const effectiveLimit = Number.isFinite(overrideLimit) && overrideLimit > 0 ? overrideLimit : DEFAULT_LIMIT;
     const effectiveMaxTasks = Number.isFinite(overrideTasks) && overrideTasks > 0 ? overrideTasks : MAX_TASKS_PER_RUN;
     const parallel = overrideParallel === '1' || overrideParallel === 'true';
+    const effectivePlatforms = overridePlatform === 'twitter'
+      ? ['twitter']
+      : overridePlatform === 'xiaohongshu' || overridePlatform === 'xhs'
+        ? ['xiaohongshu']
+        : DEFAULT_PLATFORMS;
     const justOneToken = process.env.JUSTONEAPI_TOKEN;
     const xBearerToken = process.env.X_API_BEARER_TOKEN;
 
