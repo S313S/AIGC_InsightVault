@@ -360,9 +360,18 @@ const searchXiaohongshu = async (keyword, page, sort, noteType, noteTime, token,
   return notes;
 };
 
-const searchTwitter = async (keyword, limit, bearerToken) => {
+const buildTwitterQuery = (keywords) => {
+  const safe = keywords
+    .filter(Boolean)
+    .map(k => `"${k.replace(/"/g, '')}"`);
+  const orQuery = safe.length > 0 ? `(${safe.join(' OR ')})` : '';
+  return `${orQuery} has:media -is:retweet -is:reply`.trim();
+};
+
+const searchTwitter = async (keywordsOrKeyword, limit, bearerToken) => {
   const maxResults = Math.min(Math.max(Number(limit) || 20, 10), 100);
-  const query = `${keyword} -is:retweet`;
+  const keywords = Array.isArray(keywordsOrKeyword) ? keywordsOrKeyword : [keywordsOrKeyword];
+  const query = buildTwitterQuery(keywords);
   const endpoint = `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=${maxResults}&tweet.fields=created_at,public_metrics,author_id,attachments&expansions=author_id,attachments.media_keys&user.fields=username,name,profile_image_url&media.fields=type,url,preview_image_url`;
 
   const { response, data } = await fetchJson(endpoint, {
@@ -501,9 +510,10 @@ export default async function handler(req, res) {
     // Fixed keyword-pool mode: always run against DEFAULT_MONITOR_KEYWORDS
     const keywordJobs = DEFAULT_MONITOR_KEYWORDS.map(keyword => ({
       keyword,
-      platforms: DEFAULT_PLATFORMS
+      platforms: effectivePlatforms
     }));
     const tasksToRun = keywordJobs.slice(0, effectiveMaxTasks);
+    const twitterKeywordPool = DEFAULT_MONITOR_KEYWORDS.slice(0, effectiveMaxTasks);
 
     const allResults = [];
     const platformStats = [];
@@ -538,7 +548,7 @@ export default async function handler(req, res) {
               platformErrors.push({ platform: 'twitter', error: 'X API Bearer Token not configured' });
               return [];
             }
-            const results = await searchTwitter(task.keyword, effectiveLimit, xBearerToken);
+            const results = await searchTwitter(twitterKeywordPool, effectiveLimit, xBearerToken);
             platformStats.push({ platform: 'twitter', count: results.length });
             platformTotals.twitter.fetched += results.length;
             return results;
