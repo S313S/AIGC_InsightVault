@@ -19,6 +19,8 @@ const DEFAULT_MIN_INTERACTION = 5000;
 const RECENT_DAYS = 3;
 const TWITTER_RECENT_DAYS = 7;
 const MAX_TASKS_PER_RUN = 3;
+const XHS_DELAY_MS = 400;
+const XHS_RETRIES = 1;
 const TWITTER_REQUIRE_TERMS = ['Claude', 'GPT', 'LLM', 'OpenAI', 'Anthropic', 'Gemini'];
 
 // Expanded AI keyword pool for better coverage (from research on Twitter/X and Xiaohongshu trends)
@@ -338,6 +340,8 @@ const fetchJson = async (url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) => {
   }
 };
 
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 const searchXiaohongshu = async (keyword, page, sort, noteType, noteTime, token, limit) => {
   let url = `${API_BASE_XHS}/api/xiaohongshu/search-note/v2?token=${token}&keyword=${encodeURIComponent(keyword)}&page=${page}&sort=${sort}&noteType=${noteType}`;
   if (noteTime) {
@@ -583,15 +587,31 @@ export default async function handler(req, res) {
             platformErrors.push({ platform: 'xiaohongshu', error: 'JustOneAPI token not configured' });
             return [];
           }
-          const results = await searchXiaohongshu(
-            task.keyword,
-            1,
-            'popularity_descending',
-            '_0',
-            undefined,
-            justOneToken,
-            effectiveLimit
-          );
+          let results = [];
+          let lastError = null;
+          for (let attempt = 0; attempt <= XHS_RETRIES; attempt += 1) {
+            try {
+              results = await searchXiaohongshu(
+                task.keyword,
+                1,
+                'popularity_descending',
+                '_0',
+                undefined,
+                justOneToken,
+                effectiveLimit
+              );
+              lastError = null;
+              break;
+            } catch (err) {
+              lastError = err;
+              await sleep(XHS_DELAY_MS);
+            }
+          }
+          if (lastError) {
+            throw lastError;
+          }
+          // Rate-limit between XHS calls to reduce timeouts
+          await sleep(XHS_DELAY_MS);
           platformStats.push({ platform: 'xiaohongshu', count: results.length });
           platformTotals.xiaohongshu.fetched += results.length;
           return results;
