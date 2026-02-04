@@ -17,6 +17,7 @@ const DEFAULT_PLATFORMS = ['xiaohongshu', 'twitter'];
 const DEFAULT_LIMIT = 10;
 const DEFAULT_MIN_INTERACTION = 5000;
 const RECENT_DAYS = 3;
+const TWITTER_RECENT_DAYS = 7;
 const MAX_TASKS_PER_RUN = 3;
 
 // Expanded AI keyword pool for better coverage (from research on Twitter/X and Xiaohongshu trends)
@@ -415,6 +416,7 @@ export default async function handler(req, res) {
   try {
     const query = req.query || {};
     const overrideDays = Number(query.days);
+    const overrideTwitterDays = Number(query.twitter_days);
     const overrideMin = Number(query.min);
     const overrideLimit = Number(query.limit);
     const overrideTasks = Number(query.tasks);
@@ -423,6 +425,7 @@ export default async function handler(req, res) {
     const rebuildOnly = String(query.rebuild || '').toLowerCase() === '1' || String(query.rebuild || '').toLowerCase() === 'true';
 
     const effectiveRecentDays = Number.isFinite(overrideDays) && overrideDays > 0 ? overrideDays : RECENT_DAYS;
+    const effectiveTwitterDays = Number.isFinite(overrideTwitterDays) && overrideTwitterDays > 0 ? overrideTwitterDays : TWITTER_RECENT_DAYS;
     const effectiveMinInteraction = Number.isFinite(overrideMin) && overrideMin >= 0 ? overrideMin : DEFAULT_MIN_INTERACTION;
     const effectiveLimit = Number.isFinite(overrideLimit) && overrideLimit > 0 ? overrideLimit : DEFAULT_LIMIT;
     const effectiveMaxTasks = Number.isFinite(overrideTasks) && overrideTasks > 0 ? overrideTasks : MAX_TASKS_PER_RUN;
@@ -614,7 +617,10 @@ export default async function handler(req, res) {
         if (item.platform === 'Xiaohongshu') platformFunnel.xiaohongshu.afterMinInteraction += 1;
       }
 
-      results = results.filter((r) => isRecentEnough(r.publishTime, effectiveRecentDays));
+      results = results.filter((r) => {
+        const windowDays = r.platform === 'Twitter' ? effectiveTwitterDays : effectiveRecentDays;
+        return isRecentEnough(r.publishTime, windowDays);
+      });
       funnel.afterRecent += results.length;
       for (const item of results) {
         if (item.platform === 'Twitter') platformFunnel.twitter.afterRecent += 1;
