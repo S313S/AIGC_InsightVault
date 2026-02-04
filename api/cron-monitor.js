@@ -495,6 +495,10 @@ export default async function handler(req, res) {
       twitter: { fetched: 0, output: 0 },
       xiaohongshu: { fetched: 0, output: 0 }
     };
+    const platformFunnel = {
+      twitter: { fetched: 0, afterMinInteraction: 0, afterRecent: 0, afterAI: 0 },
+      xiaohongshu: { fetched: 0, afterMinInteraction: 0, afterRecent: 0, afterAI: 0 }
+    };
     const funnel = {
       fetched: 0,
       afterMinInteraction: 0,
@@ -554,6 +558,10 @@ export default async function handler(req, res) {
 
       let results = responses.flat();
       funnel.fetched += results.length;
+      for (const item of results) {
+        if (item.platform === 'Twitter') platformFunnel.twitter.fetched += 1;
+        if (item.platform === 'Xiaohongshu') platformFunnel.xiaohongshu.fetched += 1;
+      }
 
       const minValue = effectiveMinInteraction;
       if (minValue > 0) {
@@ -563,11 +571,23 @@ export default async function handler(req, res) {
         });
       }
       funnel.afterMinInteraction += results.length;
+      for (const item of results) {
+        if (item.platform === 'Twitter') platformFunnel.twitter.afterMinInteraction += 1;
+        if (item.platform === 'Xiaohongshu') platformFunnel.xiaohongshu.afterMinInteraction += 1;
+      }
 
       results = results.filter((r) => isRecentEnough(r.publishTime, effectiveRecentDays));
       funnel.afterRecent += results.length;
+      for (const item of results) {
+        if (item.platform === 'Twitter') platformFunnel.twitter.afterRecent += 1;
+        if (item.platform === 'Xiaohongshu') platformFunnel.xiaohongshu.afterRecent += 1;
+      }
       results = results.filter((r) => isAIRelevant(`${r.title || ''}\n${r.desc || ''}`));
       funnel.afterAI += results.length;
+      for (const item of results) {
+        if (item.platform === 'Twitter') platformFunnel.twitter.afterAI += 1;
+        if (item.platform === 'Xiaohongshu') platformFunnel.xiaohongshu.afterAI += 1;
+      }
 
       allResults.push(...results);
       for (const item of results) {
@@ -727,6 +747,7 @@ export default async function handler(req, res) {
       funnel,
       platformStats,
       platformTotals,
+      platformFunnel,
       platformErrors
     });
   } catch (err) {
