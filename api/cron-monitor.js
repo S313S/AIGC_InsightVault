@@ -207,6 +207,11 @@ const buildTrendingRow = (result, snapshotTag) => {
   };
 };
 
+const normalizeSourceUrl = (url) => {
+  if (!url) return '';
+  return url.split('?')[0].trim();
+};
+
 const getSupabaseClient = () => {
   const url = process.env.VITE_SUPABASE_URL;
   const key = process.env.VITE_SUPABASE_ANON_KEY;
@@ -266,7 +271,7 @@ const mapSearchResult = (note) => {
     publishTime: publishTimeTag?.text || '',
     xsecToken: note.xsec_token || '',
     platform: 'Xiaohongshu',
-    sourceUrl: `https://www.xiaohongshu.com/discovery/item/${note.id}`,
+    sourceUrl: `https://www.xiaohongshu.com/discovery/item/${note.id}?xsec_token=${encodeURIComponent(note.xsec_token || '')}`,
   };
 };
 
@@ -505,18 +510,24 @@ export default async function handler(req, res) {
     }
 
     const candidateUrls = candidates.map(c => c.sourceUrl).filter(Boolean);
+    const candidateNorms = new Map(
+      candidates
+        .map(c => [normalizeSourceUrl(c.sourceUrl), c])
+        .filter(([k]) => k)
+    );
+
     const { data: existingRows, error: existingError } = await supabase
       .from('knowledge_cards')
-      .select('source_url')
-      .in('source_url', candidateUrls);
+      .select('id, source_url')
+      .eq('is_trending', true);
 
     if (existingError) {
       throw new Error(existingError.message || 'Failed to check duplicates');
     }
 
-    const existing = new Set((existingRows || []).map(r => r.source_url));
+    const existingNorms = new Set((existingRows || []).map(r => normalizeSourceUrl(r.source_url)));
     const toInsert = candidates
-      .filter(c => !existing.has(c.sourceUrl))
+      .filter(c => !existingNorms.has(normalizeSourceUrl(c.sourceUrl)))
       .map(c => buildTrendingRow(c, snapshotTag));
     let updatedExisting = 0;
     const candidateByUrl = new Map(candidates.map(c => [c.sourceUrl, c]));
@@ -532,15 +543,15 @@ export default async function handler(req, res) {
       // No new rows inserted because everything already exists; roll forward snapshot tag on existing rows.
       const { data: existingCards, error: existingCardsError } = await supabase
         .from('knowledge_cards')
-        .select('id, tags')
-        .in('source_url', candidateUrls);
+        .select('id, tags, source_url')
+        .eq('is_trending', true);
 
       if (existingCardsError) {
         throw new Error(existingCardsError.message || 'Failed to load existing trending cards');
       }
 
       for (const row of existingCards || []) {
-        const candidate = candidateByUrl.get(row.source_url);
+        const candidate = candidateNorms.get(normalizeSourceUrl(row.source_url));
         if (!candidate) continue;
         const updatedRow = buildTrendingRow(candidate, snapshotTag);
         const tags = Array.isArray(row.tags) ? row.tags : [];
