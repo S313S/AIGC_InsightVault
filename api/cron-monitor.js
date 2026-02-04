@@ -372,7 +372,7 @@ const searchTwitter = async (keywordsOrKeyword, limit, bearerToken) => {
   const maxResults = Math.min(Math.max(Number(limit) || 20, 10), 100);
   const keywords = Array.isArray(keywordsOrKeyword) ? keywordsOrKeyword : [keywordsOrKeyword];
   const query = buildTwitterQuery(keywords);
-  const endpoint = `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=${maxResults}&tweet.fields=created_at,public_metrics,author_id,attachments&expansions=author_id,attachments.media_keys&user.fields=username,name,profile_image_url&media.fields=type,url,preview_image_url`;
+  const endpoint = `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=${maxResults}&sort_order=relevancy&tweet.fields=created_at,public_metrics,author_id,attachments&expansions=author_id,attachments.media_keys&user.fields=username,name,profile_image_url&media.fields=type,url,preview_image_url`;
 
   const { response, data } = await fetchJson(endpoint, {
     headers: {
