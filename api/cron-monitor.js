@@ -19,6 +19,7 @@ const DEFAULT_MIN_INTERACTION = 5000;
 const RECENT_DAYS = 3;
 const TWITTER_RECENT_DAYS = 7;
 const MAX_TASKS_PER_RUN = 3;
+const TWITTER_REQUIRE_TERMS = ['Claude', 'GPT', 'LLM', 'OpenAI', 'Anthropic', 'Gemini'];
 
 // Expanded AI keyword pool for better coverage (from research on Twitter/X and Xiaohongshu trends)
 const AI_KEYWORDS = [
@@ -361,18 +362,34 @@ const searchXiaohongshu = async (keyword, page, sort, noteType, noteTime, token,
   return notes;
 };
 
-const buildTwitterQuery = (keywords) => {
+const buildTwitterQuery = (keywords, opts) => {
   const safe = keywords
     .filter(Boolean)
     .map(k => `"${k.replace(/"/g, '')}"`);
   const orQuery = safe.length > 0 ? `(${safe.join(' OR ')})` : '';
-  return `${orQuery} has:media -is:retweet -is:reply`.trim();
+
+  const requireTerms = opts?.requireTerms || [];
+  const requireQuery = requireTerms.length > 0
+    ? `(${requireTerms.map(t => `"${t.replace(/"/g, '')}"`).join(' OR ')})`
+    : '';
+
+  const minFaves = Number.isFinite(opts?.minFaves) ? opts.minFaves : 0;
+  const minRetweets = Number.isFinite(opts?.minRetweets) ? opts.minRetweets : 0;
+  const minReplies = Number.isFinite(opts?.minReplies) ? opts.minReplies : 0;
+  const minQueryParts = [];
+  if (minFaves > 0) minQueryParts.push(`min_faves:${minFaves}`);
+  if (minRetweets > 0) minQueryParts.push(`min_retweets:${minRetweets}`);
+  if (minReplies > 0) minQueryParts.push(`min_replies:${minReplies}`);
+  const minQuery = minQueryParts.length > 0 ? `(${minQueryParts.join(' OR ')})` : '';
+
+  const pieces = [orQuery, requireQuery, minQuery, 'has:media', '-is:retweet', '-is:reply'].filter(Boolean);
+  return pieces.join(' ').trim();
 };
 
-const searchTwitter = async (keywordsOrKeyword, limit, bearerToken) => {
+const searchTwitter = async (keywordsOrKeyword, limit, bearerToken, queryOpts) => {
   const maxResults = Math.min(Math.max(Number(limit) || 20, 10), 100);
   const keywords = Array.isArray(keywordsOrKeyword) ? keywordsOrKeyword : [keywordsOrKeyword];
-  const query = buildTwitterQuery(keywords);
+  const query = buildTwitterQuery(keywords, queryOpts);
   const endpoint = `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=${maxResults}&sort_order=relevancy&tweet.fields=created_at,public_metrics,author_id,attachments&expansions=author_id,attachments.media_keys&user.fields=username,name,profile_image_url&media.fields=type,url,preview_image_url`;
 
   const { response, data } = await fetchJson(endpoint, {
@@ -422,6 +439,9 @@ export default async function handler(req, res) {
     const overrideTasks = Number(query.tasks);
     const overrideParallel = String(query.parallel || '').toLowerCase();
     const overridePlatform = String(query.platform || '').toLowerCase();
+    const overrideTwitterFaves = Number(query.twitter_faves);
+    const overrideTwitterRetweets = Number(query.twitter_retweets);
+    const overrideTwitterReplies = Number(query.twitter_replies);
     const rebuildOnly = String(query.rebuild || '').toLowerCase() === '1' || String(query.rebuild || '').toLowerCase() === 'true';
 
     const effectiveRecentDays = Number.isFinite(overrideDays) && overrideDays > 0 ? overrideDays : RECENT_DAYS;
@@ -523,6 +543,12 @@ export default async function handler(req, res) {
     }));
     const tasksToRun = keywordJobs.slice(0, effectiveMaxTasks);
     const twitterKeywordPool = DEFAULT_MONITOR_KEYWORDS.slice(0, effectiveMaxTasks);
+    const twitterQueryOpts = {
+      requireTerms: TWITTER_REQUIRE_TERMS,
+      minFaves: Number.isFinite(overrideTwitterFaves) ? overrideTwitterFaves : 0,
+      minRetweets: Number.isFinite(overrideTwitterRetweets) ? overrideTwitterRetweets : 0,
+      minReplies: Number.isFinite(overrideTwitterReplies) ? overrideTwitterReplies : 0
+    };
 
     const allResults = [];
     const platformStats = [];
@@ -557,7 +583,7 @@ export default async function handler(req, res) {
               platformErrors.push({ platform: 'twitter', error: 'X API Bearer Token not configured' });
               return [];
             }
-            const results = await searchTwitter(twitterKeywordPool, effectiveLimit, xBearerToken);
+            const results = await searchTwitter(twitterKeywordPool, effectiveLimit, xBearerToken, twitterQueryOpts);
             platformStats.push({ platform: 'twitter', count: results.length });
             platformTotals.twitter.fetched += results.length;
             return results;
@@ -786,7 +812,11 @@ export default async function handler(req, res) {
         minInteraction: effectiveMinInteraction,
         limit: effectiveLimit,
         tasks: effectiveMaxTasks,
-        parallel
+        parallel,
+        twitter_days: effectiveTwitterDays,
+        twitter_faves: twitterQueryOpts.minFaves,
+        twitter_retweets: twitterQueryOpts.minRetweets,
+        twitter_replies: twitterQueryOpts.minReplies
       },
       funnel,
       platformStats,
