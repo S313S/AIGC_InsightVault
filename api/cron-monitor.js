@@ -491,6 +491,10 @@ export default async function handler(req, res) {
     const allResults = [];
     const platformStats = [];
     const platformErrors = [];
+    const platformTotals = {
+      twitter: { fetched: 0, output: 0 },
+      xiaohongshu: { fetched: 0, output: 0 }
+    };
     const funnel = {
       fetched: 0,
       afterMinInteraction: 0,
@@ -514,6 +518,7 @@ export default async function handler(req, res) {
             }
             const results = await searchTwitter(task.keyword, effectiveLimit, xBearerToken);
             platformStats.push({ platform: 'twitter', count: results.length });
+            platformTotals.twitter.fetched += results.length;
             return results;
           }
           if (!justOneToken) {
@@ -530,6 +535,7 @@ export default async function handler(req, res) {
             effectiveLimit
           );
           platformStats.push({ platform: 'xiaohongshu', count: results.length });
+          platformTotals.xiaohongshu.fetched += results.length;
           return results;
         } catch (err) {
           platformErrors.push({ platform: platformName, error: err.message || 'Unknown error' });
@@ -564,6 +570,10 @@ export default async function handler(req, res) {
       funnel.afterAI += results.length;
 
       allResults.push(...results);
+      for (const item of results) {
+        if (item.platform === 'Twitter') platformTotals.twitter.output += 1;
+        if (item.platform === 'Xiaohongshu') platformTotals.xiaohongshu.output += 1;
+      }
 
       // No tracking_tasks updates in keyword-pool mode
     }
@@ -716,6 +726,7 @@ export default async function handler(req, res) {
       },
       funnel,
       platformStats,
+      platformTotals,
       platformErrors
     });
   } catch (err) {
