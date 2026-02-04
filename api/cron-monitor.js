@@ -373,16 +373,7 @@ const buildTwitterQuery = (keywords, opts) => {
     ? `(${requireTerms.map(t => `"${t.replace(/"/g, '')}"`).join(' OR ')})`
     : '';
 
-  const minFaves = Number.isFinite(opts?.minFaves) ? opts.minFaves : 0;
-  const minRetweets = Number.isFinite(opts?.minRetweets) ? opts.minRetweets : 0;
-  const minReplies = Number.isFinite(opts?.minReplies) ? opts.minReplies : 0;
-  const minQueryParts = [];
-  if (minFaves > 0) minQueryParts.push(`min_faves:${minFaves}`);
-  if (minRetweets > 0) minQueryParts.push(`min_retweets:${minRetweets}`);
-  if (minReplies > 0) minQueryParts.push(`min_replies:${minReplies}`);
-  const minQuery = minQueryParts.length > 0 ? `(${minQueryParts.join(' OR ')})` : '';
-
-  const pieces = [orQuery, requireQuery, minQuery, 'has:media', '-is:retweet', '-is:reply'].filter(Boolean);
+  const pieces = [orQuery, requireQuery, 'has:media', '-is:retweet', '-is:reply'].filter(Boolean);
   return pieces.join(' ').trim();
 };
 
@@ -439,9 +430,6 @@ export default async function handler(req, res) {
     const overrideTasks = Number(query.tasks);
     const overrideParallel = String(query.parallel || '').toLowerCase();
     const overridePlatform = String(query.platform || '').toLowerCase();
-    const overrideTwitterFaves = Number(query.twitter_faves);
-    const overrideTwitterRetweets = Number(query.twitter_retweets);
-    const overrideTwitterReplies = Number(query.twitter_replies);
     const rebuildOnly = String(query.rebuild || '').toLowerCase() === '1' || String(query.rebuild || '').toLowerCase() === 'true';
 
     const effectiveRecentDays = Number.isFinite(overrideDays) && overrideDays > 0 ? overrideDays : RECENT_DAYS;
@@ -544,10 +532,7 @@ export default async function handler(req, res) {
     const tasksToRun = keywordJobs.slice(0, effectiveMaxTasks);
     const twitterKeywordPool = DEFAULT_MONITOR_KEYWORDS.slice(0, effectiveMaxTasks);
     const twitterQueryOpts = {
-      requireTerms: TWITTER_REQUIRE_TERMS,
-      minFaves: Number.isFinite(overrideTwitterFaves) ? overrideTwitterFaves : 0,
-      minRetweets: Number.isFinite(overrideTwitterRetweets) ? overrideTwitterRetweets : 0,
-      minReplies: Number.isFinite(overrideTwitterReplies) ? overrideTwitterReplies : 0
+      requireTerms: TWITTER_REQUIRE_TERMS
     };
 
     const allResults = [];
@@ -814,9 +799,7 @@ export default async function handler(req, res) {
         tasks: effectiveMaxTasks,
         parallel,
         twitter_days: effectiveTwitterDays,
-        twitter_faves: twitterQueryOpts.minFaves,
-        twitter_retweets: twitterQueryOpts.minRetweets,
-        twitter_replies: twitterQueryOpts.minReplies
+        twitter_require_terms: TWITTER_REQUIRE_TERMS
       },
       funnel,
       platformStats,
