@@ -91,12 +91,12 @@ const parsePublishTime = (dateStr) => {
   return null;
 };
 
-const isRecentEnough = (dateStr) => {
+const isRecentEnough = (dateStr, windowDays = RECENT_DAYS) => {
   const dt = parsePublishTime(dateStr);
   if (!dt) return true;
   const now = new Date();
   const diffDays = (now.getTime() - dt.getTime()) / (24 * 60 * 60 * 1000);
-  return diffDays <= RECENT_DAYS;
+  return diffDays <= windowDays;
 };
 
 const buildTrendingRow = (result, snapshotTag) => {
@@ -297,6 +297,16 @@ export default async function handler(req, res) {
   }
 
   try {
+    const query = req.query || {};
+    const overrideDays = Number(query.days);
+    const overrideMin = Number(query.min);
+    const overrideLimit = Number(query.limit);
+    const overrideTasks = Number(query.tasks);
+
+    const effectiveRecentDays = Number.isFinite(overrideDays) && overrideDays > 0 ? overrideDays : RECENT_DAYS;
+    const effectiveMinInteraction = Number.isFinite(overrideMin) && overrideMin >= 0 ? overrideMin : DEFAULT_MIN_INTERACTION;
+    const effectiveLimit = Number.isFinite(overrideLimit) && overrideLimit > 0 ? overrideLimit : DEFAULT_LIMIT;
+    const effectiveMaxTasks = Number.isFinite(overrideTasks) && overrideTasks > 0 ? overrideTasks : MAX_TASKS_PER_RUN;
     const justOneToken = process.env.JUSTONEAPI_TOKEN;
     const xBearerToken = process.env.X_API_BEARER_TOKEN;
 
@@ -319,7 +329,7 @@ export default async function handler(req, res) {
       platforms: DEFAULT_PLATFORMS,
       config: { sort: 'popularity_descending', noteTime: '一周内' }
     }];
-    const tasksToRun = tasks.slice(0, MAX_TASKS_PER_RUN);
+    const tasksToRun = tasks.slice(0, effectiveMaxTasks);
 
     const allResults = [];
     const platformStats = [];
@@ -339,7 +349,7 @@ export default async function handler(req, res) {
                 platformErrors.push({ platform: 'twitter', error: 'X API Bearer Token not configured' });
                 return [];
               }
-              const results = await searchTwitter(task.keywords, DEFAULT_LIMIT, xBearerToken);
+              const results = await searchTwitter(task.keywords, effectiveLimit, xBearerToken);
               platformStats.push({ platform: 'twitter', count: results.length });
               return results;
             }
@@ -354,7 +364,7 @@ export default async function handler(req, res) {
               task.config?.noteType || '_0',
               task.config?.noteTime || undefined,
               justOneToken,
-              DEFAULT_LIMIT
+              effectiveLimit
             );
             platformStats.push({ platform: 'xiaohongshu', count: results.length });
             return results;
@@ -368,7 +378,7 @@ export default async function handler(req, res) {
       let results = responses.flat();
 
       const minInter = task.config?.minInteraction;
-      const minValue = (!minInter || isNaN(Number(minInter))) ? DEFAULT_MIN_INTERACTION : Number(minInter);
+      const minValue = (!minInter || isNaN(Number(minInter))) ? effectiveMinInteraction : Number(minInter);
       if (minValue > 0) {
         results = results.filter((r) => {
           const total = (r.metrics?.likes || 0) + (r.metrics?.bookmarks || 0) + (r.metrics?.comments || 0);
@@ -376,7 +386,7 @@ export default async function handler(req, res) {
         });
       }
 
-      results = results.filter((r) => isRecentEnough(r.publishTime));
+      results = results.filter((r) => isRecentEnough(r.publishTime, effectiveRecentDays));
       results = results.filter((r) => isAIRelevant(`${r.title || ''}\n${r.desc || ''}`));
 
       allResults.push(...results);
@@ -488,6 +498,12 @@ export default async function handler(req, res) {
       updatedTasks: updatedTasks.length,
       candidates: candidates.length,
       tasksRun: tasksToRun.length,
+      effective: {
+        days: effectiveRecentDays,
+        minInteraction: effectiveMinInteraction,
+        limit: effectiveLimit,
+        tasks: effectiveMaxTasks
+      },
       platformStats,
       platformErrors
     });
