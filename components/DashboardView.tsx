@@ -211,7 +211,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                                 {/* Tags */}
                                 <div className="flex flex-wrap gap-1 mb-4">
-                                    {item.tags.slice(0, 2).map(tag => (
+                                    {item.tags.filter(t => !t.startsWith('snapshot:')).slice(0, 2).map(tag => (
                                         <span key={tag} className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200">
                                             #{tag}
                                         </span>

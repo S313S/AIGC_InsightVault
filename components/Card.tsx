@@ -107,7 +107,7 @@ export const Card: React.FC<CardProps> = ({
 
         {/* Tags */}
         <div className="flex flex-wrap gap-1 mb-3">
-          {card.tags.slice(0, 3).map(tag => (
+          {card.tags.filter(t => !t.startsWith('snapshot:')).slice(0, 3).map(tag => (
             <span key={tag} className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
               #{tag}
             </span>
