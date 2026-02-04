@@ -434,6 +434,7 @@ export default async function handler(req, res) {
     const toInsert = candidates
       .filter(c => !existing.has(c.sourceUrl))
       .map(c => buildTrendingRow(c, snapshotTag));
+    let updatedExisting = 0;
 
     if (toInsert.length > 0) {
       const { error: insertError } = await supabase
@@ -441,6 +442,31 @@ export default async function handler(req, res) {
         .insert(toInsert);
       if (insertError) {
         throw new Error(insertError.message || 'Failed to insert trending cards');
+      }
+    } else if (candidateUrls.length > 0) {
+      // No new rows inserted because everything already exists; roll forward snapshot tag on existing rows.
+      const { data: existingCards, error: existingCardsError } = await supabase
+        .from('knowledge_cards')
+        .select('id, tags')
+        .in('source_url', candidateUrls);
+
+      if (existingCardsError) {
+        throw new Error(existingCardsError.message || 'Failed to load existing trending cards');
+      }
+
+      for (const row of existingCards || []) {
+        const tags = Array.isArray(row.tags) ? row.tags : [];
+        if (!tags.includes(snapshotTag)) {
+          tags.push(snapshotTag);
+        }
+        const { error: updateError } = await supabase
+          .from('knowledge_cards')
+          .update({ tags, is_trending: true })
+          .eq('id', row.id);
+        if (updateError) {
+          throw new Error(updateError.message || 'Failed to update existing trending cards');
+        }
+        updatedExisting += 1;
       }
     }
 
@@ -495,6 +521,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       inserted: toInsert.length,
+      updatedExisting,
       updatedTasks: updatedTasks.length,
       candidates: candidates.length,
       tasksRun: tasksToRun.length,
