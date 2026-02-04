@@ -35,21 +35,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     // 1. Hot Picks Data (Top 6 items for the 2x3 grid)
     const hotPicks = uniqueTrending.slice(0, 6);
 
+    const sortedByHot = [...uniqueTrending].sort((a, b) => b.metrics.likes - a.metrics.likes);
+    const usedIds = new Set<string>();
+
+    const pickRankings = (tag: string) => {
+        const primary = sortedByHot.filter(item => item.tags.includes(tag) && !usedIds.has(item.id));
+        const selected: KnowledgeCard[] = [];
+        for (const item of primary) {
+            if (selected.length >= 3) break;
+            selected.push(item);
+            usedIds.add(item.id);
+        }
+        if (selected.length < 3) {
+            const fallback = sortedByHot.filter(item => !usedIds.has(item.id));
+            for (const item of fallback) {
+                if (selected.length >= 3) break;
+                selected.push(item);
+                usedIds.add(item.id);
+            }
+        }
+        return selected;
+    };
+
     // 2. Categorized Rankings Data - Limited to Top 3 as requested
-    const imageGenRankings = uniqueTrending
-        .filter(item => item.tags.includes('Image Gen'))
-        .sort((a, b) => b.metrics.likes - a.metrics.likes)
-        .slice(0, 3);
-
-    const videoGenRankings = uniqueTrending
-        .filter(item => item.tags.includes('Video Gen'))
-        .sort((a, b) => b.metrics.likes - a.metrics.likes)
-        .slice(0, 3);
-
-    const vibeCodingRankings = uniqueTrending
-        .filter(item => item.tags.includes('Vibe Coding'))
-        .sort((a, b) => b.metrics.likes - a.metrics.likes)
-        .slice(0, 3);
+    const imageGenRankings = pickRankings('Image Gen');
+    const videoGenRankings = pickRankings('Video Gen');
+    const vibeCodingRankings = pickRankings('Vibe Coding');
 
     const formatLikes = (count: number) => {
         return count >= 1000 ? (count / 1000).toFixed(1) + 'k' : count;
