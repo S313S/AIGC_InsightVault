@@ -558,17 +558,23 @@ export default async function handler(req, res) {
     const snapshotTag = `snapshot:${snapshotId}`;
     const updatedTasks = [];
 
+    let twitterQueried = false;
+
     for (const task of tasksToRun) {
       const platforms = (task.platforms && task.platforms.length > 0) ? task.platforms : DEFAULT_PLATFORMS;
       const runOne = async (p) => {
         const platformName = p === 'Twitter' || p === 'twitter' ? 'twitter' : 'xiaohongshu';
         try {
           if (platformName === 'twitter') {
+            if (twitterQueried) {
+              return [];
+            }
             if (!xBearerToken) {
               platformErrors.push({ platform: 'twitter', error: 'X API Bearer Token not configured' });
               return [];
             }
             const results = await searchTwitter(twitterKeywordPool, effectiveLimit, xBearerToken, twitterQueryOpts);
+            twitterQueried = true;
             platformStats.push({ platform: 'twitter', count: results.length });
             platformTotals.twitter.fetched += results.length;
             return results;
