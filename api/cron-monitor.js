@@ -516,6 +516,7 @@ export default async function handler(req, res) {
       twitter: { fetched: 0, afterMinInteraction: 0, afterRecent: 0, afterAI: 0 },
       xiaohongshu: { fetched: 0, afterMinInteraction: 0, afterRecent: 0, afterAI: 0 }
     };
+    const twitterSamples = [];
     const funnel = {
       fetched: 0,
       afterMinInteraction: 0,
@@ -578,6 +579,13 @@ export default async function handler(req, res) {
       for (const item of results) {
         if (item.platform === 'Twitter') platformFunnel.twitter.fetched += 1;
         if (item.platform === 'Xiaohongshu') platformFunnel.xiaohongshu.fetched += 1;
+        if (item.platform === 'Twitter' && twitterSamples.length < 5 && item.sourceUrl) {
+          twitterSamples.push({
+            url: item.sourceUrl,
+            text: item.desc?.slice(0, 120) || '',
+            metrics: item.metricsRaw || item.metrics || {}
+          });
+        }
       }
 
       const minValue = effectiveMinInteraction;
@@ -762,6 +770,7 @@ export default async function handler(req, res) {
       platformStats,
       platformTotals,
       platformFunnel,
+      twitterSamples,
       platformErrors
     });
   } catch (err) {
