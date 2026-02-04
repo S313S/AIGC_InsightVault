@@ -4,9 +4,10 @@ import { createClient } from '@supabase/supabase-js';
 
 const DEFAULT_MONITOR_KEYWORDS = ['AI', 'AIGC', '人工智能', '大模型', 'LLM', 'GPT', 'Claude'];
 const DEFAULT_PLATFORMS = ['xiaohongshu', 'twitter'];
-const DEFAULT_LIMIT = 20;
-const DEFAULT_MIN_INTERACTION = 10000;
+const DEFAULT_LIMIT = 10;
+const DEFAULT_MIN_INTERACTION = 5000;
 const RECENT_DAYS = 3;
+const MAX_TASKS_PER_RUN = 3;
 
 const AI_KEYWORDS = [
   'ai', 'a.i.', '人工智能', '大模型', 'llm', 'gpt', 'claude', 'openai',
@@ -318,6 +319,7 @@ export default async function handler(req, res) {
       platforms: DEFAULT_PLATFORMS,
       config: { sort: 'popularity_descending', noteTime: '一周内' }
     }];
+    const tasksToRun = tasks.slice(0, MAX_TASKS_PER_RUN);
 
     const allResults = [];
     const platformStats = [];
@@ -326,7 +328,7 @@ export default async function handler(req, res) {
     const snapshotTag = `snapshot:${snapshotId}`;
     const updatedTasks = [];
 
-    for (const task of tasks) {
+    for (const task of tasksToRun) {
       const platforms = (task.platforms && task.platforms.length > 0) ? task.platforms : DEFAULT_PLATFORMS;
       const responses = await Promise.all(
         platforms.map(async (p) => {
@@ -485,6 +487,7 @@ export default async function handler(req, res) {
       inserted: toInsert.length,
       updatedTasks: updatedTasks.length,
       candidates: candidates.length,
+      tasksRun: tasksToRun.length,
       platformStats,
       platformErrors
     });
