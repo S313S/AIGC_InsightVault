@@ -6,7 +6,7 @@ const DEFAULT_MONITOR_KEYWORDS = ['AI', 'AIGC', '人工智能', '大模型', 'LL
 const DEFAULT_PLATFORMS = ['xiaohongshu', 'twitter'];
 const DEFAULT_LIMIT = 20;
 const DEFAULT_MIN_INTERACTION = 10000;
-const RECENT_DAYS = 14;
+const RECENT_DAYS = 3;
 
 const AI_KEYWORDS = [
   'ai', 'a.i.', '人工智能', '大模型', 'llm', 'gpt', 'claude', 'openai',
