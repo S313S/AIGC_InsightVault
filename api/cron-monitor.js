@@ -203,7 +203,7 @@ const mapTwitterSearchResult = (tweet, userById, mediaByKey) => {
     .map(m => m.url || m.preview_image_url)
     .filter(Boolean);
 
-  const coverImage = images[0] || '';
+  const coverImage = images[0] || user.profile_image_url || '';
 
   return {
     noteId: tweet.id,
@@ -212,10 +212,10 @@ const mapTwitterSearchResult = (tweet, userById, mediaByKey) => {
     author: user.username || user.name || '',
     authorAvatar: user.profile_image_url || '',
     coverImage,
-    images,
+    images: images.length > 0 ? images : (user.profile_image_url ? [user.profile_image_url] : []),
     metrics: {
       likes: tweet.public_metrics?.like_count || 0,
-      bookmarks: tweet.public_metrics?.bookmark_count || 0,
+      bookmarks: tweet.public_metrics?.retweet_count || 0,
       comments: tweet.public_metrics?.reply_count || 0,
       shares: tweet.public_metrics?.retweet_count || 0,
     },
@@ -435,6 +435,7 @@ export default async function handler(req, res) {
       .filter(c => !existing.has(c.sourceUrl))
       .map(c => buildTrendingRow(c, snapshotTag));
     let updatedExisting = 0;
+    const candidateByUrl = new Map(candidates.map(c => [c.sourceUrl, c]));
 
     if (toInsert.length > 0) {
       const { error: insertError } = await supabase
@@ -455,13 +456,31 @@ export default async function handler(req, res) {
       }
 
       for (const row of existingCards || []) {
+        const candidate = candidateByUrl.get(row.source_url);
+        if (!candidate) continue;
+        const updatedRow = buildTrendingRow(candidate, snapshotTag);
         const tags = Array.isArray(row.tags) ? row.tags : [];
-        if (!tags.includes(snapshotTag)) {
-          tags.push(snapshotTag);
-        }
+        const mergedTags = updatedRow.tags?.length
+          ? Array.from(new Set([...updatedRow.tags, ...tags]))
+          : tags;
         const { error: updateError } = await supabase
           .from('knowledge_cards')
-          .update({ tags, is_trending: true })
+          .update({
+            title: updatedRow.title,
+            source_url: updatedRow.source_url,
+            platform: updatedRow.platform,
+            author: updatedRow.author,
+            date: updatedRow.date,
+            cover_image: updatedRow.cover_image,
+            metrics: updatedRow.metrics,
+            content_type: updatedRow.content_type,
+            raw_content: updatedRow.raw_content,
+            ai_analysis: updatedRow.ai_analysis,
+            tags: mergedTags,
+            user_notes: updatedRow.user_notes,
+            collections: updatedRow.collections,
+            is_trending: true
+          })
           .eq('id', row.id);
         if (updateError) {
           throw new Error(updateError.message || 'Failed to update existing trending cards');
