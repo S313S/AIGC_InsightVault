@@ -266,7 +266,7 @@ const mapSearchResult = (note) => {
     publishTime: publishTimeTag?.text || '',
     xsecToken: note.xsec_token || '',
     platform: 'Xiaohongshu',
-    sourceUrl: `https://www.xiaohongshu.com/discovery/item/${note.id}?xsec_token=${encodeURIComponent(note.xsec_token || '')}`,
+    sourceUrl: `https://www.xiaohongshu.com/discovery/item/${note.id}`,
   };
 };
 

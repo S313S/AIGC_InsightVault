@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { KnowledgeCard, TrackingTask, Platform, TaskStatus } from '../types';
 import { Flame, ArrowRight, Save, ExternalLink, Activity, LayoutGrid, Clock, Heart, TrendingUp, Bookmark, Sparkles } from './Icons';
 
@@ -18,13 +18,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     onSaveToVault
 }) => {
 
-    const totalItemsFound = tasks.reduce((acc, t) => acc + t.itemsFound, 0);
+    const totalItemsFound = trendingItems.length;
+    const [showAllTrending, setShowAllTrending] = useState(false);
 
-    const uniqueTrending = React.useMemo(() => {
+    const normalizeSourceUrl = (url: string) => {
+        if (!url) return '';
+        const [base] = url.split('?');
+        return base.trim();
+    };
+
+    const uniqueTrending = useMemo(() => {
         const seen = new Set<string>();
         const unique: KnowledgeCard[] = [];
         for (const item of trendingItems) {
-            const key = item.sourceUrl || `${item.title}|${item.author}`;
+            const key = normalizeSourceUrl(item.sourceUrl) || `${item.title}|${item.author}`;
             if (seen.has(key)) continue;
             seen.add(key);
             unique.push(item);
@@ -176,7 +183,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         </div>
                         <h3 className="text-lg font-bold text-gray-900">Trending Now</h3>
                     </div>
-                    <button className="text-sm text-indigo-600 font-medium hover:text-indigo-700 flex items-center gap-1">
+                    <button
+                        onClick={() => setShowAllTrending(true)}
+                        className="text-sm text-indigo-600 font-medium hover:text-indigo-700 flex items-center gap-1"
+                    >
                         See All <ArrowRight size={14} />
                     </button>
                 </div>
@@ -321,6 +331,59 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
 
             </div>
+
+            {/* All Trending Modal */}
+            {showAllTrending && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-6xl max-h-[85vh] flex flex-col shadow-2xl">
+                        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                            <div>
+                                <h2 className="text-xl font-bold text-gray-900">Trending Now · All</h2>
+                                <p className="text-sm text-gray-500 mt-1">
+                                    {uniqueTrending.length} posts in this snapshot
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setShowAllTrending(false)}
+                                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+                            >
+                                Close
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {uniqueTrending.map(item => (
+                                    <div
+                                        key={item.id}
+                                        onClick={() => window.open(item.sourceUrl, '_blank')}
+                                        className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex flex-col overflow-hidden group cursor-pointer"
+                                    >
+                                        <div className="h-40 relative bg-gray-100 overflow-hidden">
+                                            <img
+                                                src={item.coverImage}
+                                                alt={item.title}
+                                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                            />
+                                        </div>
+                                        <div className="p-4 flex flex-col flex-1">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <PlatformBadge platform={item.platform} />
+                                                <span className="text-xs text-gray-400">{item.date}</span>
+                                            </div>
+                                            <h4 className="text-base font-bold text-gray-900 mb-2 leading-snug line-clamp-2 group-hover:text-indigo-600 transition-colors">
+                                                {item.title}
+                                            </h4>
+                                            <p className="text-sm text-gray-500 line-clamp-2 mb-3 flex-1">
+                                                {item.rawContent}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
