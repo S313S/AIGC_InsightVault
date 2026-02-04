@@ -419,6 +419,14 @@ export default async function handler(req, res) {
     const toInsert = candidates.filter(c => !existing.has(c.sourceUrl)).map(buildTrendingRow);
 
     if (toInsert.length > 0) {
+      const { error: clearError } = await supabase
+        .from('knowledge_cards')
+        .delete()
+        .eq('is_trending', true);
+      if (clearError) {
+        throw new Error(clearError.message || 'Failed to clear old trending cards');
+      }
+
       const { error: insertError } = await supabase
         .from('knowledge_cards')
         .insert(toInsert);
