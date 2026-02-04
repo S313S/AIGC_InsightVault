@@ -140,7 +140,16 @@ export const getTrendingCards = async (): Promise<KnowledgeCard[]> => {
         return [];
     }
 
-    return (data || []).map(dbToCard);
+    const cards = (data || []).map(dbToCard);
+    const snapshotTags = cards
+        .map(c => c.tags?.find(t => typeof t === 'string' && t.startsWith('snapshot:')) || '')
+        .filter(Boolean)
+        .sort((a, b) => (a > b ? -1 : a < b ? 1 : 0));
+
+    if (snapshotTags.length === 0) return cards;
+
+    const latest = snapshotTags[0];
+    return cards.filter(c => c.tags?.includes(latest));
 };
 
 export const saveCard = async (card: KnowledgeCard, isTrending: boolean = false): Promise<boolean> => {

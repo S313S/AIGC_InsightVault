@@ -98,7 +98,7 @@ const isRecentEnough = (dateStr) => {
   return diffDays <= RECENT_DAYS;
 };
 
-const buildTrendingRow = (result) => {
+const buildTrendingRow = (result, snapshotTag) => {
   const baseText = result.desc || result.title || '';
   const summary = baseText
     ? (baseText.length > 160 ? baseText.slice(0, 160) + '...' : baseText)
@@ -106,6 +106,7 @@ const buildTrendingRow = (result) => {
   const extractedTags = (result.desc || '').match(/#[^\s#]+/g)?.map(t => t.slice(1)) || [];
   const category = inferCategoryTag(baseText);
   const tags = category ? Array.from(new Set([category, ...extractedTags])) : extractedTags;
+  const tagsWithSnapshot = snapshotTag ? Array.from(new Set([...tags, snapshotTag])) : tags;
 
   return {
     title: result.title || (result.desc ? result.desc.slice(0, 40) : '') || '无标题',
@@ -123,7 +124,7 @@ const buildTrendingRow = (result) => {
       coreKnowledge: [],
       extractedPrompts: []
     },
-    tags,
+    tags: tagsWithSnapshot,
     user_notes: '',
     collections: [],
     is_trending: true,
@@ -321,6 +322,8 @@ export default async function handler(req, res) {
     const allResults = [];
     const platformStats = [];
     const platformErrors = [];
+    const snapshotId = new Date().toISOString();
+    const snapshotTag = `snapshot:${snapshotId}`;
     const updatedTasks = [];
 
     for (const task of tasks) {
@@ -416,22 +419,56 @@ export default async function handler(req, res) {
     }
 
     const existing = new Set((existingRows || []).map(r => r.source_url));
-    const toInsert = candidates.filter(c => !existing.has(c.sourceUrl)).map(buildTrendingRow);
+    const toInsert = candidates
+      .filter(c => !existing.has(c.sourceUrl))
+      .map(c => buildTrendingRow(c, snapshotTag));
 
     if (toInsert.length > 0) {
-      const { error: clearError } = await supabase
-        .from('knowledge_cards')
-        .delete()
-        .eq('is_trending', true);
-      if (clearError) {
-        throw new Error(clearError.message || 'Failed to clear old trending cards');
-      }
-
       const { error: insertError } = await supabase
         .from('knowledge_cards')
         .insert(toInsert);
       if (insertError) {
         throw new Error(insertError.message || 'Failed to insert trending cards');
+      }
+    }
+
+    // Keep only the latest 5 snapshots of trending data
+    const { data: trendRows, error: trendError } = await supabase
+      .from('knowledge_cards')
+      .select('id, tags')
+      .eq('is_trending', true);
+
+    if (trendError) {
+      throw new Error(trendError.message || 'Failed to load trending snapshots');
+    }
+
+    const snapshotToIds = new Map();
+    for (const row of trendRows || []) {
+      const tags = Array.isArray(row.tags) ? row.tags : [];
+      const snap = tags.find(t => typeof t === 'string' && t.startsWith('snapshot:')) || 'snapshot:legacy';
+      if (!snapshotToIds.has(snap)) snapshotToIds.set(snap, []);
+      snapshotToIds.get(snap).push(row.id);
+    }
+
+    const snapshots = Array.from(snapshotToIds.keys()).sort((a, b) => {
+      if (a === 'snapshot:legacy') return 1;
+      if (b === 'snapshot:legacy') return -1;
+      return a > b ? -1 : a < b ? 1 : 0;
+    });
+
+    const keep = new Set(snapshots.slice(0, 5));
+    const idsToDelete = [];
+    for (const [snap, ids] of snapshotToIds.entries()) {
+      if (!keep.has(snap)) idsToDelete.push(...ids);
+    }
+
+    if (idsToDelete.length > 0) {
+      const { error: cleanupError } = await supabase
+        .from('knowledge_cards')
+        .delete()
+        .in('id', idsToDelete);
+      if (cleanupError) {
+        throw new Error(cleanupError.message || 'Failed to cleanup old snapshots');
       }
     }
 
