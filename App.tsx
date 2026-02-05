@@ -10,7 +10,7 @@ import { INITIAL_DATA, INITIAL_TASKS, TRENDING_DATA, INITIAL_COLLECTIONS } from 
 import { KnowledgeCard, FilterState, TrackingTask, Collection, ContentType, Platform, SocialSearchResult, TaskStatus } from './types';
 import { isSupabaseConnected } from './services/supabaseClient';
 import * as db from './services/supabaseService';
-import { searchSocial } from './services/socialService';
+import { fetchSocialContent, searchSocial } from './services/socialService';
 import { analyzeContentWithGemini } from './services/geminiService';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
@@ -384,20 +384,38 @@ const App: React.FC = () => {
       }
     };
 
+    const enrichCoverImage = async (target: KnowledgeCard) => {
+      if (target.coverImage) return target;
+      if (!target.sourceUrl) return target;
+
+      try {
+        const fetched = await fetchSocialContent(target.sourceUrl);
+        if (fetched?.coverImage) {
+          return { ...target, coverImage: fetched.coverImage };
+        }
+      } catch (error) {
+        console.warn('Cover image generation failed:', error);
+      }
+
+      return target;
+    };
+
     // Add to main cards list
     const savedCard = { ...card, id: isSupabaseConnected() ? card.id : Date.now().toString() };
     setCards(prev => [savedCard, ...prev]);
     // Remove from trending list
     setTrending(prev => prev.filter(c => c.id !== card.id));
 
-    const analyzedCard = await enrichWithAnalysis(savedCard);
-    if (analyzedCard !== savedCard) {
-      setCards(prev => prev.map(c => c.id === savedCard.id ? analyzedCard : c));
+    let updatedCard = await enrichCoverImage(savedCard);
+    updatedCard = await enrichWithAnalysis(updatedCard);
+
+    if (updatedCard !== savedCard) {
+      setCards(prev => prev.map(c => c.id === savedCard.id ? updatedCard : c));
     }
 
     if (isSupabaseConnected()) {
-      if (analyzedCard !== savedCard) {
-        await db.updateCard(analyzedCard);
+      if (updatedCard !== savedCard) {
+        await db.updateCard(updatedCard);
       } else {
         await db.moveTrendingToVault(card);
       }
