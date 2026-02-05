@@ -11,6 +11,7 @@ import { KnowledgeCard, FilterState, TrackingTask, Collection, ContentType, Plat
 import { isSupabaseConnected } from './services/supabaseClient';
 import * as db from './services/supabaseService';
 import { searchSocial } from './services/socialService';
+import { analyzeContentWithGemini } from './services/geminiService';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 
@@ -346,14 +347,60 @@ const App: React.FC = () => {
   };
 
   const handleSaveTrendingToVault = async (card: KnowledgeCard) => {
+    const shouldAnalyze = (target: KnowledgeCard) => {
+      const summary = target.aiAnalysis?.summary?.trim() || '';
+      const hasSummary = summary.length > 0 && summary !== '暂无摘要';
+      const hasDetails = (target.aiAnalysis?.usageScenarios?.length || 0) > 0
+        || (target.aiAnalysis?.coreKnowledge?.length || 0) > 0
+        || (target.aiAnalysis?.extractedPrompts?.length || 0) > 0;
+      return !hasSummary || !hasDetails;
+    };
+
+    const buildAnalysisContent = (target: KnowledgeCard) => {
+      const content = [target.title, target.rawContent].filter(Boolean).join('\n');
+      return content.trim();
+    };
+
+    const enrichWithAnalysis = async (target: KnowledgeCard) => {
+      if (!shouldAnalyze(target)) return target;
+      const content = buildAnalysisContent(target);
+      if (!content) return target;
+
+      try {
+        const analysis = await analyzeContentWithGemini(content);
+        const summary = analysis?.summary?.trim() || target.aiAnalysis?.summary || '';
+        return {
+          ...target,
+          aiAnalysis: {
+            summary,
+            usageScenarios: analysis?.usageScenarios || target.aiAnalysis?.usageScenarios || [],
+            coreKnowledge: analysis?.coreKnowledge || target.aiAnalysis?.coreKnowledge || [],
+            extractedPrompts: analysis?.extractedPrompts || target.aiAnalysis?.extractedPrompts || []
+          }
+        };
+      } catch (error) {
+        console.error('Trending analysis failed:', error);
+        return target;
+      }
+    };
+
     // Add to main cards list
     const savedCard = { ...card, id: isSupabaseConnected() ? card.id : Date.now().toString() };
     setCards(prev => [savedCard, ...prev]);
     // Remove from trending list
     setTrending(prev => prev.filter(c => c.id !== card.id));
 
+    const analyzedCard = await enrichWithAnalysis(savedCard);
+    if (analyzedCard !== savedCard) {
+      setCards(prev => prev.map(c => c.id === savedCard.id ? analyzedCard : c));
+    }
+
     if (isSupabaseConnected()) {
-      await db.moveTrendingToVault(card);
+      if (analyzedCard !== savedCard) {
+        await db.updateCard(analyzedCard);
+      } else {
+        await db.moveTrendingToVault(card);
+      }
     }
   };
 
