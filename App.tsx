@@ -400,6 +400,24 @@ const App: React.FC = () => {
       return target;
     };
 
+    const ensureTags = (target: KnowledgeCard) => {
+      const currentTags = (target.tags || []).filter(Boolean).filter(t => !t.startsWith('snapshot:'));
+      if (currentTags.length > 0) return target;
+
+      const text = [target.title, target.rawContent, target.aiAnalysis?.summary]
+        .filter(Boolean)
+        .join('\n');
+
+      const extracted = text.match(/#[^\s#]+/g)?.map(t => t.slice(1)).filter(Boolean) || [];
+      const category = inferCategoryTag(text);
+      const tagSet = new Set<string>();
+      if (category) tagSet.add(category);
+      extracted.forEach(t => tagSet.add(t));
+      if (tagSet.size === 0) tagSet.add('AI');
+
+      return { ...target, tags: Array.from(tagSet) };
+    };
+
     // Add to main cards list
     const savedCard = { ...card, id: isSupabaseConnected() ? card.id : Date.now().toString() };
     setCards(prev => [savedCard, ...prev]);
@@ -408,6 +426,7 @@ const App: React.FC = () => {
 
     let updatedCard = await enrichCoverImage(savedCard);
     updatedCard = await enrichWithAnalysis(updatedCard);
+    updatedCard = ensureTags(updatedCard);
 
     if (updatedCard !== savedCard) {
       setCards(prev => prev.map(c => c.id === savedCard.id ? updatedCard : c));

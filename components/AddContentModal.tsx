@@ -40,6 +40,30 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
         }
     };
 
+    const inferCategoryTag = (text: string) => {
+        const t = (text || '').toLowerCase();
+        const imageKeywords = [
+            'image', 'img', 'photo', 'picture', '图', '图片', '绘画', '生图', '海报', '头像',
+            'midjourney', 'mj', 'stable diffusion', 'sd', 'comfyui', 'flux', 'krea',
+            'lora', 'controlnet', 'prompt', '风格化', '修图', '上色'
+        ];
+        const videoKeywords = [
+            'video', '视频', 'animation', '动画', '短片', '剪辑', '镜头',
+            'runway', 'gen-3', 'gen3', 'kling', '可灵', 'pika', 'sora', 'veo', 'luma'
+        ];
+        const vibeKeywords = [
+            'code', 'coding', '程序', '编程', '开发', '工程', 'repo', 'github', 'git',
+            'cursor', 'claude code', 'vibe coding', 'vscode', 'ide', 'agent', 'workflow',
+            '自动化', '前端', '后端', 'python', 'node', 'typescript', 'react', 'prompt engineering'
+        ];
+
+        const hasAny = (arr: string[]) => arr.some(k => t.includes(k));
+        if (hasAny(imageKeywords)) return 'Image Gen';
+        if (hasAny(videoKeywords)) return 'Video Gen';
+        if (hasAny(vibeKeywords)) return 'Vibe Coding';
+        return '';
+    };
+
     const handleProcessWithAI = async () => {
         if (!url && !rawText) return;
 
@@ -52,6 +76,22 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
         const analysis = await analyzeContentWithGemini(contentToAnalyze);
 
         // Use fetched data if available, otherwise fallback
+        const extractedTags = (contentToAnalyze || '')
+            .match(/#[^\s#]+/g)
+            ?.map(t => t.slice(1))
+            .filter(Boolean) || [];
+        const baseTags = (fetchedData?.tags || []).filter(Boolean);
+        const category = inferCategoryTag([fetchedData?.title, fetchedData?.rawContent, contentToAnalyze].filter(Boolean).join('\n'));
+        const tagSet = new Set<string>();
+        if (category) tagSet.add(category);
+        extractedTags.forEach(t => tagSet.add(t));
+        baseTags.forEach(t => tagSet.add(t));
+        if (tagSet.size === 0) {
+            tagSet.add('Manual');
+            tagSet.add('AI');
+        }
+        const tags = Array.from(tagSet);
+
         const newCard: KnowledgeCard = {
             id: Date.now().toString(),
             title: fetchedData?.title || analysis.summary.slice(0, 50) + "...",
@@ -64,7 +104,7 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
             contentType: ContentType.ToolReview,
             rawContent: contentToAnalyze,
             aiAnalysis: analysis,
-            tags: fetchedData?.tags || ['Manual', 'AI'],
+            tags,
         };
 
         onAdd(newCard);
