@@ -11,7 +11,7 @@ import { KnowledgeCard, FilterState, TrackingTask, Collection, ContentType, Plat
 import { isSupabaseConnected } from './services/supabaseClient';
 import * as db from './services/supabaseService';
 import { fetchSocialContent, searchSocial } from './services/socialService';
-import { analyzeContentWithGemini } from './services/geminiService';
+import { analyzeContentWithGemini, classifyContentWithGemini } from './services/geminiService';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 
@@ -400,7 +400,13 @@ const App: React.FC = () => {
       return target;
     };
 
-    const ensureTags = (target: KnowledgeCard) => {
+    const normalizeCategory = (value: string) => {
+      const v = (value || '').trim();
+      if (v === 'Image Gen' || v === 'Video Gen' || v === 'Vibe Coding') return v;
+      return '';
+    };
+
+    const ensureTags = async (target: KnowledgeCard) => {
       const currentTags = (target.tags || []).filter(Boolean).filter(t => !t.startsWith('snapshot:'));
       if (currentTags.length > 0) return target;
 
@@ -409,11 +415,15 @@ const App: React.FC = () => {
         .join('\n');
 
       const extracted = text.match(/#[^\s#]+/g)?.map(t => t.slice(1)).filter(Boolean) || [];
-      const category = inferCategoryTag(text);
+      let category = inferCategoryTag(text);
+      if (!category && text.trim()) {
+        const aiCategory = await classifyContentWithGemini(text);
+        category = normalizeCategory(aiCategory);
+      }
+      if (!category) category = 'Vibe Coding';
       const tagSet = new Set<string>();
       if (category) tagSet.add(category);
       extracted.forEach(t => tagSet.add(t));
-      if (tagSet.size === 0) tagSet.add('AI');
 
       return { ...target, tags: Array.from(tagSet) };
     };
@@ -426,7 +436,7 @@ const App: React.FC = () => {
 
     let updatedCard = await enrichCoverImage(savedCard);
     updatedCard = await enrichWithAnalysis(updatedCard);
-    updatedCard = ensureTags(updatedCard);
+    updatedCard = await ensureTags(updatedCard);
 
     if (updatedCard !== savedCard) {
       setCards(prev => prev.map(c => c.id === savedCard.id ? updatedCard : c));

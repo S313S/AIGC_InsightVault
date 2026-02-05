@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Loader2, Sparkles, Plus, ExternalLink } from './Icons';
-import { analyzeContentWithGemini } from '../services/geminiService';
+import { analyzeContentWithGemini, classifyContentWithGemini } from '../services/geminiService';
 import { fetchSocialContent, SocialMediaContent } from '../services/socialService';
 import { Platform, ContentType, KnowledgeCard, EngagementMetrics } from '../types';
 
@@ -64,6 +64,12 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
         return '';
     };
 
+    const normalizeCategory = (value: string) => {
+        const v = (value || '').trim();
+        if (v === 'Image Gen' || v === 'Video Gen' || v === 'Vibe Coding') return v;
+        return '';
+    };
+
     const handleProcessWithAI = async () => {
         if (!url && !rawText) return;
 
@@ -81,15 +87,17 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
             ?.map(t => t.slice(1))
             .filter(Boolean) || [];
         const baseTags = (fetchedData?.tags || []).filter(Boolean);
-        const category = inferCategoryTag([fetchedData?.title, fetchedData?.rawContent, contentToAnalyze].filter(Boolean).join('\n'));
+        const combinedText = [fetchedData?.title, fetchedData?.rawContent, contentToAnalyze].filter(Boolean).join('\n');
+        let category = inferCategoryTag(combinedText);
+        if (!category && combinedText.trim()) {
+            const aiCategory = await classifyContentWithGemini(combinedText);
+            category = normalizeCategory(aiCategory);
+        }
+        if (!category) category = 'Vibe Coding';
         const tagSet = new Set<string>();
         if (category) tagSet.add(category);
         extractedTags.forEach(t => tagSet.add(t));
         baseTags.forEach(t => tagSet.add(t));
-        if (tagSet.size === 0) {
-            tagSet.add('Manual');
-            tagSet.add('AI');
-        }
         const tags = Array.from(tagSet);
 
         const newCard: KnowledgeCard = {
