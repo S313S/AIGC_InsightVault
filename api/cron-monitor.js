@@ -725,8 +725,10 @@ export default async function handler(req, res) {
       if (insertError) {
         throw new Error(insertError.message || 'Failed to insert trending cards');
       }
-    } else if (candidateUrls.length > 0) {
-      // No new rows inserted because everything already exists; roll forward snapshot tag on existing rows.
+    }
+
+    if (candidateUrls.length > 0) {
+      // Roll forward snapshot tag on existing rows that match current candidates
       const { data: existingCards, error: existingCardsError } = await supabase
         .from('knowledge_cards')
         .select('id, tags, source_url')
