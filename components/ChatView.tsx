@@ -34,7 +34,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
   useEffect(() => {
     // Only scroll to bottom after user sends a message, not on initial render
     if (messages.length > 1) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     }
   }, [messages]);
 
@@ -85,7 +85,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
   };
 
   return (
-    <div className="relative flex flex-col h-full overflow-hidden">
+    <div className="relative flex flex-col h-full min-h-0 overflow-hidden">
       {/* ===== Flowing Gradient Background ===== */}
       <div className="absolute inset-0">
         {/* Base gradient - softer, more ethereal */}
@@ -146,7 +146,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
       `}</style>
 
       {/* ===== Main Content Container ===== */}
-      <div className="relative z-10 flex flex-col h-full">
+      <div className="relative z-10 flex flex-col h-full min-h-0">
 
         {/* Header - Floating glass pill */}
         <div className="flex justify-center pt-4 pb-2 shrink-0">
@@ -180,7 +180,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
         </div>
 
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-5">
           {cards.length > 20 && (
             <div className="flex justify-center">
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300/80">

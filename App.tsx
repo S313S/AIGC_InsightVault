@@ -853,7 +853,7 @@ const App: React.FC = () => {
       </aside>
 
       {/* Main Content */}
-      <main className={`flex-1 flex flex-col overflow-hidden ${activeView !== 'chat' ? 'min-h-screen' : ''}`}>
+      <main className={`flex-1 flex flex-col overflow-hidden min-h-0 ${activeView !== 'chat' ? 'min-h-screen' : ''}`}>
 
         {/* Header - hide for chat view */}
         {activeView !== 'chat' && (
@@ -895,7 +895,7 @@ const App: React.FC = () => {
         )}
 
         {/* View Content */}
-        <div className="flex-1 overflow-hidden relative">
+        <div className="flex-1 overflow-hidden relative min-h-0">
 
           {activeView === 'dashboard' && (
             <div className="h-full overflow-y-auto p-6">
