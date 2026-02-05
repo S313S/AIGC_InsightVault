@@ -20,16 +20,14 @@ export default async function handler(req, res) {
     }
 
     const { message, context, mode } = req.body;
-    const apiKey = process.env.VITE_GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
     if (!apiKey) {
         return res.status(500).json({ error: 'Server API key configuration missing' });
     }
 
     try {
-        // SDK expects GEMINI_API_KEY environment variable
-        process.env.GEMINI_API_KEY = apiKey;
-        const ai = new GoogleGenAI({});
+        const ai = new GoogleGenAI({ apiKey });
 
         if (mode === 'analysis') {
             const prompt = `
