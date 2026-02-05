@@ -76,9 +76,9 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
 
-      <div className="relative bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col md:flex-row">
+      <div className="relative bg-[#0d1526]/95 backdrop-blur-xl rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl border border-[#1e3a5f]/50 flex flex-col md:flex-row">
 
         {/* Header Actions (Absolute) */}
         <div className="absolute top-4 right-4 z-10 flex gap-2">
@@ -86,20 +86,20 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setIsCollectionMenuOpen(!isCollectionMenuOpen)}
-              className="p-2 bg-white/90 hover:bg-white rounded-full shadow-sm transition-colors text-gray-600 hover:text-indigo-600"
+              className="p-2 bg-[#0d1526]/90 hover:bg-[#1e3a5f]/70 rounded-full shadow-sm transition-colors text-gray-400 hover:text-indigo-400"
               title="Add to Album"
             >
               <FolderPlus size={20} />
             </button>
 
             {isCollectionMenuOpen && (
-              <div className="absolute right-0 top-12 w-56 bg-white rounded-xl shadow-xl border border-gray-100 py-2 animate-in fade-in zoom-in-95 duration-100 z-50">
-                <div className="px-3 py-2 border-b border-gray-100 mb-1">
+              <div className="absolute right-0 top-12 w-56 bg-[#0d1526]/95 backdrop-blur-xl rounded-xl shadow-xl border border-[#1e3a5f]/50 py-2 animate-in fade-in zoom-in-95 duration-100 z-50">
+                <div className="px-3 py-2 border-b border-[#1e3a5f]/40 mb-1">
                   <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Save to Album</span>
                 </div>
                 <div className="max-h-60 overflow-y-auto">
                   {allCollections.length === 0 ? (
-                    <div className="px-4 py-3 text-sm text-gray-400 text-center">No albums created</div>
+                    <div className="px-4 py-3 text-sm text-gray-500 text-center">No albums created</div>
                   ) : (
                     allCollections.map(col => {
                       const isSelected = card.collections?.includes(col.id);
@@ -107,13 +107,13 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
                         <button
                           key={col.id}
                           onClick={() => toggleCollection(col.id)}
-                          className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between"
+                          className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-white/5 flex items-center justify-between"
                         >
                           <div className="flex items-center gap-2 truncate">
                             <div className="w-2 h-2 rounded-full bg-indigo-500 opacity-50"></div>
                             <span className="truncate">{col.name}</span>
                           </div>
-                          {isSelected && <Check size={14} className="text-indigo-600" />}
+                          {isSelected && <Check size={14} className="text-indigo-400" />}
                         </button>
                       );
                     })
@@ -125,22 +125,22 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
 
           <button
             onClick={handleDelete}
-            className="p-2 bg-white/90 hover:bg-white rounded-full shadow-sm transition-colors text-red-500 hover:text-red-700 hover:bg-red-50"
+            className="p-2 bg-[#0d1526]/90 hover:bg-red-500/20 rounded-full shadow-sm transition-colors text-red-400 hover:text-red-300"
             title="Delete Card"
           >
             <Trash2 size={20} />
           </button>
           <button
             onClick={onClose}
-            className="p-2 bg-white/90 hover:bg-white rounded-full shadow-sm transition-colors text-gray-500 hover:text-gray-700"
+            className="p-2 bg-[#0d1526]/90 hover:bg-[#1e3a5f]/70 rounded-full shadow-sm transition-colors text-gray-500 hover:text-gray-300"
           >
             <X size={20} />
           </button>
         </div>
 
         {/* Left Side: Visuals & Metrics (Scrollable on mobile) */}
-        <div className="w-full md:w-2/5 bg-gray-50 p-6 overflow-y-auto border-r border-gray-100">
-          <div className="rounded-xl overflow-hidden shadow-md mb-6 bg-white">
+        <div className="w-full md:w-2/5 bg-[#0a0f1a]/50 p-6 overflow-y-auto border-r border-[#1e3a5f]/40">
+          <div className="rounded-xl overflow-hidden shadow-md mb-6 bg-[#1e3a5f]/30">
             <img
               src={card.coverImage || 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop'}
               alt={card.title}
@@ -155,9 +155,9 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
 
           <div className="space-y-4">
             <div>
-              <h2 className="text-xl font-bold text-gray-900 leading-snug mb-2">{card.title}</h2>
+              <h2 className="text-xl font-bold text-gray-100 leading-snug mb-2">{card.title}</h2>
               <div className="flex items-center gap-2 text-sm text-gray-500">
-                <span className="font-medium text-gray-900">{card.author}</span>
+                <span className="font-medium text-gray-300">{card.author}</span>
                 <span>•</span>
                 <span>{card.date}</span>
                 <span>•</span>
@@ -172,7 +172,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
                   const col = allCollections.find(c => c.id === colId);
                   if (!col) return null;
                   return (
-                    <span key={colId} className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-700 text-xs rounded-md font-medium">
+                    <span key={colId} className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-500/20 text-indigo-400 text-xs rounded-md font-medium">
                       <FolderCheck size={10} />
                       {col.name}
                     </span>
@@ -181,18 +181,18 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
               </div>
             )}
 
-            <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-gray-200">
+            <div className="flex items-center justify-between bg-[#0d1526]/60 p-3 rounded-lg border border-[#1e3a5f]/40">
               <div className="flex flex-col items-center">
-                <Heart size={18} className="text-rose-500 mb-1" />
-                <span className="text-xs font-semibold">{card.metrics.likes}</span>
+                <Heart size={18} className="text-rose-400 mb-1" />
+                <span className="text-xs font-semibold text-gray-300">{card.metrics.likes}</span>
               </div>
               <div className="flex flex-col items-center">
-                <Bookmark size={18} className="text-amber-500 mb-1" />
-                <span className="text-xs font-semibold">{card.metrics.bookmarks}</span>
+                <Bookmark size={18} className="text-amber-400 mb-1" />
+                <span className="text-xs font-semibold text-gray-300">{card.metrics.bookmarks}</span>
               </div>
               <div className="flex flex-col items-center">
-                <MessageCircle size={18} className="text-blue-500 mb-1" />
-                <span className="text-xs font-semibold">{card.metrics.comments}</span>
+                <MessageCircle size={18} className="text-blue-400 mb-1" />
+                <span className="text-xs font-semibold text-gray-300">{card.metrics.comments}</span>
               </div>
             </div>
 
@@ -200,16 +200,16 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
               href={card.sourceUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 w-full py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg text-sm font-medium transition-colors"
+              className="flex items-center justify-center gap-2 w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
             >
               <ExternalLink size={16} />
               View Original Post
             </a>
 
             {/* Raw Content Preview (Collapsed usually, showing snippet here) */}
-            <div className="mt-6 pt-6 border-t border-gray-200">
-              <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Original Context</h4>
-              <p className="text-xs text-gray-500 line-clamp-6 whitespace-pre-wrap">
+            <div className="mt-6 pt-6 border-t border-[#1e3a5f]/40">
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Original Context</h4>
+              <p className="text-xs text-gray-400 line-clamp-6 whitespace-pre-wrap">
                 {card.rawContent}
               </p>
             </div>
@@ -217,35 +217,35 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
         </div>
 
         {/* Right Side: Knowledge & Prompts */}
-        <div className="w-full md:w-3/5 bg-white overflow-y-auto p-6 md:p-8">
+        <div className="w-full md:w-3/5 bg-[#0d1526]/30 overflow-y-auto p-6 md:p-8">
 
           {/* AI Summary Section - Now First */}
           <div className="mb-8">
             <div className="flex items-center gap-2 mb-4">
-              <div className="p-1.5 bg-purple-100 rounded-md">
-                <Sparkles size={18} className="text-purple-600" />
+              <div className="p-1.5 bg-purple-500/20 rounded-md">
+                <Sparkles size={18} className="text-purple-400" />
               </div>
-              <h3 className="text-lg font-bold text-gray-900">AI Summary</h3>
+              <h3 className="text-lg font-bold text-gray-100">AI Summary</h3>
             </div>
 
-            <div className="bg-purple-50/50 p-4 rounded-xl border border-purple-100 text-gray-700 text-sm leading-relaxed mb-4">
+            <div className="bg-purple-500/10 p-4 rounded-xl border border-purple-500/20 text-gray-300 text-sm leading-relaxed mb-4">
               {card.aiAnalysis.summary}
             </div>
 
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <h4 className="text-sm font-semibold text-gray-900 mb-2">Usage Scenarios</h4>
+                <h4 className="text-sm font-semibold text-gray-200 mb-2">Usage Scenarios</h4>
                 <ul className="list-disc list-inside space-y-1">
                   {card.aiAnalysis.usageScenarios.map((s, i) => (
-                    <li key={i} className="text-sm text-gray-600 pl-1">{s}</li>
+                    <li key={i} className="text-sm text-gray-400 pl-1">{s}</li>
                   ))}
                 </ul>
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-gray-900 mb-2">Core Knowledge</h4>
+                <h4 className="text-sm font-semibold text-gray-200 mb-2">Core Knowledge</h4>
                 <ul className="list-disc list-inside space-y-1">
                   {card.aiAnalysis.coreKnowledge.map((k, i) => (
-                    <li key={i} className="text-sm text-gray-600 pl-1">{k}</li>
+                    <li key={i} className="text-sm text-gray-400 pl-1">{k}</li>
                   ))}
                 </ul>
               </div>
@@ -255,17 +255,17 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
           {/* Prompts Section */}
           {card.aiAnalysis.extractedPrompts.length > 0 && (
             <div className="mb-8">
-              <div className="flex items-center gap-2 mb-4 pt-6 border-t border-gray-100">
-                <div className="p-1.5 bg-indigo-100 rounded-md">
-                  <Database size={18} className="text-indigo-600" />
+              <div className="flex items-center gap-2 mb-4 pt-6 border-t border-[#1e3a5f]/40">
+                <div className="p-1.5 bg-indigo-500/20 rounded-md">
+                  <Database size={18} className="text-indigo-400" />
                 </div>
-                <h3 className="text-lg font-bold text-gray-900">Extracted Prompts</h3>
+                <h3 className="text-lg font-bold text-gray-100">Extracted Prompts</h3>
               </div>
 
               <div className="space-y-4">
                 {card.aiAnalysis.extractedPrompts.map((prompt, idx) => (
                   <div key={idx} className="relative group">
-                    <pre className="bg-gray-900 text-gray-100 p-4 rounded-xl text-sm whitespace-pre-wrap font-mono leading-relaxed border border-gray-800">
+                    <pre className="bg-[#0a0f1a] text-gray-100 p-4 rounded-xl text-sm whitespace-pre-wrap font-mono leading-relaxed border border-[#1e3a5f]/50">
                       {prompt}
                     </pre>
                     <button
@@ -282,18 +282,18 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
           )}
 
           {/* User Notes Section - Unified Format */}
-          <div className="pt-6 border-t border-gray-100">
+          <div className="pt-6 border-t border-[#1e3a5f]/40">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-yellow-100 rounded-md">
-                  <FileText size={18} className="text-yellow-600" />
+                <div className="p-1.5 bg-yellow-500/20 rounded-md">
+                  <FileText size={18} className="text-yellow-400" />
                 </div>
-                <h3 className="text-lg font-bold text-gray-900">My Notes</h3>
+                <h3 className="text-lg font-bold text-gray-100">My Notes</h3>
               </div>
               {!isEditingNote && (
                 <button
                   onClick={() => setIsEditingNote(true)}
-                  className="text-xs flex items-center gap-1 text-gray-500 hover:text-indigo-600 transition-colors"
+                  className="text-xs flex items-center gap-1 text-gray-500 hover:text-indigo-400 transition-colors"
                 >
                   <PenLine size={14} />
                   Edit
@@ -307,7 +307,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
                   value={noteContent}
                   onChange={(e) => setNoteContent(e.target.value)}
                   placeholder={NOTE_PLACEHOLDER}
-                  className="w-full h-48 p-4 bg-yellow-50 border border-yellow-200 rounded-xl focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none text-sm leading-relaxed resize-none font-mono text-gray-900 placeholder-gray-400/60"
+                  className="w-full h-48 p-4 bg-[#0a0f1a] border border-[#1e3a5f]/50 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm leading-relaxed resize-none font-mono text-gray-200 placeholder-gray-600"
                   autoFocus
                 />
                 <div className="flex justify-end mt-2 gap-2">
@@ -316,13 +316,13 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
                       setNoteContent(card.userNotes || '');
                       setIsEditingNote(false);
                     }}
-                    className="px-3 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-100 rounded-md"
+                    className="px-3 py-1.5 text-xs font-medium text-gray-400 hover:bg-white/5 rounded-md"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSaveNote}
-                    className="px-3 py-1.5 text-xs font-medium bg-gray-900 text-white hover:bg-gray-800 rounded-md flex items-center gap-1"
+                    className="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 rounded-md flex items-center gap-1"
                   >
                     <Save size={14} />
                     Save Note
@@ -332,9 +332,9 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
             ) : (
               <div
                 onClick={() => setIsEditingNote(true)}
-                className="p-4 rounded-xl border border-yellow-200 bg-yellow-50 transition-all cursor-text group hover:border-yellow-300 h-48 overflow-y-auto"
+                className="p-4 rounded-xl border border-[#1e3a5f]/50 bg-[#0a0f1a]/50 transition-all cursor-text group hover:border-[#1e3a5f] h-48 overflow-y-auto"
               >
-                <div className={`text-sm whitespace-pre-wrap leading-relaxed font-mono ${!noteContent ? 'text-gray-400/60' : 'text-gray-900'}`}>
+                <div className={`text-sm whitespace-pre-wrap leading-relaxed font-mono ${!noteContent ? 'text-gray-600' : 'text-gray-300'}`}>
                   {noteContent || NOTE_PLACEHOLDER}
                 </div>
               </div>

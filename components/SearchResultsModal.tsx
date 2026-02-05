@@ -54,18 +54,18 @@ export const SearchResultsModal: React.FC<SearchResultsModalProps> = ({
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-[#0d1526]/95 backdrop-blur-xl rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl border border-[#1e3a5f]/50">
                 {/* Header */}
-                <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                <div className="p-6 border-b border-[#1e3a5f]/40 flex items-center justify-between">
                     <div>
-                        <h2 className="text-xl font-bold text-gray-900">搜索结果</h2>
+                        <h2 className="text-xl font-bold text-gray-100">搜索结果</h2>
                         <p className="text-sm text-gray-500 mt-1">
                             关键词: "{keyword}" · 找到 {results.length} 条结果
                         </p>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
-                        <X size={20} className="text-gray-500" />
+                    <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg">
+                        <X size={20} className="text-gray-500 hover:text-gray-300" />
                     </button>
                 </div>
 
@@ -73,7 +73,7 @@ export const SearchResultsModal: React.FC<SearchResultsModalProps> = ({
                 <div className="flex-1 overflow-y-auto p-4">
                     {isLoading ? (
                         <div className="flex flex-col items-center justify-center py-16">
-                            <Loader2 size={40} className="text-indigo-600 animate-spin" />
+                            <Loader2 size={40} className="text-indigo-400 animate-spin" />
                             <p className="text-gray-500 mt-4">正在搜索...</p>
                         </div>
                     ) : results.length === 0 ? (
@@ -87,27 +87,27 @@ export const SearchResultsModal: React.FC<SearchResultsModalProps> = ({
                                     key={result.noteId}
                                     onClick={() => toggleSelect(result.noteId)}
                                     className={`flex gap-4 p-4 rounded-xl border cursor-pointer transition-all ${selectedIds.has(result.noteId)
-                                        ? 'border-indigo-500 bg-indigo-50'
-                                        : 'border-gray-200 hover:border-gray-300 bg-white'
+                                        ? 'border-indigo-500 bg-indigo-500/10'
+                                        : 'border-[#1e3a5f]/40 hover:border-[#1e3a5f] bg-[#0a0f1a]/50'
                                         }`}
                                 >
                                     {/* Checkbox */}
                                     <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 mt-1 ${selectedIds.has(result.noteId)
                                         ? 'bg-indigo-600 border-indigo-600'
-                                        : 'border-gray-300'
+                                        : 'border-gray-600'
                                         }`}>
                                         {selectedIds.has(result.noteId) && <Check size={14} className="text-white" />}
                                     </div>
 
                                     {/* Info */}
                                     <div className="flex-1 min-w-0">
-                                        <h3 className="font-semibold text-gray-900 truncate">
+                                        <h3 className="font-semibold text-gray-100 truncate">
                                             {result.title || result.desc?.slice(0, 50) || '无标题'}
                                         </h3>
-                                        <p className="text-sm text-gray-500 mt-1 line-clamp-2">
+                                        <p className="text-sm text-gray-400 mt-1 line-clamp-2">
                                             {result.desc}
                                         </p>
-                                        <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                                        <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
                                             <span>@{result.author}</span>
                                             <span>{result.publishTime}</span>
                                         </div>
@@ -130,9 +130,9 @@ export const SearchResultsModal: React.FC<SearchResultsModalProps> = ({
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         onClick={e => e.stopPropagation()}
-                                        className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0"
+                                        className="p-2 hover:bg-white/5 rounded-lg flex-shrink-0"
                                     >
-                                        <ExternalLink size={16} className="text-gray-400" />
+                                        <ExternalLink size={16} className="text-gray-500" />
                                     </a>
                                 </div>
                             ))}
@@ -142,10 +142,10 @@ export const SearchResultsModal: React.FC<SearchResultsModalProps> = ({
 
                 {/* Footer */}
                 {!isLoading && results.length > 0 && (
-                    <div className="p-4 border-t border-gray-100 flex items-center justify-between">
+                    <div className="p-4 border-t border-[#1e3a5f]/40 flex items-center justify-between">
                         <button
                             onClick={selectAll}
-                            className="text-sm text-indigo-600 hover:text-indigo-700"
+                            className="text-sm text-indigo-400 hover:text-indigo-300"
                         >
                             {selectedIds.size === results.length ? '取消全选' : '全选'}
                         </button>

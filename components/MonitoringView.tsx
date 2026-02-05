@@ -272,32 +272,32 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
         setSearchResults([]);
 
         try {
-                const platforms = task.platforms.length > 0 ? task.platforms : [Platform.Xiaohongshu];
-                const responses = await Promise.all(
-                    platforms.map((p) =>
-                        searchSocial({
-                            keyword: taskKeywords,
-                            page: 1,
-                            sort: config?.sort || 'general',
-                            noteType: config?.noteType || '_0',
-                            noteTime: config?.noteTime || undefined,
-                            platform: p === Platform.Twitter ? 'twitter' : 'xiaohongshu',
-                            limit: resultLimit,
-                        })
-                    )
-                );
+            const platforms = task.platforms.length > 0 ? task.platforms : [Platform.Xiaohongshu];
+            const responses = await Promise.all(
+                platforms.map((p) =>
+                    searchSocial({
+                        keyword: taskKeywords,
+                        page: 1,
+                        sort: config?.sort || 'general',
+                        noteType: config?.noteType || '_0',
+                        noteTime: config?.noteTime || undefined,
+                        platform: p === Platform.Twitter ? 'twitter' : 'xiaohongshu',
+                        limit: resultLimit,
+                    })
+                )
+            );
 
-                let results = responses.flatMap((r) => r.results || []);
+            let results = responses.flatMap((r) => r.results || []);
 
             // 前端过滤：最小互动量（注意：Review时也应用当前的过滤设置）
-                const minInter = config?.minInteraction || minInteraction;
-                if (minInter && !isNaN(Number(minInter))) {
-                    const min = Number(minInter);
-                    results = results.filter((r: SocialSearchResult) => {
-                        const total = (r.metrics.likes || 0) + (r.metrics.bookmarks || 0) + (r.metrics.comments || 0);
-                        return total >= min;
-                    });
-                }
+            const minInter = config?.minInteraction || minInteraction;
+            if (minInter && !isNaN(Number(minInter))) {
+                const min = Number(minInter);
+                results = results.filter((r: SocialSearchResult) => {
+                    const total = (r.metrics.likes || 0) + (r.metrics.bookmarks || 0) + (r.metrics.comments || 0);
+                    return total >= min;
+                });
+            }
 
             // 前端限制：结果数量
             if (resultLimit > 0) {
@@ -401,12 +401,12 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
     };
 
     return (
-        <div className="flex flex-col h-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="flex flex-col h-full bg-[#0d1526]/60 backdrop-blur-md rounded-xl shadow-sm border border-[#1e3a5f]/40 overflow-hidden">
             {/* Header */}
-            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+            <div className="p-6 border-b border-[#1e3a5f]/40 flex items-center justify-between">
                 <div>
-                    <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                        <Activity className="text-indigo-600" />
+                    <h2 className="text-xl font-bold text-gray-100 flex items-center gap-2">
+                        <Activity className="text-indigo-400" />
                         Monitoring Console
                     </h2>
                     <p className="text-sm text-gray-500 mt-1">搜索并批量导入社交媒体内容到知识库 · 缓存有效期：1小时</p>
@@ -421,18 +421,18 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
             </div>
 
             {/* Content */}
-            <div className="p-6 bg-gray-50 flex-1 overflow-y-auto">
+            <div className="p-6 bg-[#0a0f1a]/30 flex-1 overflow-y-auto">
 
                 {/* Search Form */}
                 {isCreating && (
-                    <div className="bg-white p-6 rounded-xl border border-indigo-100 shadow-sm mb-6 animate-in slide-in-from-top-4">
-                        <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">小红书搜索</h3>
+                    <div className="bg-[#0d1526]/80 backdrop-blur-sm p-6 rounded-xl border border-[#1e3a5f]/50 shadow-sm mb-6 animate-in slide-in-from-top-4">
+                        <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-4">小红书搜索</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                             <div className="md:col-span-2">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">关键词</label>
+                                <label className="block text-sm font-medium text-gray-300 mb-1">关键词</label>
                                 <input
                                     type="text"
-                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                                    className="w-full bg-[#0a0f1a] border border-[#1e3a5f]/50 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-200 placeholder-gray-500"
                                     placeholder="输入搜索关键词，如 'Claude' 或 'AI绘画'"
                                     value={keywords}
                                     onChange={(e) => setKeywords(e.target.value)}
@@ -440,7 +440,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                 />
                             </div>
                             <div className="md:col-span-2">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">平台</label>
+                                <label className="block text-sm font-medium text-gray-300 mb-2">平台</label>
                                 <div className="flex gap-2 flex-wrap">
                                     {[
                                         { value: Platform.Xiaohongshu, label: '小红书' },
@@ -450,8 +450,8 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                             key={opt.value}
                                             onClick={() => togglePlatform(opt.value)}
                                             className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${selectedPlatforms.includes(opt.value)
-                                                ? 'bg-indigo-50 border-indigo-500 text-indigo-700'
-                                                : 'bg-white border-gray-200 text-gray-600'
+                                                ? 'bg-indigo-500/20 border-indigo-500 text-indigo-400'
+                                                : 'bg-[#0a0f1a] border-[#1e3a5f]/50 text-gray-400'
                                                 }`}
                                         >
                                             {opt.label}
@@ -460,7 +460,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">时间范围</label>
+                                <label className="block text-sm font-medium text-gray-300 mb-2">时间范围</label>
                                 <div className="flex gap-2 flex-wrap">
                                     {[
                                         { value: '', label: '全部' },
@@ -471,7 +471,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                         <button
                                             key={opt.value}
                                             onClick={() => setNoteTime(opt.value)}
-                                            className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${noteTime === opt.value ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'bg-white border-gray-200 text-gray-600'}`}
+                                            className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${noteTime === opt.value ? 'bg-indigo-500/20 border-indigo-500 text-indigo-400' : 'bg-[#0a0f1a] border-[#1e3a5f]/50 text-gray-400'}`}
                                         >
                                             {opt.label}
                                         </button>
@@ -479,7 +479,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">排序方式</label>
+                                <label className="block text-sm font-medium text-gray-300 mb-2">排序方式</label>
                                 <div className="flex gap-2 flex-wrap">
                                     {[
                                         { value: 'general', label: '综合' },
@@ -489,7 +489,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                         <button
                                             key={opt.value}
                                             onClick={() => setSort(opt.value)}
-                                            className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${sort === opt.value ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'bg-white border-gray-200 text-gray-600'}`}
+                                            className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${sort === opt.value ? 'bg-indigo-500/20 border-indigo-500 text-indigo-400' : 'bg-[#0a0f1a] border-[#1e3a5f]/50 text-gray-400'}`}
                                         >
                                             {opt.label}
                                         </button>
@@ -499,30 +499,30 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                         </div>
 
                         {/* 第二行：高级过滤 */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-2 pt-4 border-t border-gray-100">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-2 pt-4 border-t border-[#1e3a5f]/40">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                <label className="block text-sm font-medium text-gray-300 mb-1">
                                     最小互动量 (点赞+收藏+评论)
-                                    <span className="text-gray-400 font-normal ml-1 text-xs">可选</span>
+                                    <span className="text-gray-500 font-normal ml-1 text-xs">可选</span>
                                 </label>
                                 <input
                                     type="number"
                                     min="0"
-                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                                    className="w-full bg-[#0a0f1a] border border-[#1e3a5f]/50 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 text-gray-200 placeholder-gray-500"
                                     placeholder="例如: 100"
                                     value={minInteraction}
                                     onChange={(e) => setMinInteraction(e.target.value)}
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                <label className="block text-sm font-medium text-gray-300 mb-1">
                                     结果数量限制
                                 </label>
                                 <input
                                     type="number"
                                     min="1"
                                     max="50"
-                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                                    className="w-full bg-[#0a0f1a] border border-[#1e3a5f]/50 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 text-gray-200 placeholder-gray-500"
                                     placeholder="默认 20"
                                     value={resultLimit}
                                     onChange={(e) => setResultLimit(Math.max(1, Math.min(50, Number(e.target.value))))}
@@ -530,14 +530,14 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                             </div>
                         </div>
                         {searchError && (
-                            <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm">
+                            <div className="mb-4 p-3 bg-red-500/10 text-red-400 rounded-lg text-sm border border-red-500/20">
                                 {searchError}
                             </div>
                         )}
                         <div className="flex justify-end gap-3">
                             <button
                                 onClick={() => setIsCreating(false)}
-                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium"
+                                className="px-4 py-2 text-gray-400 hover:bg-white/5 rounded-lg text-sm font-medium"
                             >
                                 取消
                             </button>
@@ -557,13 +557,13 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                 {/* Task List */}
                 <div className="space-y-4">
                     {pagedTasks.map(task => (
-                        <div key={task.id} className="bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between hover:shadow-md transition-shadow">
+                        <div key={task.id} className="bg-[#0d1526]/60 backdrop-blur-sm rounded-xl border border-[#1e3a5f]/40 p-4 flex items-center justify-between hover:border-[#1e3a5f] transition-all">
                             <div className="flex items-center gap-4">
-                                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${task.status === TaskStatus.Running ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-500'}`}>
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${task.status === TaskStatus.Running ? 'bg-green-500/20 text-green-400' : 'bg-[#1e3a5f]/50 text-gray-400'}`}>
                                     {task.status === TaskStatus.Running ? <Loader2 size={20} className="animate-spin" /> : <Check size={20} />}
                                 </div>
                                 <div>
-                                    <h4 className="font-semibold text-gray-900">{task.keywords}</h4>
+                                    <h4 className="font-semibold text-gray-100">{task.keywords}</h4>
                                     <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
                                         <span className="flex items-center gap-1">
                                             <Calendar size={12} />
@@ -573,7 +573,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                         <span className="flex items-center gap-1">|</span>
                                         <span>{task.platforms.join(', ')}</span>
                                         <span className="flex items-center gap-1">|</span>
-                                        <span className="text-indigo-500">
+                                        <span className="text-indigo-400">
                                             {task.config?.sort === 'popularity_descending' ? '最热搜索' :
                                                 task.config?.sort === 'time_descending' ? '最新发布' :
                                                     '综合排序'}
@@ -581,7 +581,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                         {task.config?.minInteraction && (
                                             <>
                                                 <span className="flex items-center gap-1">|</span>
-                                                <span className="text-gray-600">
+                                                <span className="text-gray-500">
                                                     最小互动量 {task.config.minInteraction}
                                                 </span>
                                             </>
@@ -593,18 +593,18 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                             <div className="flex items-center gap-8">
                                 <div className="text-right">
                                     <div className="text-xs text-gray-500">Items Found</div>
-                                    <div className="font-bold text-gray-900 text-lg">{task.itemsFound}</div>
+                                    <div className="font-bold text-gray-100 text-lg">{task.itemsFound}</div>
                                 </div>
                                 <div className="text-right hidden sm:block">
                                     <div className="text-xs text-gray-500">Last Run</div>
-                                    <div className="text-gray-700 text-sm">{formatTimeAgo(task.lastRun)}</div>
+                                    <div className="text-gray-400 text-sm">{formatTimeAgo(task.lastRun)}</div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     {task.status === TaskStatus.Completed && (
                                         <button
                                             onClick={() => handleReview(task)}
                                             disabled={isSearching || reviewingTaskId !== null}
-                                            className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-lg hover:bg-indigo-100 disabled:opacity-50 flex items-center gap-1"
+                                            className="px-3 py-1.5 bg-indigo-500/20 text-indigo-400 text-sm font-medium rounded-lg hover:bg-indigo-500/30 disabled:opacity-50 flex items-center gap-1"
                                         >
                                             {reviewingTaskId === task.id && <Loader2 size={14} className="animate-spin" />}
                                             Review
@@ -612,7 +612,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                     )}
                                     <button
                                         onClick={() => onDeleteTask?.(task.id)}
-                                        className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                                        className="p-2 text-gray-500 hover:text-red-400 transition-colors"
                                     >
                                         <Trash2 size={18} />
                                     </button>
@@ -631,24 +631,24 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                             <button
                                 onClick={handleDeletePage}
                                 disabled={!onDeleteTask || pagedTasks.length === 0}
-                                className="px-3 py-1.5 text-sm rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                className="px-3 py-1.5 text-sm rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 disabled:opacity-50"
                             >
                                 删除本页
                             </button>
                             <button
                                 onClick={() => setTaskPage(p => Math.max(1, p - 1))}
                                 disabled={safeTaskPage <= 1}
-                                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                                className="px-3 py-1.5 text-sm rounded-lg border border-[#1e3a5f]/50 text-gray-400 hover:bg-white/5 disabled:opacity-50"
                             >
                                 上一页
                             </button>
-                            <div className="text-sm text-gray-600">
+                            <div className="text-sm text-gray-500">
                                 {safeTaskPage} / {totalTaskPages}
                             </div>
                             <button
                                 onClick={() => setTaskPage(p => Math.min(totalTaskPages, p + 1))}
                                 disabled={safeTaskPage >= totalTaskPages}
-                                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                                className="px-3 py-1.5 text-sm rounded-lg border border-[#1e3a5f]/50 text-gray-400 hover:bg-white/5 disabled:opacity-50"
                             >
                                 下一页
                             </button>

@@ -75,9 +75,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
     const PlatformBadge: React.FC<{ platform: Platform }> = ({ platform }) => {
         const colors = {
-            [Platform.Twitter]: 'bg-blue-100 text-blue-700',
-            [Platform.Xiaohongshu]: 'bg-red-100 text-red-700',
-            [Platform.Manual]: 'bg-gray-100 text-gray-700',
+            [Platform.Twitter]: 'bg-blue-500/20 text-blue-400',
+            [Platform.Xiaohongshu]: 'bg-red-500/20 text-red-400',
+            [Platform.Manual]: 'bg-gray-500/20 text-gray-400',
         };
         return (
             <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${colors[platform]}`}>
@@ -89,31 +89,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const RankingItem = ({ item, rank }: { item: KnowledgeCard, rank: number }) => (
         <div
             onClick={() => window.open(item.sourceUrl, '_blank')}
-            className="flex items-center gap-4 p-3 hover:bg-gray-50 rounded-xl transition-colors group cursor-pointer border-b border-gray-100 last:border-0"
+            className="flex items-center gap-4 p-3 hover:bg-white/5 rounded-xl transition-colors group cursor-pointer border-b border-[#1e3a5f]/30 last:border-0"
         >
             {/* Rank Number */}
             <div className={`
             flex-shrink-0 w-6 text-center font-bold text-lg italic
-            ${rank === 1 ? 'text-red-500' : rank === 2 ? 'text-orange-500' : rank === 3 ? 'text-amber-500' : 'text-gray-400'}
+            ${rank === 1 ? 'text-red-400' : rank === 2 ? 'text-orange-400' : rank === 3 ? 'text-amber-400' : 'text-gray-500'}
         `}>
                 {rank}
             </div>
 
             {/* Thumbnail */}
-            <div className="w-12 h-12 bg-gray-200 rounded-lg overflow-hidden flex-shrink-0 relative">
+            <div className="w-12 h-12 bg-[#1e3a5f]/50 rounded-lg overflow-hidden flex-shrink-0 relative">
                 <img src={item.coverImage} alt={item.title} className="w-full h-full object-cover" />
             </div>
 
             {/* Content */}
             <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-medium text-gray-900 truncate pr-2 group-hover:text-indigo-600 transition-colors">
+                <h4 className="text-sm font-medium text-gray-200 truncate pr-2 group-hover:text-indigo-400 transition-colors">
                     {item.title}
                 </h4>
                 <div className="flex items-center gap-2 mt-0.5">
-                    <span className={`text-[10px] px-1.5 rounded-sm font-medium bg-gray-100 text-gray-500`}>
+                    <span className={`text-[10px] px-1.5 rounded-sm font-medium bg-[#1e3a5f]/50 text-gray-400`}>
                         {item.platform}
                     </span>
-                    <span className="text-[10px] text-gray-400 truncate">
+                    <span className="text-[10px] text-gray-500 truncate">
                         @{item.author}
                     </span>
                 </div>
@@ -121,11 +121,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             {/* Hot Metric */}
             <div className="flex-shrink-0 flex flex-col items-end">
-                <div className="flex items-center gap-1 text-red-500 font-bold text-sm">
+                <div className="flex items-center gap-1 text-red-400 font-bold text-sm">
                     <Flame size={12} fill="currentColor" />
                     {formatLikes(item.metrics.likes)}
                 </div>
-                <span className="text-[10px] text-gray-400">Hot</span>
+                <span className="text-[10px] text-gray-500">Hot</span>
             </div>
         </div>
     );
@@ -158,19 +158,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </div>
                 </div>
 
-                <div className="col-span-1 bg-white rounded-2xl border border-gray-100 p-6 shadow-sm flex flex-col justify-center relative overflow-hidden">
+                <div className="col-span-1 bg-[#0d1526]/60 backdrop-blur-md rounded-2xl border border-[#1e3a5f]/40 p-6 shadow-sm flex flex-col justify-center relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-5">
                         <Activity size={80} />
                     </div>
-                    <div className="flex items-center gap-2 text-gray-500 mb-2">
+                    <div className="flex items-center gap-2 text-gray-400 mb-2">
                         <TrendingUp size={16} />
                         <span className="text-xs font-semibold uppercase tracking-wider">Tracker Volume</span>
                     </div>
                     <div className="flex items-baseline gap-2 mb-1">
-                        <span className="text-4xl font-bold text-gray-900">{totalItemsFound}</span>
-                        <span className="text-sm text-green-600 font-medium bg-green-50 px-2 py-0.5 rounded-full">+124 today</span>
+                        <span className="text-4xl font-bold text-gray-100">{totalItemsFound}</span>
+                        <span className="text-sm text-green-400 font-medium bg-green-500/20 px-2 py-0.5 rounded-full">+124 today</span>
                     </div>
-                    <p className="text-sm text-gray-400">Insights processed this month</p>
+                    <p className="text-sm text-gray-500">Insights processed this month</p>
                 </div>
             </div>
 
@@ -178,14 +178,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div>
                 <div className="flex items-center justify-between mb-5">
                     <div className="flex items-center gap-2">
-                        <div className="p-1.5 bg-red-100 rounded-lg">
-                            <Flame size={18} className="text-red-500" fill="currentColor" />
+                        <div className="p-1.5 bg-red-500/20 rounded-lg">
+                            <Flame size={18} className="text-red-400" fill="currentColor" />
                         </div>
-                        <h3 className="text-lg font-bold text-gray-900">Trending Now</h3>
+                        <h3 className="text-lg font-bold text-gray-100">Trending Now</h3>
                     </div>
                     <button
                         onClick={() => setShowAllTrending(true)}
-                        className="text-sm text-indigo-600 font-medium hover:text-indigo-700 flex items-center gap-1"
+                        className="text-sm text-indigo-400 font-medium hover:text-indigo-300 flex items-center gap-1"
                     >
                         See All <ArrowRight size={14} />
                     </button>
@@ -197,10 +197,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <div
                             key={item.id}
                             onClick={() => window.open(item.sourceUrl, '_blank')}
-                            className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex flex-col overflow-hidden group cursor-pointer"
+                            className="bg-[#0d1526]/60 backdrop-blur-md rounded-xl border border-[#1e3a5f]/40 shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 hover:-translate-y-1 transition-all duration-300 flex flex-col overflow-hidden group cursor-pointer"
                         >
                             {/* Cover Image Area */}
-                            <div className="h-40 relative bg-gray-100 overflow-hidden">
+                            <div className="h-40 relative bg-[#1e3a5f]/30 overflow-hidden">
                                 <img
                                     src={item.coverImage}
                                     alt={item.title}
@@ -219,40 +219,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             <div className="p-4 flex flex-col flex-1">
                                 <div className="flex items-center justify-between mb-2">
                                     <PlatformBadge platform={item.platform} />
-                                    <span className="text-xs text-gray-400">{item.date}</span>
+                                    <span className="text-xs text-gray-500">{item.date}</span>
                                 </div>
 
-                                <h4 className="text-base font-bold text-gray-900 mb-2 leading-snug line-clamp-2 group-hover:text-indigo-600 transition-colors">
+                                <h4 className="text-base font-bold text-gray-100 mb-2 leading-snug line-clamp-2 group-hover:text-indigo-400 transition-colors">
                                     {item.title}
                                 </h4>
 
-                                <p className="text-sm text-gray-500 line-clamp-2 mb-3 flex-1">
+                                <p className="text-sm text-gray-400 line-clamp-2 mb-3 flex-1">
                                     {item.rawContent}
                                 </p>
 
                                 {/* Tags */}
                                 <div className="flex flex-wrap gap-1 mb-4">
                                     {item.tags.filter(t => !t.startsWith('snapshot:')).slice(0, 2).map(tag => (
-                                        <span key={tag} className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200">
+                                        <span key={tag} className="text-[10px] bg-[#1e3a5f]/50 text-gray-400 px-1.5 py-0.5 rounded border border-[#1e3a5f]/50">
                                             #{tag}
                                         </span>
                                     ))}
                                 </div>
 
                                 {/* Footer */}
-                                <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                                    <div className="flex items-center gap-3 text-gray-400 text-xs">
-                                        <div className="flex items-center gap-1 hover:text-red-500 transition-colors">
+                                <div className="flex items-center justify-between pt-3 border-t border-[#1e3a5f]/40">
+                                    <div className="flex items-center gap-3 text-gray-500 text-xs">
+                                        <div className="flex items-center gap-1 hover:text-red-400 transition-colors">
                                             <Heart size={14} />
                                             <span>{formatLikes(item.metrics.likes)}</span>
                                         </div>
-                                        <div className="flex items-center gap-1 hover:text-amber-500 transition-colors">
+                                        <div className="flex items-center gap-1 hover:text-amber-400 transition-colors">
                                             <Bookmark size={14} />
                                             <span>{item.metrics.bookmarks}</span>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider truncate max-w-[80px]">
+                                        <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider truncate max-w-[80px]">
                                             {item.author}
                                         </span>
                                         <button
@@ -260,7 +260,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                                 e.stopPropagation();
                                                 onSaveToVault(item);
                                             }}
-                                            className="text-gray-400 hover:text-indigo-600 transition-colors"
+                                            className="text-gray-500 hover:text-indigo-400 transition-colors"
                                             title="Save to Vault"
                                         >
                                             <Save size={16} />
@@ -277,56 +277,56 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                 {/* Image Gen Ranking */}
-                <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-                    <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
+                <div className="bg-[#0d1526]/60 backdrop-blur-md rounded-2xl border border-[#1e3a5f]/40 p-5 shadow-sm">
+                    <div className="flex items-center justify-between mb-4 pb-2 border-b border-[#1e3a5f]/40">
                         <div className="flex items-center gap-2">
                             <div className="w-1 h-5 bg-indigo-500 rounded-full"></div>
-                            <h3 className="font-bold text-gray-900">Image Gen · Top Rated</h3>
+                            <h3 className="font-bold text-gray-100">Image Gen · Top Rated</h3>
                         </div>
-                        <span className="text-xs text-gray-400">Real-time</span>
+                        <span className="text-xs text-gray-500">Real-time</span>
                     </div>
 
                     <div className="space-y-1">
                         {imageGenRankings.map((item, idx) => (
                             <RankingItem key={item.id} item={item} rank={idx + 1} />
                         ))}
-                        {imageGenRankings.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">No data</div>}
+                        {imageGenRankings.length === 0 && <div className="text-center py-8 text-gray-500 text-sm">No data</div>}
                     </div>
                 </div>
 
                 {/* Video Gen Ranking */}
-                <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-                    <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
+                <div className="bg-[#0d1526]/60 backdrop-blur-md rounded-2xl border border-[#1e3a5f]/40 p-5 shadow-sm">
+                    <div className="flex items-center justify-between mb-4 pb-2 border-b border-[#1e3a5f]/40">
                         <div className="flex items-center gap-2">
                             <div className="w-1 h-5 bg-purple-500 rounded-full"></div>
-                            <h3 className="font-bold text-gray-900">Video Gen · Top Rated</h3>
+                            <h3 className="font-bold text-gray-100">Video Gen · Top Rated</h3>
                         </div>
-                        <span className="text-xs text-gray-400">Real-time</span>
+                        <span className="text-xs text-gray-500">Real-time</span>
                     </div>
 
                     <div className="space-y-1">
                         {videoGenRankings.map((item, idx) => (
                             <RankingItem key={item.id} item={item} rank={idx + 1} />
                         ))}
-                        {videoGenRankings.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">No data</div>}
+                        {videoGenRankings.length === 0 && <div className="text-center py-8 text-gray-500 text-sm">No data</div>}
                     </div>
                 </div>
 
                 {/* Vibe Coding Ranking (New) */}
-                <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-                    <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
+                <div className="bg-[#0d1526]/60 backdrop-blur-md rounded-2xl border border-[#1e3a5f]/40 p-5 shadow-sm">
+                    <div className="flex items-center justify-between mb-4 pb-2 border-b border-[#1e3a5f]/40">
                         <div className="flex items-center gap-2">
                             <div className="w-1 h-5 bg-emerald-500 rounded-full"></div>
-                            <h3 className="font-bold text-gray-900">Vibe Coding · Top Rated</h3>
+                            <h3 className="font-bold text-gray-100">Vibe Coding · Top Rated</h3>
                         </div>
-                        <span className="text-xs text-gray-400">Real-time</span>
+                        <span className="text-xs text-gray-500">Real-time</span>
                     </div>
 
                     <div className="space-y-1">
                         {vibeCodingRankings.map((item, idx) => (
                             <RankingItem key={item.id} item={item} rank={idx + 1} />
                         ))}
-                        {vibeCodingRankings.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">No data</div>}
+                        {vibeCodingRankings.length === 0 && <div className="text-center py-8 text-gray-500 text-sm">No data</div>}
                     </div>
                 </div>
 
@@ -334,18 +334,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             {/* All Trending Modal */}
             {showAllTrending && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-6xl max-h-[85vh] flex flex-col shadow-2xl">
-                        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-[#0d1526]/95 backdrop-blur-xl rounded-2xl w-full max-w-6xl max-h-[85vh] flex flex-col shadow-2xl border border-[#1e3a5f]/50">
+                        <div className="p-6 border-b border-[#1e3a5f]/40 flex items-center justify-between">
                             <div>
-                                <h2 className="text-xl font-bold text-gray-900">Trending Now · All</h2>
+                                <h2 className="text-xl font-bold text-gray-100">Trending Now · All</h2>
                                 <p className="text-sm text-gray-500 mt-1">
                                     {uniqueTrending.length} posts in this snapshot
                                 </p>
                             </div>
                             <button
                                 onClick={() => setShowAllTrending(false)}
-                                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+                                className="px-3 py-1.5 text-sm rounded-lg border border-[#1e3a5f]/50 text-gray-400 hover:bg-white/5"
                             >
                                 Close
                             </button>
@@ -356,9 +356,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                     <div
                                         key={item.id}
                                         onClick={() => window.open(item.sourceUrl, '_blank')}
-                                        className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex flex-col overflow-hidden group cursor-pointer"
+                                        className="bg-[#0d1526]/60 backdrop-blur-md rounded-xl border border-[#1e3a5f]/40 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex flex-col overflow-hidden group cursor-pointer"
                                     >
-                                        <div className="h-40 relative bg-gray-100 overflow-hidden">
+                                        <div className="h-40 relative bg-[#1e3a5f]/30 overflow-hidden">
                                             <img
                                                 src={item.coverImage}
                                                 alt={item.title}
@@ -368,12 +368,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                         <div className="p-4 flex flex-col flex-1">
                                             <div className="flex items-center justify-between mb-2">
                                                 <PlatformBadge platform={item.platform} />
-                                                <span className="text-xs text-gray-400">{item.date}</span>
+                                                <span className="text-xs text-gray-500">{item.date}</span>
                                             </div>
-                                            <h4 className="text-base font-bold text-gray-900 mb-2 leading-snug line-clamp-2 group-hover:text-indigo-600 transition-colors">
+                                            <h4 className="text-base font-bold text-gray-100 mb-2 leading-snug line-clamp-2 group-hover:text-indigo-400 transition-colors">
                                                 {item.title}
                                             </h4>
-                                            <p className="text-sm text-gray-500 line-clamp-2 mb-3 flex-1">
+                                            <p className="text-sm text-gray-400 line-clamp-2 mb-3 flex-1">
                                                 {item.rawContent}
                                             </p>
                                         </div>

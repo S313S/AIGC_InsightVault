@@ -124,21 +124,21 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
 
-            <div className="relative bg-white rounded-xl w-full max-w-lg overflow-hidden shadow-2xl">
-                <div className="p-4 border-b border-gray-100 flex justify-between items-center">
-                    <h2 className="text-lg font-semibold text-gray-900">Add to Knowledge Base</h2>
-                    <button onClick={onClose}><X size={20} className="text-gray-500" /></button>
+            <div className="relative bg-[#0d1526]/95 backdrop-blur-xl rounded-xl w-full max-w-lg overflow-hidden shadow-2xl border border-[#1e3a5f]/50">
+                <div className="p-4 border-b border-[#1e3a5f]/40 flex justify-between items-center">
+                    <h2 className="text-lg font-semibold text-gray-100">Add to Knowledge Base</h2>
+                    <button onClick={onClose}><X size={20} className="text-gray-500 hover:text-gray-300" /></button>
                 </div>
 
                 <div className="p-6">
                     {step === 'input' ? (
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Source Link</label>
+                                <label className="block text-sm font-medium text-gray-300 mb-1">Source Link</label>
                                 <div className="flex gap-2">
                                     <input
                                         type="text"
-                                        className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                                        className="flex-1 bg-[#0a0f1a] border border-[#1e3a5f]/50 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm text-gray-200 placeholder-gray-500"
                                         placeholder="https://twitter.com/... or https://xiaohongshu.com/..."
                                         value={url}
                                         onChange={e => setUrl(e.target.value)}
@@ -152,17 +152,17 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
                                         Auto-Fill
                                     </button>
                                 </div>
-                                {fetchError && <p className="text-xs text-red-500 mt-1">{fetchError}</p>}
+                                {fetchError && <p className="text-xs text-red-400 mt-1">{fetchError}</p>}
                                 {fetchedData && !fetchError && (
-                                    <p className="text-xs text-green-600 mt-1">
+                                    <p className="text-xs text-green-400 mt-1">
                                         ✓ Fetched from {fetchedData.platform} · {fetchedData.metrics.likes} likes
                                     </p>
                                 )}
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Content Preview</label>
+                                <label className="block text-sm font-medium text-gray-300 mb-1">Content Preview</label>
                                 <textarea
-                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 h-32 focus:ring-2 focus:ring-blue-500 outline-none resize-none text-sm leading-relaxed"
+                                    className="w-full bg-[#0a0f1a] border border-[#1e3a5f]/50 rounded-lg px-3 py-2 h-32 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none text-sm leading-relaxed text-gray-200 placeholder-gray-500"
                                     placeholder="Paste content manually or use Auto-Fill to fetch from URL..."
                                     value={rawText}
                                     onChange={e => setRawText(e.target.value)}
@@ -172,7 +172,7 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
                             <button
                                 onClick={handleProcessWithAI}
                                 disabled={!url && !rawText}
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 <Sparkles size={18} />
                                 Process with AI Agent
@@ -180,8 +180,8 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
                         </div>
                     ) : (
                         <div className="py-12 flex flex-col items-center justify-center text-center">
-                            <Loader2 size={48} className="text-blue-600 animate-spin mb-4" />
-                            <h3 className="text-lg font-medium text-gray-900">AI Agent is thinking...</h3>
+                            <Loader2 size={48} className="text-indigo-400 animate-spin mb-4" />
+                            <h3 className="text-lg font-medium text-gray-100">AI Agent is thinking...</h3>
                             <p className="text-sm text-gray-500 mt-1">Filtering content, summarizing, and extracting prompts.</p>
                         </div>
                     )}
