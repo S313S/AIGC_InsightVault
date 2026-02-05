@@ -19,8 +19,8 @@ const DEFAULT_MIN_INTERACTION = 5000;
 const RECENT_DAYS = 3;
 const TWITTER_RECENT_DAYS = 7;
 const MAX_TASKS_PER_RUN = 3;
-const XHS_DELAY_MS = 400;
-const XHS_RETRIES = 1;
+const XHS_DELAY_MS = 1000;
+const XHS_RETRIES = 2;
 const TWITTER_REQUIRE_TERMS = ['Claude', 'GPT', 'LLM', 'OpenAI', 'Anthropic', 'Gemini'];
 
 // Expanded AI keyword pool for better coverage (from research on Twitter/X and Xiaohongshu trends)
@@ -239,7 +239,7 @@ const getSupabaseClient = () => {
 };
 
 const API_BASE_XHS = 'https://api.justoneapi.com';
-const DEFAULT_TIMEOUT_MS = 8000;
+const DEFAULT_TIMEOUT_MS = 15000;
 
 const buildXhsImageUrl = (fileid) => {
   if (!fileid) return '';
