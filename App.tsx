@@ -692,10 +692,29 @@ const App: React.FC = () => {
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         {/* Top Section: Logo & Nav */}
-        <div className="p-6 pb-2">
-          <div className="flex items-center gap-2 mb-8 text-indigo-400">
-            <Database size={28} />
-            <h1 className="text-xl font-bold text-gray-100 tracking-tight">Insight Vault</h1>
+        <div className="p-4 pt-4 pb-2">
+          <div className="flex items-center gap-3 mb-2">
+            <img
+              src="/logo_icon.png"
+              alt="Logo"
+              className="w-14 h-14 object-contain drop-shadow-lg"
+            />
+            <div className="flex flex-col justify-center leading-tight">
+              <h1 className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-200 to-purple-300 tracking-tight">
+                AI热点
+              </h1>
+              <h1 className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-200 to-purple-300 tracking-tight">
+                洞察库
+              </h1>
+            </div>
+
+            {/* Vertical Separator */}
+            <div className="h-10 w-0.5 bg-gradient-to-b from-indigo-500/0 via-indigo-500/50 to-purple-500/0 mx-2 rounded-full"></div>
+
+            <div className="flex flex-col justify-center leading-tight ml-1">
+              <h1 className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-200 to-purple-300 tracking-tight">卡片式</h1>
+              <h1 className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-200 to-purple-300 tracking-tight">知识库</h1>
+            </div>
           </div>
 
           <nav className="space-y-1">
@@ -920,7 +939,7 @@ const App: React.FC = () => {
           )}
 
           <div className={`absolute inset-0 ${activeView === 'chat' ? '' : 'hidden'}`}>
-              <ChatView cards={chatScope.cards} contextTitle={chatScope.title} />
+            <ChatView cards={chatScope.cards} contextTitle={chatScope.title} />
           </div>
 
           {activeView === 'grid' && (
