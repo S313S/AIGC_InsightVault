@@ -157,17 +157,36 @@ const normalizeAIAnalysis = (analysis: Partial<AIAnalysis>): AIAnalysis => ({
   extractedPrompts: toStringArray(analysis.extractedPrompts)
 });
 
+const extractLikelyJson = (text: string): string => {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    return text.slice(start, end + 1);
+  }
+  return text;
+};
+
 const parseAIResponse = (responseText: string): AIAnalysis => {
   try {
     // Attempt to extract JSON if it's wrapped in code blocks
     const jsonMatch = responseText.match(/```json\n([\s\S]*?)\n```/) || responseText.match(/```\n([\s\S]*?)\n```/);
-    const jsonString = jsonMatch ? jsonMatch[1] : responseText;
-    return normalizeAIAnalysis(JSON.parse(jsonString));
+    const candidate = jsonMatch ? jsonMatch[1] : responseText;
+    const trimmed = candidate.trim();
+
+    try {
+      return normalizeAIAnalysis(JSON.parse(trimmed));
+    } catch {
+      const extracted = extractLikelyJson(trimmed);
+      const repaired = extracted
+        .replace(/,\s*([}\]])/g, '$1') // remove trailing commas
+        .replace(/\u0000/g, '');
+      return normalizeAIAnalysis(JSON.parse(repaired));
+    }
   } catch (e) {
     console.error("Failed to parse Gemini response", e);
     // Fallback if JSON parsing fails
     return normalizeAIAnalysis({
-      summary: "Could not generate structured summary. Please check API key or content.",
+      summary: "AI 返回内容格式异常，已跳过结构化提取。你可以重试一次，或缩短输入内容。",
       usageScenarios: [],
       coreKnowledge: [],
       extractedPrompts: []
@@ -222,17 +241,26 @@ export const analyzeContentWithGemini = async (content: string, toolName?: strin
       message: content
     });
 
-    return normalizeAIAnalysis(JSON.parse(responseText));
+    return parseAIResponse(String(responseText || ''));
 
   } catch (error) {
     console.error("Analysis Failed:", error);
+    const { isQuotaExceeded, retrySeconds } = parseGeminiErrorInfo(error);
+    if (isQuotaExceeded) {
+      return normalizeAIAnalysis({
+        summary: `AI 请求额度已达到上限（429）。${retrySeconds ? `建议约 ${retrySeconds} 秒后重试。` : '请稍后重试。'}`,
+        usageScenarios: [],
+        coreKnowledge: [],
+        extractedPrompts: []
+      });
+    }
 
-    // Fallback Mock Data
+    // Fallback message for network / server failures
     return normalizeAIAnalysis({
-      summary: "Could not connect to AI service. Using simulated analysis.",
-      usageScenarios: ["Demo Scenario 1", "Demo Scenario 2"],
-      coreKnowledge: ["Key insight about " + (toolName || "AI")],
-      extractedPrompts: ["/imagine prompt: A futuristic demo"]
+      summary: `暂时无法连接 AI 分析服务。请检查网络或稍后重试。${toolName ? `（来源：${toolName}）` : ''}`,
+      usageScenarios: [],
+      coreKnowledge: [],
+      extractedPrompts: []
     });
   }
 };
