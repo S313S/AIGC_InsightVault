@@ -117,6 +117,10 @@ function parseUrl(input) {
 // ============ API Calls ============
 
 const API_BASE_XHS = 'https://api.justoneapi.com'; // JustOneAPI prod-global for Xiaohongshu
+const XHS_NOTE_DETAIL_ENDPOINTS = [
+    '/api/xiaohongshu-pgy/api/solar/note/noteId/detail/v1', // New provider endpoint (recommended)
+    '/api/xiaohongshu/get-note-detail/v1', // Legacy fallback
+];
 
 // Step 1: Convert share URL to get real noteId (only for xhslink.com short links)
 async function transferShareUrl(shareUrl, token) {
@@ -171,25 +175,39 @@ async function fetchXiaohongshu(noteId, token, originalUrl, incomingXsecToken) {
         throw new Error('noteId is required to fetch Xiaohongshu content');
     }
 
-    // Build endpoint with optional xsec_token
-    let endpoint = `${API_BASE_XHS}/api/xiaohongshu/get-note-detail/v1?token=${token}&noteId=${noteId}`;
-    if (xsecToken) {
-        endpoint += `&xsec_token=${encodeURIComponent(xsecToken)}`;
+    let lastError = null;
+
+    for (const apiPath of XHS_NOTE_DETAIL_ENDPOINTS) {
+        const params = new URLSearchParams({ token, noteId });
+        // xsec_token is used in legacy endpoint; keep as optional fallback signal.
+        if (xsecToken && apiPath.includes('/api/xiaohongshu/get-note-detail/')) {
+            params.set('xsec_token', xsecToken);
+        }
+
+        const endpoint = `${API_BASE_XHS}${apiPath}?${params.toString()}`;
+        const response = await fetch(endpoint);
+        const data = await response.json().catch(() => ({}));
+
+        if (data.code !== 0) {
+            lastError = new Error(data.message || `XHS API error (code: ${data.code}) on ${apiPath}`);
+            continue;
+        }
+
+        // Normalize both old/new response shapes.
+        // Old: data = [{ user, note_list: [note] }]
+        // New: data = { noteId, noteLink, title, content, imagesList, likeNum, userInfo, ... }
+        const wrapper = Array.isArray(data.data) ? data.data[0] : data.data;
+        if (!wrapper || typeof wrapper !== 'object') {
+            lastError = new Error(`XHS API returned empty payload on ${apiPath}`);
+            continue;
+        }
+
+        const noteData = wrapper?.note_list?.[0] || wrapper;
+        noteData._user = wrapper?.user;
+        return noteData;
     }
 
-    const response = await fetch(endpoint);
-    const data = await response.json();
-
-    if (data.code !== 0) {
-        throw new Error(data.message || `XHS API error (code: ${data.code})`);
-    }
-
-    // API returns: data: [{ user: {...}, note_list: [{...}] }]
-    const wrapper = Array.isArray(data.data) ? data.data[0] : data.data;
-    const noteData = wrapper?.note_list?.[0] || wrapper;
-    // Merge user info into note data for mapping
-    noteData._user = wrapper?.user;
-    return noteData;
+    throw lastError || new Error('Failed to fetch Xiaohongshu note detail from all endpoints');
 }
 
 async function fetchTwitter(tweetId, token) {
@@ -245,50 +263,59 @@ function buildXhsImageUrl(fileid) {
 
 async function mapToKnowledgeCard(data, platform) {
     if (platform === 'xiaohongshu') {
-        // Based on actual API response structure:
-        // data.id, data.title, data.desc, data.images_list[], data.liked_count,
-        // data.collected_count, data.comments_count, data.hash_tag[], data._user
-        const noteId = data.id;
-        const user = data._user || data.user || {};
+        const noteId = data.noteId || data.id;
+        const user = data.userInfo || data._user || data.user || {};
 
         const convertToJpg = (url) => (url || '').replaceAll('format/heif', 'format/jpg');
         const extractCoverUrl = (cover) => {
             if (!cover) return '';
             if (typeof cover === 'string') return convertToJpg(cover);
+            if (cover.fileId) return buildXhsImageUrl(cover.fileId);
             if (cover.fileid) return buildXhsImageUrl(cover.fileid);
             const url = cover.url_size_large || cover.url || cover.url_default || cover.url_pre || cover.url_original;
             return convertToJpg(url || '');
         };
 
+        const imageList = data.imagesList || data.images_list || [];
         // Build cover image: prefer explicit cover, fall back to cover_image_index or share_info
         const coverFromNote = extractCoverUrl(data.cover);
         const coverIndex = Number.isFinite(Number(data.cover_image_index)) ? Number(data.cover_image_index) : 0;
-        const coverImg = data.images_list?.[coverIndex] || data.images_list?.[0];
+        const coverImg = imageList?.[coverIndex] || imageList?.[0];
         const coverFromImages = coverImg?.fileid
             ? buildXhsImageUrl(coverImg.fileid)
-            : convertToJpg(coverImg?.url || '');
-        const coverFromShare = convertToJpg(data.share_info?.image || '');
+            : coverImg?.fileId
+                ? buildXhsImageUrl(coverImg.fileId)
+                : convertToJpg(coverImg?.url || coverImg?.original || '');
+        const coverFromShare = convertToJpg(data.share_info?.image || data.noteLink || '');
         const coverImage = coverFromNote || coverFromImages || coverFromShare;
 
-        const images = (data.images_list || []).map(img => {
+        const images = imageList.map(img => {
+            if (img.fileId) return buildXhsImageUrl(img.fileId);
             if (img.fileid) return buildXhsImageUrl(img.fileid);
-            return (img.url || '').replaceAll('format/heif', 'format/jpg');
+            return (img.url || img.original || '').replaceAll('format/heif', 'format/jpg');
         }).filter(Boolean);
+
+        const legacyTags = (data.hash_tag || []).map(tag => tag?.name).filter(Boolean);
+        const featureTags = (data.featureTags || []).map(tag => {
+            if (typeof tag === 'string') return tag;
+            return tag?.name;
+        }).filter(Boolean);
+        const tags = Array.from(new Set([...legacyTags, ...featureTags]));
 
         return {
             platform: 'Xiaohongshu',
             title: data.title || data.share_info?.title || '',
-            author: user.name || user.nickname || '',
-            rawContent: data.desc || '',
+            author: user.nickName || user.name || user.nickname || '',
+            rawContent: data.content || data.desc || '',
             coverImage,
             images,
             metrics: {
-                likes: data.liked_count || 0,
-                bookmarks: data.collected_count || 0,
-                comments: data.comments_count || 0,
+                likes: data.likeNum ?? data.liked_count ?? 0,
+                bookmarks: data.favNum ?? data.collected_count ?? 0,
+                comments: data.cmtNum ?? data.comments_count ?? 0,
             },
-            tags: (data.hash_tag || []).map(tag => tag.name),
-            sourceUrl: `https://www.xiaohongshu.com/explore/${noteId}`,
+            tags,
+            sourceUrl: data.noteLink || `https://www.xiaohongshu.com/explore/${noteId}`,
         };
     }
 
