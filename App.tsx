@@ -481,11 +481,6 @@ const App: React.FC = () => {
   const handleMainNavigation = (view: ViewMode) => {
     setActiveView(view);
 
-    // If navigating to chat via Sidebar, reset to Global scope
-    if (view === 'chat') {
-      setChatScope({ cards: cards, title: 'Entire Vault' });
-    }
-
     setCurrentCollectionId(null); // Reset collection when navigating via main menu
     setIsSidebarOpen(false);
     setIsSelectionMode(false);
@@ -920,11 +915,9 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {activeView === 'chat' && (
-            <div className="absolute inset-0">
+          <div className={`absolute inset-0 ${activeView === 'chat' ? '' : 'hidden'}`}>
               <ChatView cards={chatScope.cards} contextTitle={chatScope.title} />
-            </div>
-          )}
+          </div>
 
           {activeView === 'grid' && (
             <div className="h-full overflow-y-auto p-6">

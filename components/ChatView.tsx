@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { KnowledgeCard, ChatMessage } from '../types';
 import { queryKnowledgeBase } from '../services/geminiService';
-import { Send, User, Sparkles, Database, Folder } from './Icons';
+import { Send, User, Sparkles, Database, Folder, Copy, Check, X, Plus } from './Icons';
 
 interface ChatViewProps {
   cards: KnowledgeCard[];
@@ -51,12 +51,14 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([getInitialMessage(cards.length, contextTitle)]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const requestControllerRef = useRef<AbortController | null>(null);
 
-  // Reset chat when context changes (e.g. switching from Global to a specific Album)
+  // Reset chat only when scope title changes (e.g. switching from Global to a specific Album)
   useEffect(() => {
     setMessages([getInitialMessage(cards.length, contextTitle)]);
-  }, [cards, contextTitle]);
+  }, [contextTitle]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -69,8 +71,18 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
     }
   }, [messages]);
 
+  useEffect(() => {
+    return () => {
+      requestControllerRef.current?.abort();
+    };
+  }, []);
+
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
+
+    requestControllerRef.current?.abort();
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
 
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
@@ -84,7 +96,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
     setIsLoading(true);
 
     try {
-      const responseText = await queryKnowledgeBase(userMsg.content, cards);
+      const responseText = await queryKnowledgeBase(userMsg.content, cards, controller.signal);
 
       const aiMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -95,6 +107,9 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
 
       setMessages(prev => [...prev, aiMsg]);
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
       console.error(error);
       const errorMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -104,7 +119,35 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
       };
       setMessages(prev => [...prev, errorMsg]);
     } finally {
+      if (requestControllerRef.current === controller) {
+        requestControllerRef.current = null;
+      }
       setIsLoading(false);
+    }
+  };
+
+  const handleCancelResponse = () => {
+    requestControllerRef.current?.abort();
+    requestControllerRef.current = null;
+    setIsLoading(false);
+  };
+
+  const handleNewChat = () => {
+    requestControllerRef.current?.abort();
+    requestControllerRef.current = null;
+    setIsLoading(false);
+    setInputValue('');
+    setCopiedMessageId(null);
+    setMessages([getInitialMessage(cards.length, contextTitle)]);
+  };
+
+  const handleCopyMessage = async (message: ChatMessage) => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopiedMessageId(message.id);
+      window.setTimeout(() => setCopiedMessageId(prev => (prev === message.id ? null : prev)), 1400);
+    } catch (error) {
+      console.error('Copy failed:', error);
     }
   };
 
@@ -198,7 +241,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
 
         {/* Header - Floating glass pill */}
         <div className="flex justify-center pt-4 pb-2 shrink-0">
-          <div className="inline-flex items-center gap-4 px-5 py-3 rounded-full bg-white/[0.08] backdrop-blur-xl border border-white/10 shadow-lg">
+          <div className="inline-flex items-center gap-3 px-4 py-2.5 rounded-full bg-white/[0.08] backdrop-blur-xl border border-white/10 shadow-lg">
             <div className="flex items-center gap-2">
               <div
                 className="w-10 h-10 rounded-full flex items-center justify-center"
@@ -224,6 +267,15 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
               />
               <span className="text-xs text-emerald-300/80">在线</span>
             </div>
+            <div className="w-px h-6 bg-white/10" />
+            <button
+              onClick={handleNewChat}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white/5 hover:bg-white/12 border border-white/10 text-white/80 hover:text-white text-xs transition-colors"
+              title="开始新的对话"
+            >
+              <Plus size={12} />
+              <span>新聊天</span>
+            </button>
           </div>
         </div>
 
@@ -250,7 +302,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
               )}
 
               <div
-                className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${msg.role === 'user'
+                className={`group relative max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${msg.role === 'user'
                   ? 'rounded-tr-md text-white'
                   : 'rounded-tl-md text-white/90'
                   }`}
@@ -266,6 +318,18 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
                 }}
               >
                 <div className="whitespace-pre-wrap">{msg.content}</div>
+                {msg.role === 'assistant' && msg.id !== 'welcome' && (
+                  <button
+                    onClick={() => handleCopyMessage(msg)}
+                    className="absolute -top-2 -right-2 h-7 px-2 rounded-lg border border-white/15 bg-[#131b35]/90 text-white/70 hover:text-white hover:bg-[#182248] transition-all opacity-0 group-hover:opacity-100"
+                    title="复制回复"
+                  >
+                    <span className="flex items-center gap-1">
+                      {copiedMessageId === msg.id ? <Check size={12} /> : <Copy size={12} />}
+                      <span className="text-[11px]">{copiedMessageId === msg.id ? '已复制' : '复制'}</span>
+                    </span>
+                  </button>
+                )}
               </div>
 
               {msg.role === 'user' && (
@@ -323,18 +387,28 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
             />
-            <button
-              onClick={handleSendMessage}
-              disabled={!inputValue.trim() || isLoading}
-              className="p-2.5 rounded-xl transition-all duration-200 disabled:opacity-30"
-              style={{
-                background: inputValue.trim() && !isLoading
-                  ? 'linear-gradient(135deg, rgba(99,102,241,0.9) 0%, rgba(139,92,246,0.9) 100%)'
-                  : 'rgba(255,255,255,0.05)',
-              }}
-            >
-              <Send size={16} className="text-white" />
-            </button>
+            {isLoading ? (
+              <button
+                onClick={handleCancelResponse}
+                className="p-2.5 rounded-xl transition-all duration-200 bg-rose-500/80 hover:bg-rose-500"
+                title="中断生成"
+              >
+                <X size={16} className="text-white" />
+              </button>
+            ) : (
+              <button
+                onClick={handleSendMessage}
+                disabled={!inputValue.trim()}
+                className="p-2.5 rounded-xl transition-all duration-200 disabled:opacity-30"
+                style={{
+                  background: inputValue.trim()
+                    ? 'linear-gradient(135deg, rgba(99,102,241,0.9) 0%, rgba(139,92,246,0.9) 100%)'
+                    : 'rgba(255,255,255,0.05)',
+                }}
+              >
+                <Send size={16} className="text-white" />
+              </button>
+            )}
           </div>
           <p className="text-center text-[10px] text-white/30 mt-3">
             AI 仅基于当前上下文中的内容进行回答

@@ -78,7 +78,7 @@ Content: "${message}"
   };
 };
 
-const callGeminiREST = async (payload: { mode: string; message: string; context?: string }) => {
+const callGeminiREST = async (payload: { mode: string; message: string; context?: string }, signal?: AbortSignal) => {
   if (!API_KEY) {
     throw new Error('Missing VITE_GEMINI_API_KEY for direct Gemini call');
   }
@@ -88,7 +88,8 @@ const callGeminiREST = async (payload: { mode: string; message: string; context?
   const response = await fetch(`${GEMINI_REST_ENDPOINT}?key=${API_KEY}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody)
+    body: JSON.stringify(requestBody),
+    signal
   });
 
   if (!response.ok) {
@@ -106,12 +107,13 @@ const callGeminiREST = async (payload: { mode: string; message: string; context?
 };
 
 // Helper to call Vercel API
-const callProxyAPI = async (payload: any) => {
+const callProxyAPI = async (payload: any, signal?: AbortSignal) => {
   try {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal
     });
 
     if (!response.ok) {
@@ -122,10 +124,13 @@ const callProxyAPI = async (payload: any) => {
     const data = await response.json();
     return data.result;
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
     console.error("Proxy API Error:", error);
     // In dev, allow direct Gemini call if proxy is unreachable
     if (import.meta.env.DEV && API_KEY) {
-      return callGeminiREST(payload);
+      return callGeminiREST(payload, signal);
     }
     throw error;
   }
@@ -247,7 +252,7 @@ export const classifyContentWithGemini = async (content: string): Promise<string
   }
 };
 
-export const queryKnowledgeBase = async (query: string, cards: KnowledgeCard[]): Promise<string> => {
+export const queryKnowledgeBase = async (query: string, cards: KnowledgeCard[], signal?: AbortSignal): Promise<string> => {
 
   // 1. Context Construction
   const context = cards.slice(0, 20).map(c => `
@@ -264,11 +269,14 @@ export const queryKnowledgeBase = async (query: string, cards: KnowledgeCard[]):
       mode: 'chat',
       message: query,
       context: context
-    });
+    }, signal);
 
     return responseText || "I couldn't generate a response.";
 
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
     console.error("Chat Error:", error);
     const { isQuotaExceeded, retrySeconds } = parseGeminiErrorInfo(error);
     if (isQuotaExceeded) {
