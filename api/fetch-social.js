@@ -117,10 +117,8 @@ function parseUrl(input) {
 // ============ API Calls ============
 
 const API_BASE_XHS = 'https://api.justoneapi.com'; // JustOneAPI prod-global for Xiaohongshu
-const XHS_NOTE_DETAIL_ENDPOINTS = [
-    '/api/xiaohongshu-pgy/api/solar/note/noteId/detail/v1', // New provider endpoint (recommended)
-    '/api/xiaohongshu/get-note-detail/v1', // Legacy fallback
-];
+const XHS_PRIMARY_NOTE_DETAIL = '/api/xiaohongshu-pgy/api/solar/note/noteId/detail/v1';
+const XHS_LEGACY_NOTE_DETAIL = '/api/xiaohongshu/get-note-detail/v1';
 
 // Step 1: Convert share URL to get real noteId (only for xhslink.com short links)
 async function transferShareUrl(shareUrl, token) {
@@ -175,39 +173,47 @@ async function fetchXiaohongshu(noteId, token, originalUrl, incomingXsecToken) {
         throw new Error('noteId is required to fetch Xiaohongshu content');
     }
 
-    let lastError = null;
+    const fetchXhsDetail = async (apiPath, retries = 1, retryDelayMs = 250) => {
+        let lastErr = null;
+        for (let i = 0; i <= retries; i += 1) {
+            const params = new URLSearchParams({ token, noteId });
+            if (xsecToken && apiPath.includes('/api/xiaohongshu/get-note-detail/')) {
+                params.set('xsec_token', xsecToken);
+            }
 
-    for (const apiPath of XHS_NOTE_DETAIL_ENDPOINTS) {
-        const params = new URLSearchParams({ token, noteId });
-        // xsec_token is used in legacy endpoint; keep as optional fallback signal.
-        if (xsecToken && apiPath.includes('/api/xiaohongshu/get-note-detail/')) {
-            params.set('xsec_token', xsecToken);
+            const endpoint = `${API_BASE_XHS}${apiPath}?${params.toString()}`;
+            const response = await fetch(endpoint);
+            const data = await response.json().catch(() => ({}));
+
+            if (data.code === 0 && data.data) {
+                const wrapper = Array.isArray(data.data) ? data.data[0] : data.data;
+                if (wrapper && typeof wrapper === 'object') {
+                    const noteData = wrapper?.note_list?.[0] || wrapper;
+                    noteData._user = wrapper?.user;
+                    return noteData;
+                }
+            }
+
+            lastErr = new Error(data.message || `XHS API error (code: ${data.code}) on ${apiPath}`);
+            if (i < retries) {
+                await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+            }
         }
+        throw lastErr || new Error(`XHS API failed on ${apiPath}`);
+    };
 
-        const endpoint = `${API_BASE_XHS}${apiPath}?${params.toString()}`;
-        const response = await fetch(endpoint);
-        const data = await response.json().catch(() => ({}));
-
-        if (data.code !== 0) {
-            lastError = new Error(data.message || `XHS API error (code: ${data.code}) on ${apiPath}`);
-            continue;
-        }
-
-        // Normalize both old/new response shapes.
-        // Old: data = [{ user, note_list: [note] }]
-        // New: data = { noteId, noteLink, title, content, imagesList, likeNum, userInfo, ... }
-        const wrapper = Array.isArray(data.data) ? data.data[0] : data.data;
-        if (!wrapper || typeof wrapper !== 'object') {
-            lastError = new Error(`XHS API returned empty payload on ${apiPath}`);
-            continue;
-        }
-
-        const noteData = wrapper?.note_list?.[0] || wrapper;
-        noteData._user = wrapper?.user;
-        return noteData;
+    // Strategy requested:
+    // 1) Try legacy endpoint first (richer metrics), retry up to 10 times with short interval.
+    // 2) If still failed, fallback to new endpoint.
+    try {
+        return await fetchXhsDetail(XHS_LEGACY_NOTE_DETAIL, 10, 250);
+    } catch (legacyErr) {
+        const primary = await fetchXhsDetail(XHS_PRIMARY_NOTE_DETAIL, 0, 0);
+        primary._fallbackInfo = {
+            legacyError: legacyErr?.message || 'legacy endpoint failed after retries'
+        };
+        return primary;
     }
-
-    throw lastError || new Error('Failed to fetch Xiaohongshu note detail from all endpoints');
 }
 
 async function fetchTwitter(tweetId, token) {
