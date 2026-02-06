@@ -217,7 +217,7 @@ async function fetchTwitter(tweetId, token) {
         throw new Error('X API Bearer Token not configured');
     }
 
-    const endpoint = `https://api.x.com/2/tweets/${tweetId}?tweet.fields=created_at,public_metrics,author_id,text&expansions=author_id&user.fields=username,name,profile_image_url`;
+    const endpoint = `https://api.x.com/2/tweets/${tweetId}?tweet.fields=created_at,public_metrics,author_id,text,attachments&expansions=author_id,attachments.media_keys&user.fields=username,name,profile_image_url&media.fields=type,url,preview_image_url`;
 
     const response = await fetch(endpoint, {
         headers: {
@@ -238,12 +238,15 @@ async function fetchTwitter(tweetId, token) {
     // Combine tweet data with user data from includes
     const tweet = data.data;
     const author = data.includes?.users?.find(u => u.id === tweet.author_id) || {};
+    const media = data.includes?.media || [];
 
     return {
         id: tweet.id,
         text: tweet.text,
         created_at: tweet.created_at,
+        attachments: tweet.attachments || {},
         public_metrics: tweet.public_metrics,
+        media,
         author: {
             id: author.id,
             username: author.username,
@@ -363,15 +366,24 @@ async function mapToKnowledgeCard(data, platform) {
     }
 
     if (platform === 'twitter') {
-        // 对于 Twitter，尝试调用百炼生成封面图
-        let coverImage = '';
-        const textForImage = data.text || '';
-        if (textForImage) {
-            try {
-                coverImage = await generateCoverImage(textForImage);
-            } catch (err) {
-                console.warn('Failed to generate cover image via Bailian:', err.message);
-                // Fallback: leave coverImage empty, frontend will use default
+        const mediaKeys = data.attachments?.media_keys || [];
+        const mediaByKey = new Map((data.media || []).map(m => [m.media_key, m]));
+        const images = mediaKeys
+            .map(key => mediaByKey.get(key))
+            .filter(m => m && (m.type === 'photo' || m.type === 'animated_gif' || m.type === 'video'))
+            .map(m => m.url || m.preview_image_url)
+            .filter(Boolean);
+
+        // Prefer original tweet media first. Generate AI cover only when media is unavailable.
+        let coverImage = images[0] || '';
+        if (!coverImage) {
+            const textForImage = data.text || '';
+            if (textForImage) {
+                try {
+                    coverImage = await generateCoverImage(textForImage);
+                } catch (err) {
+                    console.warn('Failed to generate cover image via Bailian:', err.message);
+                }
             }
         }
 
@@ -380,8 +392,8 @@ async function mapToKnowledgeCard(data, platform) {
             title: '', // Twitter posts don't have titles
             author: data.author?.username || '',
             rawContent: data.text || '',
-            coverImage, // Now populated by Bailian AI generation
-            images: [],
+            coverImage,
+            images,
             metrics: {
                 likes: data.public_metrics?.like_count || 0,
                 bookmarks: data.public_metrics?.bookmark_count || 0,
