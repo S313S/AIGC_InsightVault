@@ -1,12 +1,46 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { KnowledgeCard, ChatMessage } from '../types';
 import { queryKnowledgeBase } from '../services/geminiService';
-import { Send, Bot, User, Sparkles, Loader2, Database, Folder } from './Icons';
+import { Send, User, Sparkles, Database, Folder } from './Icons';
 
 interface ChatViewProps {
   cards: KnowledgeCard[];
   contextTitle: string; // e.g., "Entire Vault" or "Collection: AIGC Tools"
 }
+
+const RobotAvatar: React.FC<{ size?: number; isThinking?: boolean }> = ({ size = 32, isThinking = false }) => {
+  const eyeHeight = Math.max(8, Math.floor(size * 0.45));
+  const eyeWidth = Math.max(5, Math.floor(size * 0.17));
+  const eyeGap = Math.max(6, Math.floor(size * 0.18));
+
+  return (
+    <div
+      className="rounded-full overflow-hidden border border-white/30 shadow-[0_4px_14px_rgba(146,161,255,0.25)] relative flex items-center justify-center"
+      style={{
+        width: size,
+        height: size,
+        background: `
+          radial-gradient(120% 90% at 20% 0%, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0.25) 35%, rgba(255,255,255,0.12) 100%),
+          linear-gradient(145deg, rgba(214,225,255,0.55) 0%, rgba(167,156,255,0.6) 38%, rgba(145,139,255,0.62) 68%, rgba(198,216,255,0.5) 100%)
+        `,
+      }}
+    >
+      <div
+        className={`flex items-center ${isThinking ? 'robot-eye-spin' : ''}`}
+        style={{ gap: eyeGap }}
+      >
+        <div
+          className="bg-white/95 rounded-full"
+          style={{ width: eyeWidth, height: eyeHeight }}
+        />
+        <div
+          className="bg-white/95 rounded-full"
+          style={{ width: eyeWidth, height: eyeHeight }}
+        />
+      </div>
+    </div>
+  );
+};
 
 export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
   // 根据当前上下文生成友善的中文开场白
@@ -143,6 +177,14 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
           0%, 100% { opacity: 0.6; }
           50% { opacity: 1; }
         }
+        @keyframes robotEyeSpin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        .robot-eye-spin {
+          transform-origin: center center;
+          animation: robotEyeSpin 1.35s linear infinite;
+        }
       `}</style>
 
       {/* ===== Main Content Container ===== */}
@@ -197,15 +239,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
             >
               {msg.role === 'assistant' && (
                 <div className="flex-shrink-0 mt-1">
-                  <div
-                    className="w-8 h-8 rounded-full flex items-center justify-center border border-white/20"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(99,102,241,0.9) 0%, rgba(139,92,246,0.9) 100%)',
-                      boxShadow: '0 4px 15px rgba(99,102,241,0.3)',
-                    }}
-                  >
-                    <Bot size={14} className="text-white" />
-                  </div>
+                  <RobotAvatar size={32} />
                 </div>
               )}
 
@@ -240,14 +274,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
 
           {isLoading && (
             <div className="flex gap-3 justify-start">
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center border border-white/10"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(99,102,241,0.5) 0%, rgba(139,92,246,0.5) 100%)',
-                }}
-              >
-                <Bot size={14} className="text-white/60" />
-              </div>
+              <RobotAvatar size={32} isThinking />
               <div
                 className="rounded-2xl rounded-tl-md px-4 py-3 flex items-center gap-2"
                 style={{
