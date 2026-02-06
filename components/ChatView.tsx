@@ -44,7 +44,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
   const getInitialMessage = (count: number, title: string): ChatMessage => ({
     id: 'welcome',
     role: 'assistant',
-    content: `你好！我是 Insight Vault 知识助手，很高兴为你服务 ✨\n\n当前我正在关注「**${title}**」，这里共有 **${count}** 条知识内容。\n\n你可以问我：\n• 帮你总结这些内容的核心主题\n• 提取其中的常用提示词或技巧\n• 发现内容之间的关联和洞察\n\n有什么我可以帮到你的吗？`,
+    content: `你好！我是 Insight Vault 知识助手，很高兴为你服务。\n\n当前我正在关注「${title}」，这里共有 ${count} 条知识内容。\n\n你可以问我：\n1. 帮你总结这些内容的核心主题\n2. 提取其中的常用提示词或技巧\n3. 发现内容之间的关联和洞察\n\n有什么我可以帮到你的吗？`,
     timestamp: Date.now()
   });
 

@@ -7,6 +7,8 @@ const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_MODEL = 'gemini-2.5-flash';
 const GEMINI_REST_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
+const wantsMarkdownOutput = (text: string) => /(markdown|md格式|markdown格式|用md|用markdown|代码块|```|表格|标题|列表)/i.test(text);
+
 const buildPromptPayload = (payload: { mode: string; message: string; context?: string }) => {
   const { mode, message, context } = payload;
 
@@ -48,13 +50,17 @@ Content: "${message}"
     };
   }
 
+  const wantsMarkdown = wantsMarkdownOutput(message);
+  const formatInstruction = wantsMarkdown
+    ? '用户本轮明确要求 Markdown。你必须使用标准 Markdown 输出（可用标题、列表、引用、代码块）。'
+    : '用户本轮未要求 Markdown。禁止输出任何 Markdown 语法符号（例如 #、*、`、>、- 列表），仅使用自然段中文。';
+
   const systemInstruction = `
 你是「Insight Vault 知识助手」，一个专业、友好的 AI 助理。
 
 【重要】回复格式要求：
 - 默认使用清晰、易读的中文表达
-- 当用户明确要求使用 Markdown（例如提到“markdown格式”“列表”“标题”“代码块”）时，必须使用标准 Markdown 输出
-- 在不影响准确性的前提下，优先使用结构化格式（标题、列表、引用）提升可读性
+- ${formatInstruction}
 - 引用知识库内容时，可写成“根据笔记《标题》中的描述...”
 
 你的职责：
