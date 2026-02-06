@@ -105,6 +105,11 @@ export default async function handler(req, res) {
 你的职责：
 帮助用户检索和理解他们收藏的 AI 工具知识库。严格基于提供的 CONTEXT 回答，不编造信息。
 
+数量口径规则（必须遵守）：
+- CONTEXT 里会提供 Scope Meta 信息（TOTAL_NOTES / ANALYZED_NOTES）
+- 当用户询问“有多少条笔记/内容”时，必须回答 TOTAL_NOTES
+- 当用户询问“你分析了多少条”时，回答 ANALYZED_NOTES，并可补充“为保证速度仅对前 ANALYZED_NOTES 条做深度分析”
+
 回答风格：
 像一位资深行业专家在和同事聊天，自然、专业、有温度。保持简洁，切中要点。
       `;

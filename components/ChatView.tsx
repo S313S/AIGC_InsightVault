@@ -278,18 +278,17 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
             </button>
           </div>
         </div>
+        {cards.length > 40 && (
+          <div className="flex justify-center pb-2 shrink-0">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/12 border border-amber-500/25 text-[11px] text-amber-300/85">
+              <span>⏳</span>
+              <span>当前数据量较大，AI 正在处理全量内容，响应可能稍慢</span>
+            </div>
+          </div>
+        )}
 
         {/* Messages Area */}
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-5">
-          {cards.length > 20 && (
-            <div className="flex justify-center">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300/80">
-                <span>📌</span>
-                <span>为确保响应速度，当前仅使用前 20 条内容</span>
-              </div>
-            </div>
-          )}
-
           {messages.map((msg) => (
             <div
               key={msg.id}
