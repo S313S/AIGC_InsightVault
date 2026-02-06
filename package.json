@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cleanup:dedupe:dry": "node scripts/cleanup-supabase-duplicates.mjs",
+    "cleanup:dedupe": "node scripts/cleanup-supabase-duplicates.mjs --apply"
   },
   "dependencies": {
     "@google/genai": "^1.38.0",

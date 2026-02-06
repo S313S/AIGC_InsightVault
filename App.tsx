@@ -281,10 +281,36 @@ const App: React.FC = () => {
     // 但鉴于 saveCard 在离线时返回 false，这里主要处理在线逻辑。
   };
 
+  const { displayCollections, collectionAliasMap } = useMemo(() => {
+    const groups = new Map<string, { canonical: Collection; ids: string[] }>();
+
+    for (const col of collections) {
+      const key = `${col.name.trim().toLowerCase()}::${col.coverImage || ''}`;
+      const group = groups.get(key);
+      if (!group) {
+        groups.set(key, { canonical: col, ids: [col.id] });
+      } else {
+        group.ids.push(col.id);
+      }
+    }
+
+    const aliasMap: Record<string, string[]> = {};
+    const deduped = Array.from(groups.values()).map(group => {
+      aliasMap[group.canonical.id] = group.ids;
+      return group.canonical;
+    });
+
+    return { displayCollections: deduped, collectionAliasMap: aliasMap };
+  }, [collections]);
+
+  const getCollectionAliasIds = (collectionId: string) => {
+    return collectionAliasMap[collectionId] || [collectionId];
+  };
+
   // Check if a card belongs to a collection
-  // Logic updated to check the card.collections array
   const isCardInCollection = (card: KnowledgeCard, collectionId: string) => {
-    return card.collections?.includes(collectionId) ?? false;
+    const aliasIds = getCollectionAliasIds(collectionId);
+    return card.collections?.some(cid => aliasIds.includes(cid)) ?? false;
   };
 
   // Derived filtered data
@@ -537,14 +563,15 @@ const App: React.FC = () => {
 
   const handleDeleteCollection = async (e: React.MouseEvent, collectionId: string) => {
     e.stopPropagation();
+    const aliasIds = getCollectionAliasIds(collectionId);
     if (window.confirm("Are you sure you want to delete this album? The items inside will not be deleted.")) {
-      setCollections(prev => prev.filter(c => c.id !== collectionId));
-      if (currentCollectionId === collectionId) {
+      setCollections(prev => prev.filter(c => !aliasIds.includes(c.id)));
+      if (currentCollectionId && aliasIds.includes(currentCollectionId)) {
         setCurrentCollectionId(null);
       }
 
       if (isSupabaseConnected()) {
-        await db.deleteCollection(collectionId);
+        await Promise.all(aliasIds.map(id => db.deleteCollection(id)));
       }
     }
     setActiveCollectionMenuId(null);
@@ -552,15 +579,16 @@ const App: React.FC = () => {
 
   const handleRenameCollection = async (e: React.MouseEvent, collectionId: string, currentName: string) => {
     e.stopPropagation();
+    const aliasIds = getCollectionAliasIds(collectionId);
     const newName = window.prompt("Rename Album", currentName);
     if (newName && newName.trim()) {
-      const updatedCollection = collections.find(c => c.id === collectionId);
+      const updatedCollection = collections.find(c => c.id === collectionId) || collections.find(c => aliasIds.includes(c.id));
       if (updatedCollection) {
         const renamed = { ...updatedCollection, name: newName };
-        setCollections(prev => prev.map(c => c.id === collectionId ? renamed : c));
+        setCollections(prev => prev.map(c => aliasIds.includes(c.id) ? { ...c, name: newName } : c));
 
         if (isSupabaseConnected()) {
-          await db.updateCollection(renamed);
+          await Promise.all(aliasIds.map(id => db.updateCollection({ ...renamed, id })));
         }
       }
     }
@@ -569,7 +597,7 @@ const App: React.FC = () => {
 
   // --- Chat with Album ---
   const handleChatWithCollection = (collectionId: string) => {
-    const collection = collections.find(c => c.id === collectionId);
+    const collection = displayCollections.find(c => c.id === collectionId);
     if (!collection) return;
 
     // Filter cards belonging to this collection
@@ -762,7 +790,7 @@ const App: React.FC = () => {
           </div>
 
           <div className="space-y-3">
-            {collections.map(col => {
+            {displayCollections.map(col => {
               // Calculate dynamic count
               const realItemCount = cards.filter(c => isCardInCollection(c, col.id)).length;
 
@@ -1099,7 +1127,7 @@ const App: React.FC = () => {
       {selectedCard && (
         <DetailModal
           card={selectedCard}
-          allCollections={collections}
+          allCollections={displayCollections}
           onClose={() => setSelectedCard(null)}
           onUpdate={handleUpdateCard}
           onDelete={handleDeleteCard}
@@ -1123,10 +1151,10 @@ const App: React.FC = () => {
               <button onClick={() => setIsAddToCollectionModalOpen(false)}><X size={18} className="text-gray-500 hover:text-gray-300" /></button>
             </div>
             <div className="p-2 max-h-80 overflow-y-auto">
-              {collections.length === 0 ? (
+              {displayCollections.length === 0 ? (
                 <p className="p-4 text-center text-gray-500 text-sm">No albums created yet.</p>
               ) : (
-                collections.map(col => (
+                displayCollections.map(col => (
                   <button
                     key={col.id}
                     onClick={() => handleBatchAddToCollection(col.id)}
