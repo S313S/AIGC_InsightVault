@@ -480,6 +480,10 @@ const App: React.FC = () => {
 
   const handleMainNavigation = (view: ViewMode) => {
     setActiveView(view);
+    if (view === 'chat') {
+      // Sidebar Assistant should always represent full-vault chat scope.
+      setChatScope({ cards, title: 'Entire Vault' });
+    }
 
     setCurrentCollectionId(null); // Reset collection when navigating via main menu
     setIsSidebarOpen(false);
