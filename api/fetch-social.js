@@ -261,6 +261,37 @@ function buildXhsImageUrl(fileid) {
     return `https://sns-img-bd.xhscdn.com/${fileid}?imageView2/2/w/660/format/jpg/q/75`;
 }
 
+function parseMetricCount(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+        const t = value.trim().toLowerCase().replace(/,/g, '');
+        if (!t) return 0;
+
+        // Chinese/EN unit support: 1.2w / 1.2万 / 1.2k / 1.2千
+        const unitMatch = t.match(/^([\d.]+)\s*(w|万|k|千)$/i);
+        if (unitMatch) {
+            const base = Number(unitMatch[1]);
+            if (!Number.isFinite(base)) return 0;
+            const unit = unitMatch[2];
+            if (unit === 'w' || unit === '万') return Math.round(base * 10000);
+            if (unit === 'k' || unit === '千') return Math.round(base * 1000);
+        }
+
+        const n = Number(t);
+        if (Number.isFinite(n)) return n;
+    }
+    return 0;
+}
+
+function pickFirstMetric(data, keys) {
+    for (const key of keys) {
+        if (data?.[key] !== undefined && data?.[key] !== null) {
+            return parseMetricCount(data[key]);
+        }
+    }
+    return 0;
+}
+
 async function mapToKnowledgeCard(data, platform) {
     if (platform === 'xiaohongshu') {
         const noteId = data.noteId || data.id;
@@ -302,6 +333,18 @@ async function mapToKnowledgeCard(data, platform) {
         }).filter(Boolean);
         const tags = Array.from(new Set([...legacyTags, ...featureTags]));
 
+        const likes = pickFirstMetric(data, [
+            'likeNum', 'liked_count', 'likedCount', 'like_count',
+            'thumbsUpCount', 'thumbs_up_count', 'upCount'
+        ]);
+        const bookmarks = pickFirstMetric(data, [
+            'favNum', 'favoriteNum', 'collectNum', 'collected_count',
+            'collectedCount', 'bookmarkCount', 'bookmark_count'
+        ]);
+        const comments = pickFirstMetric(data, [
+            'cmtNum', 'commentNum', 'comments_count', 'commentCount', 'comment_count'
+        ]);
+
         return {
             platform: 'Xiaohongshu',
             title: data.title || data.share_info?.title || '',
@@ -310,9 +353,9 @@ async function mapToKnowledgeCard(data, platform) {
             coverImage,
             images,
             metrics: {
-                likes: data.likeNum ?? data.liked_count ?? 0,
-                bookmarks: data.favNum ?? data.collected_count ?? 0,
-                comments: data.cmtNum ?? data.comments_count ?? 0,
+                likes,
+                bookmarks,
+                comments,
             },
             tags,
             sourceUrl: data.noteLink || `https://www.xiaohongshu.com/explore/${noteId}`,
