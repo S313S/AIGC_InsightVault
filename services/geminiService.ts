@@ -164,6 +164,41 @@ const parseAIResponse = (responseText: string): AIAnalysis => {
   }
 };
 
+const parseGeminiErrorInfo = (error: unknown): { isQuotaExceeded: boolean; retrySeconds?: number } => {
+  const raw = error instanceof Error ? error.message : String(error || '');
+  let statusCode: number | undefined;
+  let text = raw;
+
+  const jsonStart = raw.indexOf('{');
+  if (jsonStart >= 0) {
+    const maybeJson = raw.slice(jsonStart);
+    try {
+      const parsed = JSON.parse(maybeJson);
+      const parsedError = parsed?.error ?? parsed;
+
+      if (typeof parsedError?.code === 'number') {
+        statusCode = parsedError.code;
+      }
+      if (typeof parsedError?.message === 'string') {
+        text = `${text}\n${parsedError.message}`;
+      }
+    } catch {
+      // ignore parse failures
+    }
+  }
+
+  if (!statusCode) {
+    const statusMatch = raw.match(/\b(?:API Error|status)\s*[:=]?\s*(\d{3})\b/i);
+    if (statusMatch) statusCode = Number(statusMatch[1]);
+  }
+
+  const retryMatch = text.match(/retry in\s+([\d.]+)s/i) || text.match(/"retryDelay":"(\d+)s"/i);
+  const retrySeconds = retryMatch ? Math.ceil(Number(retryMatch[1])) : undefined;
+  const isQuotaExceeded = statusCode === 429 || /RESOURCE_EXHAUSTED|quota|rate[\s-]?limit|too many requests/i.test(text);
+
+  return { isQuotaExceeded, retrySeconds };
+};
+
 export const analyzeContentWithGemini = async (content: string, toolName?: string): Promise<AIAnalysis> => {
   // If no API key locally AND running locally, use mock
   // But strictly, we check if we can make the call. 
@@ -229,6 +264,10 @@ export const queryKnowledgeBase = async (query: string, cards: KnowledgeCard[]):
 
   } catch (error) {
     console.error("Chat Error:", error);
-    return "Sorry, I can't connect to the AI service right now. Please check your network or try again later.";
+    const { isQuotaExceeded, retrySeconds } = parseGeminiErrorInfo(error);
+    if (isQuotaExceeded) {
+      return `当前 AI 服务请求额度已达到上限（429）。${retrySeconds ? `请约 ${retrySeconds} 秒后重试，` : '请稍后重试，'}或在 Gemini 控制台提升配额后再试。`;
+    }
+    return "抱歉，我暂时无法连接 AI 服务。请检查网络，或稍后重试。";
   }
 };

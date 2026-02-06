@@ -25,16 +25,13 @@ const RobotAvatar: React.FC<{ size?: number; isThinking?: boolean }> = ({ size =
         `,
       }}
     >
-      <div
-        className={`flex items-center ${isThinking ? 'robot-eye-spin' : ''}`}
-        style={{ gap: eyeGap }}
-      >
+      <div className="flex items-center" style={{ gap: eyeGap }}>
         <div
-          className="bg-white/95 rounded-full"
+          className={`bg-white/95 rounded-full ${isThinking ? 'robot-eye-think left-eye' : ''}`}
           style={{ width: eyeWidth, height: eyeHeight }}
         />
         <div
-          className="bg-white/95 rounded-full"
+          className={`bg-white/95 rounded-full ${isThinking ? 'robot-eye-think right-eye' : ''}`}
           style={{ width: eyeWidth, height: eyeHeight }}
         />
       </div>
@@ -177,13 +174,22 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
           0%, 100% { opacity: 0.6; }
           50% { opacity: 1; }
         }
-        @keyframes robotEyeSpin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
+        @keyframes robotEyeThink {
+          0%, 14% { transform: translateY(0) scaleY(1); }
+          20% { transform: translateY(-2px) scaleY(1); }
+          32% { transform: translateY(1px) scaleY(1); }
+          46% { transform: translateY(2px) scaleY(1); }
+          58% { transform: translateY(0) scaleY(1); }
+          72% { transform: translateY(-1px) scaleY(1); }
+          80% { transform: translateY(0) scaleY(0.25); }
+          86%, 100% { transform: translateY(0) scaleY(1); }
         }
-        .robot-eye-spin {
+        .robot-eye-think {
           transform-origin: center center;
-          animation: robotEyeSpin 1.35s linear infinite;
+          animation: robotEyeThink 1.2s ease-in-out infinite;
+        }
+        .robot-eye-think.right-eye {
+          animation-delay: 0.12s;
         }
       `}</style>
 
