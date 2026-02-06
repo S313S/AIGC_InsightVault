@@ -1,5 +1,6 @@
 // import { GoogleGenAI } from "@google/genai"; // SDK not needed in browser
 import { AIAnalysis, KnowledgeCard } from "../types";
+import { PROJECT_KB_CONTEXT } from "./projectKnowledge";
 
 // Vite uses import.meta.env for environment variables
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
@@ -290,6 +291,9 @@ export const queryKnowledgeBase = async (query: string, cards: KnowledgeCard[], 
   // 1. Context Construction
   const analyzedCards = cards;
   const context = `
+    [Project Knowledge]
+    ${PROJECT_KB_CONTEXT}
+  \n---\n
     [Scope Meta]
     TOTAL_NOTES: ${cards.length}
     ANALYZED_NOTES: ${analyzedCards.length}
