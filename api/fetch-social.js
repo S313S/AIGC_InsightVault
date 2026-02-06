@@ -37,7 +37,7 @@ export default async function handler(req, res) {
         let apiResponse;
 
         if (parsed.platform === 'xiaohongshu') {
-            apiResponse = await fetchXiaohongshu(parsed.id, token, parsed.originalUrl);
+            apiResponse = await fetchXiaohongshu(parsed.id, token, parsed.originalUrl, parsed.xsecToken);
         } else if (parsed.platform === 'twitter') {
             apiResponse = await fetchTwitter(parsed.id, token);
         }
@@ -58,24 +58,56 @@ export default async function handler(req, res) {
 
 // ============ URL Parsing ============
 
-function parseUrl(url) {
-    // Xiaohongshu: https://www.xiaohongshu.com/explore/64f... or https://www.xiaohongshu.com/discovery/item/64f...
-    const xhsMatch = url.match(/xiaohongshu\.com\/(?:explore|discovery\/item)\/([a-zA-Z0-9]+)/);
-    if (xhsMatch) {
-        // Return both id and original URL for share link transfer
-        return { platform: 'xiaohongshu', id: xhsMatch[1], originalUrl: url };
+function parseUrl(input) {
+    const raw = String(input || '').trim();
+    if (!raw) return null;
+
+    // Support pasted share text by extracting the first URL token.
+    const token = (raw.match(/https?:\/\/[^\s]+/i) || [raw])[0];
+    let normalized = token;
+    if (!/^https?:\/\//i.test(normalized)) {
+        normalized = `https://${normalized}`;
+    }
+
+    let parsed;
+    try {
+        parsed = new URL(normalized);
+    } catch {
+        return null;
+    }
+
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    const pathname = parsed.pathname || '';
+
+    // Xiaohongshu full links:
+    // - /explore/{noteId}
+    // - /discovery/item/{noteId}
+    if (host === 'xiaohongshu.com') {
+        const noteMatch = pathname.match(/\/(?:explore|discovery\/item)\/([a-zA-Z0-9]+)/i);
+        if (!noteMatch) return null;
+
+        return {
+            platform: 'xiaohongshu',
+            id: noteMatch[1],
+            originalUrl: parsed.toString(),
+            xsecToken: parsed.searchParams.get('xsec_token') || null
+        };
     }
 
     // Xiaohongshu short link: http://xhslink.com/xxx
-    const xhsShortMatch = url.match(/xhslink\.com\/[a-zA-Z0-9\/]+/);
-    if (xhsShortMatch) {
-        // Short link needs transfer API to get real noteId, pass null as id
-        return { platform: 'xiaohongshu', id: null, originalUrl: url };
+    if (host === 'xhslink.com') {
+        return {
+            platform: 'xiaohongshu',
+            id: null,
+            originalUrl: parsed.toString(),
+            xsecToken: null
+        };
     }
 
     // Twitter/X: https://twitter.com/user/status/123456789 or https://x.com/user/status/123456789
-    const twitterMatch = url.match(/(?:twitter\.com|x\.com)\/\w+\/status\/(\d+)/);
-    if (twitterMatch) {
+    if (host === 'twitter.com' || host === 'x.com') {
+        const twitterMatch = pathname.match(/^\/[^/]+\/status\/(\d+)/i);
+        if (!twitterMatch) return null;
         return { platform: 'twitter', id: twitterMatch[1] };
     }
 
@@ -108,9 +140,9 @@ async function transferShareUrl(shareUrl, token) {
     return data.data;
 }
 
-async function fetchXiaohongshu(noteId, token, originalUrl) {
+async function fetchXiaohongshu(noteId, token, originalUrl, incomingXsecToken) {
     // If original URL is a xhslink.com short link, transfer it first to get real noteId
-    let xsecToken = null;
+    let xsecToken = incomingXsecToken || null;
     if (originalUrl && originalUrl.includes('xhslink.com')) {
         const transferResult = await transferShareUrl(originalUrl, token);
 
@@ -363,4 +395,3 @@ async function generateCoverImage(postText) {
     console.warn('Could not extract image URL from Bailian response');
     return '';
 }
-

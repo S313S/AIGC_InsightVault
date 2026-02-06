@@ -59,7 +59,8 @@ export async function fetchSocialContent(url: string): Promise<SocialMediaConten
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to fetch content');
+            const message = [errorData?.error, errorData?.details].filter(Boolean).join(': ');
+            throw new Error(message || 'Failed to fetch content');
         }
 
         return await response.json();
