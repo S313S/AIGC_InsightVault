@@ -5,7 +5,7 @@ import { Send, User, Sparkles, Database, Folder, Copy, Check, X, Plus } from './
 
 interface ChatViewProps {
   cards: KnowledgeCard[];
-  contextTitle: string; // e.g., "Entire Vault" or "Collection: AIGC Tools"
+  contextTitle: string; // e.g., "全部知识库" or "Collection: AIGC Tools"
 }
 
 const RobotAvatar: React.FC<{ size?: number; isThinking?: boolean }> = ({ size = 32, isThinking = false }) => {
@@ -44,7 +44,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
   const getInitialMessage = (count: number, title: string): ChatMessage => ({
     id: 'welcome',
     role: 'assistant',
-    content: `你好！我是 Insight Vault 知识助手，很高兴为你服务。\n\n当前我正在关注「${title}」，这里共有 ${count} 条知识内容。\n\n你可以问我：\n1. 帮你总结这些内容的核心主题\n2. 提取其中的常用提示词或技巧\n3. 发现内容之间的关联和洞察\n\n有什么我可以帮到你的吗？`,
+    content: `你好！我是知识助手，很高兴为你服务。\n\n当前我正在关注「${title}」，这里共有 ${count} 条知识内容。\n\n你可以问我：\n1. 帮你总结这些内容的核心主题\n2. 提取其中的常用提示词或技巧\n3. 发现内容之间的关联和洞察\n\n有什么我可以帮到你的吗？`,
     timestamp: Date.now()
   });
 
@@ -250,7 +250,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
                   boxShadow: '0 0 20px rgba(139,92,246,0.4)',
                 }}
               >
-                {contextTitle === 'Entire Vault' ? <Sparkles size={18} className="text-white" /> : <Folder size={18} className="text-white" />}
+                {contextTitle === '全部知识库' ? <Sparkles size={18} className="text-white" /> : <Folder size={18} className="text-white" />}
               </div>
               <div>
                 <h2 className="font-semibold text-white/90 text-sm">智能知识助手</h2>

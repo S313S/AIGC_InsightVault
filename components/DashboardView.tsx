@@ -125,7 +125,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <Flame size={12} fill="currentColor" />
                     {formatLikes(item.metrics.likes)}
                 </div>
-                <span className="text-[10px] text-gray-500">Hot</span>
+                <span className="text-[10px] text-gray-500">热度</span>
             </div>
         </div>
     );
@@ -136,9 +136,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {/* 1. Header & Stats Section */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="col-span-1 md:col-span-2 bg-gradient-to-br from-gray-900 to-indigo-900 rounded-2xl p-6 text-white shadow-lg">
-                    <h2 className="text-2xl font-bold mb-2">Good Morning, Hunter.</h2>
+                    <h2 className="text-2xl font-bold mb-2">早上好，Hunter。</h2>
                     <p className="text-indigo-200 mb-6 max-w-md text-sm leading-relaxed">
-                        Your monitoring agents have captured <span className="font-bold text-white">{trendingItems.length} high-signal posts</span>.
+                        你的监测任务已捕获 <span className="font-bold text-white">{trendingItems.length} 条高价值内容</span>。
                     </p>
                     <div className="flex gap-4">
                         <button
@@ -146,14 +146,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             className="px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
                         >
                             <Activity size={16} />
-                            Manage Tasks
+                            管理任务
                         </button>
                         <button
                             onClick={onNavigateToVault}
                             className="px-4 py-2 bg-white text-indigo-900 hover:bg-indigo-50 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors shadow-sm"
                         >
                             <LayoutGrid size={16} />
-                            Vault
+                            知识库
                         </button>
                     </div>
                 </div>
@@ -164,13 +164,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </div>
                     <div className="flex items-center gap-2 text-gray-400 mb-2">
                         <TrendingUp size={16} />
-                        <span className="text-xs font-semibold uppercase tracking-wider">Tracker Volume</span>
+                        <span className="text-xs font-semibold uppercase tracking-wider">监测总量</span>
                     </div>
                     <div className="flex items-baseline gap-2 mb-1">
                         <span className="text-4xl font-bold text-gray-100">{totalItemsFound}</span>
-                        <span className="text-sm text-green-400 font-medium bg-green-500/20 px-2 py-0.5 rounded-full">+124 today</span>
+                        <span className="text-sm text-green-400 font-medium bg-green-500/20 px-2 py-0.5 rounded-full">今日 +124</span>
                     </div>
-                    <p className="text-sm text-gray-500">Insights processed this month</p>
+                    <p className="text-sm text-gray-500">本月已处理洞察</p>
                 </div>
             </div>
 
@@ -181,13 +181,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <div className="p-1.5 bg-red-500/20 rounded-lg">
                             <Flame size={18} className="text-red-400" fill="currentColor" />
                         </div>
-                        <h3 className="text-lg font-bold text-gray-100">Trending Now</h3>
+                        <h3 className="text-lg font-bold text-gray-100">近期热点</h3>
                     </div>
                     <button
                         onClick={() => setShowAllTrending(true)}
                         className="text-sm text-indigo-400 font-medium hover:text-indigo-300 flex items-center gap-1"
                     >
-                        See All <ArrowRight size={14} />
+                        查看全部 <ArrowRight size={14} />
                     </button>
                 </div>
 
@@ -210,7 +210,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                 {item.contentType === 'PromptShare' && (
                                     <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-md flex items-center gap-1">
                                         <Sparkles size={10} className="text-yellow-400" />
-                                        <span>Prompts</span>
+                                        <span>提示词</span>
                                     </div>
                                 )}
                             </div>
@@ -261,7 +261,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                                 onSaveToVault(item);
                                             }}
                                             className="text-gray-500 hover:text-indigo-400 transition-colors"
-                                            title="Save to Vault"
+                                            title="保存到知识库"
                                         >
                                             <Save size={16} />
                                         </button>
@@ -281,16 +281,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-[#1e3a5f]/40">
                         <div className="flex items-center gap-2">
                             <div className="w-1 h-5 bg-indigo-500 rounded-full"></div>
-                            <h3 className="font-bold text-gray-100">Image Gen · Top Rated</h3>
+                            <h3 className="font-bold text-gray-100">Image Gen · 热门精选</h3>
                         </div>
-                        <span className="text-xs text-gray-500">Real-time</span>
+                        <span className="text-xs text-gray-500">实时</span>
                     </div>
 
                     <div className="space-y-1">
                         {imageGenRankings.map((item, idx) => (
                             <RankingItem key={item.id} item={item} rank={idx + 1} />
                         ))}
-                        {imageGenRankings.length === 0 && <div className="text-center py-8 text-gray-500 text-sm">No data</div>}
+                        {imageGenRankings.length === 0 && <div className="text-center py-8 text-gray-500 text-sm">暂无数据</div>}
                     </div>
                 </div>
 
@@ -299,16 +299,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-[#1e3a5f]/40">
                         <div className="flex items-center gap-2">
                             <div className="w-1 h-5 bg-purple-500 rounded-full"></div>
-                            <h3 className="font-bold text-gray-100">Video Gen · Top Rated</h3>
+                            <h3 className="font-bold text-gray-100">Video Gen · 热门精选</h3>
                         </div>
-                        <span className="text-xs text-gray-500">Real-time</span>
+                        <span className="text-xs text-gray-500">实时</span>
                     </div>
 
                     <div className="space-y-1">
                         {videoGenRankings.map((item, idx) => (
                             <RankingItem key={item.id} item={item} rank={idx + 1} />
                         ))}
-                        {videoGenRankings.length === 0 && <div className="text-center py-8 text-gray-500 text-sm">No data</div>}
+                        {videoGenRankings.length === 0 && <div className="text-center py-8 text-gray-500 text-sm">暂无数据</div>}
                     </div>
                 </div>
 
@@ -317,16 +317,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-[#1e3a5f]/40">
                         <div className="flex items-center gap-2">
                             <div className="w-1 h-5 bg-emerald-500 rounded-full"></div>
-                            <h3 className="font-bold text-gray-100">Vibe Coding · Top Rated</h3>
+                            <h3 className="font-bold text-gray-100">Vibe Coding · 热门精选</h3>
                         </div>
-                        <span className="text-xs text-gray-500">Real-time</span>
+                        <span className="text-xs text-gray-500">实时</span>
                     </div>
 
                     <div className="space-y-1">
                         {vibeCodingRankings.map((item, idx) => (
                             <RankingItem key={item.id} item={item} rank={idx + 1} />
                         ))}
-                        {vibeCodingRankings.length === 0 && <div className="text-center py-8 text-gray-500 text-sm">No data</div>}
+                        {vibeCodingRankings.length === 0 && <div className="text-center py-8 text-gray-500 text-sm">暂无数据</div>}
                     </div>
                 </div>
 
@@ -338,16 +338,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div className="bg-[#0d1526]/95 backdrop-blur-xl rounded-2xl w-full max-w-6xl max-h-[85vh] flex flex-col shadow-2xl border border-[#1e3a5f]/50">
                         <div className="p-6 border-b border-[#1e3a5f]/40 flex items-center justify-between">
                             <div>
-                                <h2 className="text-xl font-bold text-gray-100">Trending Now · All</h2>
+                                <h2 className="text-xl font-bold text-gray-100">近期热点 · 全部</h2>
                                 <p className="text-sm text-gray-500 mt-1">
-                                    {uniqueTrending.length} posts in this snapshot
+                                    当前快照共 {uniqueTrending.length} 条
                                 </p>
                             </div>
                             <button
                                 onClick={() => setShowAllTrending(false)}
                                 className="px-3 py-1.5 text-sm rounded-lg border border-[#1e3a5f]/50 text-gray-400 hover:bg-white/5"
                             >
-                                Close
+                                关闭
                             </button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-6">

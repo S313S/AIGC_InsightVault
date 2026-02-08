@@ -42,7 +42,7 @@ const App: React.FC = () => {
   // Chat Context State
   const [chatScope, setChatScope] = useState<{ cards: KnowledgeCard[], title: string }>({
     cards: [],
-    title: 'Entire Vault'
+    title: '全部知识库'
   });
 
   // Collection Selection State
@@ -85,14 +85,14 @@ const App: React.FC = () => {
         setTrending(dbTrending);
         setCollections(dbCollections);
         setTasks(dbTasks);
-        setChatScope({ cards: dbCards, title: 'Entire Vault' });
+        setChatScope({ cards: dbCards, title: '全部知识库' });
       } else {
         // 离线模式：使用 mock 数据
         setCards(INITIAL_DATA);
         setTrending(TRENDING_DATA);
         setCollections(INITIAL_COLLECTIONS);
         setTasks(INITIAL_TASKS);
-        setChatScope({ cards: INITIAL_DATA, title: 'Entire Vault' });
+        setChatScope({ cards: INITIAL_DATA, title: '全部知识库' });
       }
 
       setIsLoading(false);
@@ -508,7 +508,7 @@ const App: React.FC = () => {
     setActiveView(view);
     if (view === 'chat') {
       // Sidebar Assistant should always represent full-vault chat scope.
-      setChatScope({ cards, title: 'Entire Vault' });
+      setChatScope({ cards, title: '全部知识库' });
     }
 
     setCurrentCollectionId(null); // Reset collection when navigating via main menu
@@ -564,7 +564,7 @@ const App: React.FC = () => {
   const handleDeleteCollection = async (e: React.MouseEvent, collectionId: string) => {
     e.stopPropagation();
     const aliasIds = getCollectionAliasIds(collectionId);
-    if (window.confirm("Are you sure you want to delete this album? The items inside will not be deleted.")) {
+    if (window.confirm("确定要删除这个收藏夹吗？其中内容不会被删除。")) {
       setCollections(prev => prev.filter(c => !aliasIds.includes(c.id)));
       if (currentCollectionId && aliasIds.includes(currentCollectionId)) {
         setCurrentCollectionId(null);
@@ -580,7 +580,7 @@ const App: React.FC = () => {
   const handleRenameCollection = async (e: React.MouseEvent, collectionId: string, currentName: string) => {
     e.stopPropagation();
     const aliasIds = getCollectionAliasIds(collectionId);
-    const newName = window.prompt("Rename Album", currentName);
+    const newName = window.prompt("重命名收藏夹", currentName);
     if (newName && newName.trim()) {
       const updatedCollection = collections.find(c => c.id === collectionId) || collections.find(c => aliasIds.includes(c.id));
       if (updatedCollection) {
@@ -631,7 +631,7 @@ const App: React.FC = () => {
   const handleRemoveSelectedFromCollection = async () => {
     if (!currentCollectionId || selectedCardIds.size === 0) return;
 
-    if (window.confirm(`Remove ${selectedCardIds.size} items from this collection?`)) {
+    if (window.confirm(`确定从当前收藏夹移除 ${selectedCardIds.size} 条内容吗？`)) {
       const updatedCards: KnowledgeCard[] = [];
       setCards(prevCards => prevCards.map(card => {
         if (selectedCardIds.has(card.id)) {
@@ -671,7 +671,7 @@ const App: React.FC = () => {
     setIsAddToCollectionModalOpen(false);
     setIsSelectionMode(false);
     setSelectedCardIds(new Set());
-    alert("Items added to album successfully.");
+    alert("已成功添加到收藏夹。");
 
     if (isSupabaseConnected()) {
       for (const card of updatedCards) {
@@ -705,7 +705,7 @@ const App: React.FC = () => {
       {isLoading && (
         <div className="fixed inset-0 z-[100] bg-[#0a0f1a]/95 flex flex-col items-center justify-center">
           <Loader2 className="w-10 h-10 text-indigo-400 animate-spin mb-4" />
-          <p className="text-gray-400 text-sm">Loading your vault...</p>
+          <p className="text-gray-400 text-sm">正在加载你的知识库...</p>
         </div>
       )}
 
@@ -751,28 +751,28 @@ const App: React.FC = () => {
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg font-medium transition-colors ${activeView === 'dashboard' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
             >
               <Home size={20} />
-              Dashboard
+              近期热点
             </button>
             <button
               onClick={() => handleMainNavigation('grid')}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg font-medium transition-colors ${activeView === 'grid' && !currentCollectionId ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
             >
               <LayoutGrid size={20} />
-              Knowledge Base
+              知识卡片
             </button>
             <button
               onClick={() => handleMainNavigation('monitoring')}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg font-medium transition-colors ${activeView === 'monitoring' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
             >
               <Activity size={20} />
-              Monitoring
+              热点搜索
             </button>
             <button
               onClick={() => handleMainNavigation('chat')}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg font-medium transition-colors ${activeView === 'chat' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
             >
               <MessageSquare size={20} />
-              Assistant
+              智能助手
             </button>
           </nav>
         </div>
@@ -780,7 +780,7 @@ const App: React.FC = () => {
         {/* Middle Section: Collections (flex-1 pushes bottom section down) */}
         <div className="flex-1 overflow-y-auto px-6 py-4 mt-2">
           <div className="flex items-center justify-between mb-3 px-1">
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Collections</h3>
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">收藏夹</h3>
             <button
               onClick={() => setIsCreatingCollection(true)}
               className="text-gray-500 hover:text-indigo-400 hover:bg-indigo-500/20 p-1 rounded-md transition-colors"
@@ -808,7 +808,7 @@ const App: React.FC = () => {
                       {col.name}
                     </h4>
                     <span className="text-[10px] text-gray-500 font-medium">
-                      {realItemCount} items
+                      {realItemCount} 条
                     </span>
                   </div>
 
@@ -830,13 +830,13 @@ const App: React.FC = () => {
                         onClick={(e) => handleRenameCollection(e, col.id, col.name)}
                         className="w-full text-left px-3 py-2 text-xs font-medium text-gray-400 hover:bg-white/5 hover:text-indigo-400 flex items-center gap-2"
                       >
-                        <Edit2 size={12} /> Rename
+                        <Edit2 size={12} /> 重命名
                       </button>
                       <button
                         onClick={(e) => handleDeleteCollection(e, col.id)}
                         className="w-full text-left px-3 py-2 text-xs font-medium text-gray-400 hover:bg-red-500/10 hover:text-red-400 flex items-center gap-2"
                       >
-                        <Trash2 size={12} /> Delete
+                        <Trash2 size={12} /> 删除
                       </button>
                     </div>
                   )}
@@ -850,7 +850,7 @@ const App: React.FC = () => {
               <input
                 type="text"
                 autoFocus
-                placeholder="Album Name"
+                placeholder="收藏夹名称"
                 className="w-full bg-[#0a0f1a]/50 border border-[#1e3a5f]/50 rounded-lg px-2 py-1.5 text-sm text-gray-100 placeholder-gray-500 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 mb-2 transition-all"
                 value={newCollectionName}
                 onChange={(e) => setNewCollectionName(e.target.value)}
@@ -864,13 +864,13 @@ const App: React.FC = () => {
                   onClick={cancelCreateCollection}
                   className="px-2 py-1.5 text-xs font-medium text-gray-400 hover:bg-white/5 hover:text-gray-200 rounded transition-colors"
                 >
-                  Cancel
+                  取消
                 </button>
                 <button
                   onClick={confirmCreateCollection}
                   className="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors shadow-sm"
                 >
-                  Create
+                  创建
                 </button>
               </div>
             </div>
@@ -879,7 +879,7 @@ const App: React.FC = () => {
               onClick={() => setIsCreatingCollection(true)}
               className="w-full mt-4 flex items-center justify-center gap-2 py-3 border-2 border-dashed border-[#1e3a5f]/50 rounded-xl text-gray-500 hover:text-indigo-400 hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all text-sm font-medium">
               <Plus size={16} />
-              Create New Album
+              新建收藏夹
             </button>
           )}
         </div>
@@ -892,7 +892,7 @@ const App: React.FC = () => {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-gray-100 truncate">Hunter</p>
-              <p className="text-xs text-gray-500 truncate">Pro Plan</p>
+              <p className="text-xs text-gray-500 truncate">专业版</p>
             </div>
           </div>
         </div>
@@ -914,7 +914,7 @@ const App: React.FC = () => {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
                   <input
                     type="text"
-                    placeholder="Search vault..."
+                    placeholder="搜索知识库..."
                     className="w-full pl-10 pr-4 py-2 bg-[#1e3a5f]/30 border-transparent text-gray-100 placeholder-gray-500 focus:bg-[#1e3a5f]/50 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500/50 rounded-lg outline-none text-sm transition-all"
                     value={filters.searchQuery}
                     onChange={(e) => setFilters(prev => ({ ...prev, searchQuery: e.target.value }))}
@@ -923,7 +923,15 @@ const App: React.FC = () => {
               )}
               {activeView !== 'grid' && (
                 <div className="h-10 flex items-center text-lg font-semibold text-gray-200 capitalize">
-                  {activeView === 'dashboard' ? 'Dashboard' : activeView}
+                  {activeView === 'dashboard'
+                    ? '近期热点'
+                    : activeView === 'monitoring'
+                      ? '热点搜索'
+                      : activeView === 'grid'
+                        ? '知识卡片'
+                        : activeView === 'chat'
+                          ? '智能助手'
+                          : activeView}
                 </div>
               )}
             </div>
@@ -934,7 +942,7 @@ const App: React.FC = () => {
                 className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm shadow-indigo-500/30"
               >
                 <Plus size={18} />
-                <span className="hidden sm:inline">Manual Note</span>
+                <span className="hidden sm:inline">手动录入</span>
               </button>
             </div>
           </header>
@@ -982,7 +990,7 @@ const App: React.FC = () => {
                     </div>
                     <div>
                       <h2 className="text-lg font-bold text-gray-100">{activeCollectionName}</h2>
-                      <p className="text-xs text-gray-500">{filteredCards.length} items found</p>
+                      <p className="text-xs text-gray-500">共 {filteredCards.length} 条</p>
                     </div>
                   </div>
 
@@ -993,7 +1001,7 @@ const App: React.FC = () => {
                       className="px-3 py-1.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg text-xs font-medium hover:bg-amber-500/30 flex items-center gap-1.5 transition-colors"
                     >
                       <Sparkles size={14} className="text-amber-400" />
-                      Chat with Album
+                      与收藏夹对话
                     </button>
 
                     <div className="w-px h-6 bg-[#1e3a5f]/50 mx-1"></div>
@@ -1001,13 +1009,13 @@ const App: React.FC = () => {
                     {/* Batch Management Tools */}
                     {isSelectionMode ? (
                       <div className="flex items-center gap-2 bg-[#1e3a5f]/30 rounded-lg p-1">
-                        <span className="text-xs font-semibold px-2 text-indigo-400">{selectedCardIds.size} Selected</span>
+                        <span className="text-xs font-semibold px-2 text-indigo-400">已选 {selectedCardIds.size} 条</span>
                         <button
                           onClick={handleRemoveSelectedFromCollection}
                           disabled={selectedCardIds.size === 0}
                           className="px-3 py-1.5 bg-red-500/20 text-red-400 rounded-md text-xs font-medium hover:bg-red-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                         >
-                          <Trash2 size={12} /> Remove
+                          <Trash2 size={12} /> 移除
                         </button>
                         <button
                           onClick={() => {
@@ -1016,7 +1024,7 @@ const App: React.FC = () => {
                           }}
                           className="px-3 py-1.5 bg-[#0d1526]/50 text-gray-400 rounded-md text-xs font-medium hover:bg-white/5 border border-[#1e3a5f]/50"
                         >
-                          Cancel
+                          取消
                         </button>
                       </div>
                     ) : (
@@ -1024,7 +1032,7 @@ const App: React.FC = () => {
                         onClick={toggleSelectionMode}
                         className="px-3 py-1.5 bg-[#0d1526]/50 text-gray-400 border border-[#1e3a5f]/50 rounded-lg text-xs font-medium hover:bg-white/5 flex items-center gap-1"
                       >
-                        <CheckSquare size={14} /> Manage Items
+                        <CheckSquare size={14} /> 管理条目
                       </button>
                     )}
 
@@ -1033,7 +1041,7 @@ const App: React.FC = () => {
                     <button
                       onClick={() => setCurrentCollectionId(null)}
                       className="p-2 hover:bg-white/5 rounded-full text-gray-500 hover:text-gray-300 transition-colors"
-                      title="Close Collection View"
+                      title="关闭收藏夹视图"
                     >
                       <X size={20} />
                     </button>
@@ -1063,13 +1071,13 @@ const App: React.FC = () => {
                   <div className="flex items-center gap-2">
                     {isSelectionMode ? (
                       <div className="flex items-center gap-2 bg-[#1e3a5f]/30 rounded-lg p-1">
-                        <span className="text-xs font-semibold px-2 text-indigo-400">{selectedCardIds.size} Selected</span>
+                        <span className="text-xs font-semibold px-2 text-indigo-400">已选 {selectedCardIds.size} 条</span>
                         <button
                           onClick={() => setIsAddToCollectionModalOpen(true)}
                           disabled={selectedCardIds.size === 0}
                           className="px-3 py-1.5 bg-indigo-600 text-white rounded-md text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                         >
-                          <FolderPlus size={12} /> Add to Album
+                          <FolderPlus size={12} /> 加入收藏夹
                         </button>
                         <button
                           onClick={() => {
@@ -1078,7 +1086,7 @@ const App: React.FC = () => {
                           }}
                           className="px-3 py-1.5 bg-[#0d1526]/50 text-gray-400 rounded-md text-xs font-medium hover:bg-white/5 border border-[#1e3a5f]/50"
                         >
-                          Cancel
+                          取消
                         </button>
                       </div>
                     ) : (
@@ -1086,7 +1094,7 @@ const App: React.FC = () => {
                         onClick={toggleSelectionMode}
                         className="px-3 py-1.5 bg-[#0d1526]/60 text-gray-400 border border-[#1e3a5f]/40 rounded-lg text-xs font-medium hover:bg-white/5 flex items-center gap-1"
                       >
-                        <CheckSquare size={14} /> Manage Items
+                        <CheckSquare size={14} /> 管理条目
                       </button>
                     )}
                   </div>
@@ -1112,9 +1120,9 @@ const App: React.FC = () => {
                   <div className="bg-[#1e3a5f]/30 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
                     <Search className="text-gray-500" size={32} />
                   </div>
-                  <h3 className="text-lg font-medium text-gray-200">No results found</h3>
+                  <h3 className="text-lg font-medium text-gray-200">未找到结果</h3>
                   <p className="text-gray-500 mt-1">
-                    {currentCollectionId ? "This collection is empty." : "Try adjusting your search or filters."}
+                    {currentCollectionId ? "这个收藏夹暂时为空。" : "试试调整搜索词或筛选条件。"}
                   </p>
                 </div>
               )}
@@ -1147,12 +1155,12 @@ const App: React.FC = () => {
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsAddToCollectionModalOpen(false)}></div>
           <div className="relative bg-[#0d1526]/95 backdrop-blur-xl rounded-xl w-full max-w-sm overflow-hidden shadow-2xl border border-[#1e3a5f]/50 animate-in zoom-in-95 duration-200">
             <div className="p-4 border-b border-[#1e3a5f]/40 flex justify-between items-center bg-[#0d1526]/50">
-              <h3 className="font-semibold text-gray-100">Add to Album</h3>
+              <h3 className="font-semibold text-gray-100">加入收藏夹</h3>
               <button onClick={() => setIsAddToCollectionModalOpen(false)}><X size={18} className="text-gray-500 hover:text-gray-300" /></button>
             </div>
             <div className="p-2 max-h-80 overflow-y-auto">
               {displayCollections.length === 0 ? (
-                <p className="p-4 text-center text-gray-500 text-sm">No albums created yet.</p>
+                <p className="p-4 text-center text-gray-500 text-sm">还没有创建收藏夹。</p>
               ) : (
                 displayCollections.map(col => (
                   <button
@@ -1176,7 +1184,7 @@ const App: React.FC = () => {
                 }}
                 className="w-full flex items-center justify-center gap-2 py-2 border border-dashed border-[#1e3a5f]/50 rounded-lg text-gray-500 hover:text-indigo-400 hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all text-xs font-medium"
               >
-                <Plus size={14} /> Create New Album
+                <Plus size={14} /> 新建收藏夹
               </button>
             </div>
           </div>

@@ -34,7 +34,7 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
             setRawText(contentPreview);
 
         } catch (error: any) {
-            setFetchError(error.message || 'Failed to fetch content');
+            setFetchError(error.message || '内容抓取失败');
         } finally {
             setIsFetching(false);
         }
@@ -105,7 +105,7 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
             title: fetchedData?.title || analysis.summary.slice(0, 50) + "...",
             sourceUrl: fetchedData?.sourceUrl || url || '#',
             platform: (fetchedData?.platform as Platform) || Platform.Manual,
-            author: fetchedData?.author || 'You',
+            author: fetchedData?.author || '我',
             date: new Date().toLocaleDateString(),
             coverImage: fetchedData?.coverImage || 'https://picsum.photos/400/300?random=' + Date.now(),
             metrics: fetchedData?.metrics || { likes: 0, bookmarks: 0, comments: 0 },
@@ -126,7 +126,7 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
 
             <div className="relative bg-[#0d1526]/95 backdrop-blur-xl rounded-xl w-full max-w-lg overflow-hidden shadow-2xl border border-[#1e3a5f]/50">
                 <div className="p-4 border-b border-[#1e3a5f]/40 flex justify-between items-center">
-                    <h2 className="text-lg font-semibold text-gray-100">Add to Knowledge Base</h2>
+                    <h2 className="text-lg font-semibold text-gray-100">添加到知识库</h2>
                     <button onClick={onClose}><X size={20} className="text-gray-500 hover:text-gray-300" /></button>
                 </div>
 
@@ -134,12 +134,12 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
                     {step === 'input' ? (
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-1">Source Link</label>
+                                <label className="block text-sm font-medium text-gray-300 mb-1">来源链接</label>
                                 <div className="flex gap-2">
                                     <input
                                         type="text"
                                         className="flex-1 bg-[#0a0f1a] border border-[#1e3a5f]/50 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm text-gray-200 placeholder-gray-500"
-                                        placeholder="https://twitter.com/... or https://xiaohongshu.com/..."
+                                        placeholder="https://twitter.com/... 或 https://xiaohongshu.com/..."
                                         value={url}
                                         onChange={e => setUrl(e.target.value)}
                                     />
@@ -149,21 +149,21 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
                                         className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                                     >
                                         {isFetching ? <Loader2 size={16} className="animate-spin" /> : <ExternalLink size={16} />}
-                                        Auto-Fill
+                                        自动填充
                                     </button>
                                 </div>
                                 {fetchError && <p className="text-xs text-red-400 mt-1">{fetchError}</p>}
                                 {fetchedData && !fetchError && (
                                     <p className="text-xs text-green-400 mt-1">
-                                        ✓ Fetched from {fetchedData.platform} · {fetchedData.metrics.likes} likes
+                                        ✓ 已从 {fetchedData.platform} 抓取 · {fetchedData.metrics.likes} 点赞
                                     </p>
                                 )}
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-1">Content Preview</label>
+                                <label className="block text-sm font-medium text-gray-300 mb-1">内容预览</label>
                                 <textarea
                                     className="w-full bg-[#0a0f1a] border border-[#1e3a5f]/50 rounded-lg px-3 py-2 h-32 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none text-sm leading-relaxed text-gray-200 placeholder-gray-500"
-                                    placeholder="Paste content manually or use Auto-Fill to fetch from URL..."
+                                    placeholder="可手动粘贴内容，或通过自动填充从链接抓取..."
                                     value={rawText}
                                     onChange={e => setRawText(e.target.value)}
                                 ></textarea>
@@ -175,14 +175,14 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
                                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 <Sparkles size={18} />
-                                Process with AI Agent
+                                交给 AI 处理
                             </button>
                         </div>
                     ) : (
                         <div className="py-12 flex flex-col items-center justify-center text-center">
                             <Loader2 size={48} className="text-indigo-400 animate-spin mb-4" />
-                            <h3 className="text-lg font-medium text-gray-100">AI Agent is thinking...</h3>
-                            <p className="text-sm text-gray-500 mt-1">Filtering content, summarizing, and extracting prompts.</p>
+                            <h3 className="text-lg font-medium text-gray-100">AI 正在处理中...</h3>
+                            <p className="text-sm text-gray-500 mt-1">正在过滤内容、生成摘要并提取提示词。</p>
                         </div>
                     )}
                 </div>

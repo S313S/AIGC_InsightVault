@@ -10,12 +10,12 @@ interface DetailModalProps {
   onDelete: (id: string) => void;
 }
 
-const NOTE_PLACEHOLDER = `## Experiment Idea
-Describe your hypothesis or experiment here...
+const NOTE_PLACEHOLDER = `## 实验想法
+在这里记录你的假设或实验思路...
 
-**Key takeaways:**
-- Observation 1
-- Observation 2`;
+**关键结论：**
+- 观察点 1
+- 观察点 2`;
 
 export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, onClose, onUpdate, onDelete }) => {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -68,7 +68,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
   };
 
   const handleDelete = () => {
-    if (window.confirm('Are you sure you want to delete this card? This action cannot be undone.')) {
+    if (window.confirm('确定要删除这张卡片吗？此操作不可撤销。')) {
       onDelete(card.id);
       onClose(); // Close modal after delete
     }
@@ -87,7 +87,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
             <button
               onClick={() => setIsCollectionMenuOpen(!isCollectionMenuOpen)}
               className="p-2 bg-[#0d1526]/90 hover:bg-[#1e3a5f]/70 rounded-full shadow-sm transition-colors text-gray-400 hover:text-indigo-400"
-              title="Add to Album"
+              title="加入收藏夹"
             >
               <FolderPlus size={20} />
             </button>
@@ -95,11 +95,11 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
             {isCollectionMenuOpen && (
               <div className="absolute right-0 top-12 w-56 bg-[#0d1526]/95 backdrop-blur-xl rounded-xl shadow-xl border border-[#1e3a5f]/50 py-2 animate-in fade-in zoom-in-95 duration-100 z-50">
                 <div className="px-3 py-2 border-b border-[#1e3a5f]/40 mb-1">
-                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Save to Album</span>
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">保存到收藏夹</span>
                 </div>
                 <div className="max-h-60 overflow-y-auto">
                   {allCollections.length === 0 ? (
-                    <div className="px-4 py-3 text-sm text-gray-500 text-center">No albums created</div>
+                    <div className="px-4 py-3 text-sm text-gray-500 text-center">尚未创建收藏夹</div>
                   ) : (
                     allCollections.map(col => {
                       const isSelected = card.collections?.includes(col.id);
@@ -126,7 +126,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
           <button
             onClick={handleDelete}
             className="p-2 bg-[#0d1526]/90 hover:bg-red-500/20 rounded-full shadow-sm transition-colors text-red-400 hover:text-red-300"
-            title="Delete Card"
+            title="删除卡片"
           >
             <Trash2 size={20} />
           </button>
@@ -203,12 +203,12 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
               className="flex items-center justify-center gap-2 w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
             >
               <ExternalLink size={16} />
-              View Original Post
+              查看原帖
             </a>
 
             {/* Raw Content Preview (Collapsed usually, showing snippet here) */}
             <div className="mt-6 pt-6 border-t border-[#1e3a5f]/40">
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Original Context</h4>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">原始内容</h4>
               <p className="text-xs text-gray-400 line-clamp-6 whitespace-pre-wrap">
                 {card.rawContent}
               </p>
@@ -225,7 +225,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
               <div className="p-1.5 bg-purple-500/20 rounded-md">
                 <Sparkles size={18} className="text-purple-400" />
               </div>
-              <h3 className="text-lg font-bold text-gray-100">AI Summary</h3>
+              <h3 className="text-lg font-bold text-gray-100">AI 摘要</h3>
             </div>
 
             <div className="bg-purple-500/10 p-4 rounded-xl border border-purple-500/20 text-gray-300 text-sm leading-relaxed mb-4">
@@ -234,7 +234,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
 
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <h4 className="text-sm font-semibold text-gray-200 mb-2">Usage Scenarios</h4>
+                <h4 className="text-sm font-semibold text-gray-200 mb-2">使用场景</h4>
                 <ul className="list-disc list-inside space-y-1">
                   {card.aiAnalysis.usageScenarios.map((s, i) => (
                     <li key={i} className="text-sm text-gray-400 pl-1">{s}</li>
@@ -242,7 +242,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
                 </ul>
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-gray-200 mb-2">Core Knowledge</h4>
+                <h4 className="text-sm font-semibold text-gray-200 mb-2">核心知识</h4>
                 <ul className="list-disc list-inside space-y-1">
                   {card.aiAnalysis.coreKnowledge.map((k, i) => (
                     <li key={i} className="text-sm text-gray-400 pl-1">{k}</li>
@@ -259,7 +259,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
                 <div className="p-1.5 bg-indigo-500/20 rounded-md">
                   <Database size={18} className="text-indigo-400" />
                 </div>
-                <h3 className="text-lg font-bold text-gray-100">Extracted Prompts</h3>
+                <h3 className="text-lg font-bold text-gray-100">提取提示词</h3>
               </div>
 
               <div className="space-y-4">
@@ -271,7 +271,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
                     <button
                       onClick={() => handleCopy(prompt, idx)}
                       className="absolute top-2 right-2 p-1.5 bg-white/10 hover:bg-white/20 text-white rounded-md transition-colors opacity-0 group-hover:opacity-100"
-                      title="Copy Prompt"
+                      title="复制提示词"
                     >
                       {copiedIndex === idx ? <Check size={16} /> : <Copy size={16} />}
                     </button>
@@ -288,7 +288,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
                 <div className="p-1.5 bg-yellow-500/20 rounded-md">
                   <FileText size={18} className="text-yellow-400" />
                 </div>
-                <h3 className="text-lg font-bold text-gray-100">My Notes</h3>
+                <h3 className="text-lg font-bold text-gray-100">我的笔记</h3>
               </div>
               {!isEditingNote && (
                 <button
@@ -296,7 +296,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
                   className="text-xs flex items-center gap-1 text-gray-500 hover:text-indigo-400 transition-colors"
                 >
                   <PenLine size={14} />
-                  Edit
+                  编辑
                 </button>
               )}
             </div>
@@ -318,14 +318,14 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
                     }}
                     className="px-3 py-1.5 text-xs font-medium text-gray-400 hover:bg-white/5 rounded-md"
                   >
-                    Cancel
+                    取消
                   </button>
                   <button
                     onClick={handleSaveNote}
                     className="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 rounded-md flex items-center gap-1"
                   >
                     <Save size={14} />
-                    Save Note
+                    保存笔记
                   </button>
                 </div>
               </div>

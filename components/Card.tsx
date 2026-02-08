@@ -76,7 +76,7 @@ export const Card: React.FC<CardProps> = ({
         {hasPrompts && (
           <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-md flex items-center gap-1">
             <Sparkles size={12} className="text-yellow-400" />
-            <span>Prompts</span>
+            <span>提示词</span>
           </div>
         )}
 
@@ -84,7 +84,7 @@ export const Card: React.FC<CardProps> = ({
         {card.isAiGenerated && (
           <div className="absolute top-2 left-2 bg-indigo-600/80 backdrop-blur-sm text-white text-[10px] uppercase font-bold px-2 py-1 rounded-md flex items-center gap-1 shadow-sm border border-indigo-400/30">
             <Sparkles size={10} className="text-white" />
-            <span>AI Cover</span>
+            <span>AI 封面</span>
           </div>
         )}
       </div>

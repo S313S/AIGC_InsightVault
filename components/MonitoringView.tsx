@@ -234,7 +234,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
             try {
                 await onDeleteTask(task.id);
             } catch (e) {
-                console.error('Delete task failed:', task.id, e);
+                    console.error('删除任务失败:', task.id, e);
             }
         }
     };
@@ -387,7 +387,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                 await saveCard(card);
                 saved++;
             } catch (error: any) {
-                console.error('Save error:', error);
+                console.error('保存失败:', error);
             }
         }
 
@@ -407,7 +407,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                 <div>
                     <h2 className="text-xl font-bold text-gray-100 flex items-center gap-2">
                         <Activity className="text-indigo-400" />
-                        Monitoring Console
+                        热点搜索台
                     </h2>
                     <p className="text-sm text-gray-500 mt-1">搜索并批量导入社交媒体内容到知识库 · 缓存有效期：1小时</p>
                 </div>
@@ -592,11 +592,11 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
 
                             <div className="flex items-center gap-8">
                                 <div className="text-right">
-                                    <div className="text-xs text-gray-500">Items Found</div>
+                                    <div className="text-xs text-gray-500">命中条数</div>
                                     <div className="font-bold text-gray-100 text-lg">{task.itemsFound}</div>
                                 </div>
                                 <div className="text-right hidden sm:block">
-                                    <div className="text-xs text-gray-500">Last Run</div>
+                                    <div className="text-xs text-gray-500">最近运行</div>
                                     <div className="text-gray-400 text-sm">{formatTimeAgo(task.lastRun)}</div>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -607,7 +607,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                             className="px-3 py-1.5 bg-indigo-500/20 text-indigo-400 text-sm font-medium rounded-lg hover:bg-indigo-500/30 disabled:opacity-50 flex items-center gap-1"
                                         >
                                             {reviewingTaskId === task.id && <Loader2 size={14} className="animate-spin" />}
-                                            Review
+                                            复查
                                         </button>
                                     )}
                                     <button
