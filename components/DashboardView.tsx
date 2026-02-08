@@ -192,85 +192,92 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
 
                 {/* 2x3 Grid using vertical cards to match 'Picture 1' style */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {hotPicks.map((item) => (
-                        <div
-                            key={item.id}
-                            onClick={() => window.open(item.sourceUrl, '_blank')}
-                            className="bg-[#0d1526]/60 backdrop-blur-md rounded-xl border border-[#1e3a5f]/40 shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 hover:-translate-y-1 transition-all duration-300 flex flex-col overflow-hidden group cursor-pointer"
-                        >
-                            {/* Cover Image Area */}
-                            <div className="h-40 relative bg-[#1e3a5f]/30 overflow-hidden">
-                                <img
-                                    src={item.coverImage}
-                                    alt={item.title}
-                                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                />
-                                {/* Overlay Sparkles for Prompts */}
-                                {item.contentType === 'PromptShare' && (
-                                    <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-md flex items-center gap-1">
-                                        <Sparkles size={10} className="text-yellow-400" />
-                                        <span>提示词</span>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Content Area */}
-                            <div className="p-4 flex flex-col flex-1">
-                                <div className="flex items-center justify-between mb-2">
-                                    <PlatformBadge platform={item.platform} />
-                                    <span className="text-xs text-gray-500">{item.date}</span>
-                                </div>
-
-                                <h4 className="text-base font-bold text-gray-100 mb-2 leading-snug line-clamp-2 group-hover:text-indigo-400 transition-colors">
-                                    {item.title}
-                                </h4>
-
-                                <p className="text-sm text-gray-400 line-clamp-2 mb-3 flex-1">
-                                    {item.rawContent}
-                                </p>
-
-                                {/* Tags */}
-                                <div className="flex flex-wrap gap-1 mb-4">
-                                    {item.tags.filter(t => !t.startsWith('snapshot:')).slice(0, 2).map(tag => (
-                                        <span key={tag} className="text-[10px] bg-[#1e3a5f]/50 text-gray-400 px-1.5 py-0.5 rounded border border-[#1e3a5f]/50">
-                                            #{tag}
-                                        </span>
-                                    ))}
-                                </div>
-
-                                {/* Footer */}
-                                <div className="flex items-center justify-between pt-3 border-t border-[#1e3a5f]/40">
-                                    <div className="flex items-center gap-3 text-gray-500 text-xs">
-                                        <div className="flex items-center gap-1 hover:text-red-400 transition-colors">
-                                            <Heart size={14} />
-                                            <span>{formatLikes(item.metrics.likes)}</span>
+                {hotPicks.length === 0 ? (
+                    <div className="rounded-xl border border-[#1e3a5f]/40 bg-[#0d1526]/40 p-8 text-center">
+                        <p className="text-gray-300 text-sm">当前暂无热点内容</p>
+                        <p className="text-gray-500 text-xs mt-2">请先触发 /api/cron-monitor，或到「热点搜索」导入内容</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {hotPicks.map((item) => (
+                            <div
+                                key={item.id}
+                                onClick={() => window.open(item.sourceUrl, '_blank')}
+                                className="bg-[#0d1526]/60 backdrop-blur-md rounded-xl border border-[#1e3a5f]/40 shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 hover:-translate-y-1 transition-all duration-300 flex flex-col overflow-hidden group cursor-pointer"
+                            >
+                                {/* Cover Image Area */}
+                                <div className="h-40 relative bg-[#1e3a5f]/30 overflow-hidden">
+                                    <img
+                                        src={item.coverImage}
+                                        alt={item.title}
+                                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                    />
+                                    {/* Overlay Sparkles for Prompts */}
+                                    {item.contentType === 'PromptShare' && (
+                                        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-md flex items-center gap-1">
+                                            <Sparkles size={10} className="text-yellow-400" />
+                                            <span>提示词</span>
                                         </div>
-                                        <div className="flex items-center gap-1 hover:text-amber-400 transition-colors">
-                                            <Bookmark size={14} />
-                                            <span>{item.metrics.bookmarks}</span>
-                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Content Area */}
+                                <div className="p-4 flex flex-col flex-1">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <PlatformBadge platform={item.platform} />
+                                        <span className="text-xs text-gray-500">{item.date}</span>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider truncate max-w-[80px]">
-                                            {item.author}
-                                        </span>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                onSaveToVault(item);
-                                            }}
-                                            className="text-gray-500 hover:text-indigo-400 transition-colors"
-                                            title="保存到知识库"
-                                        >
-                                            <Save size={16} />
-                                        </button>
+
+                                    <h4 className="text-base font-bold text-gray-100 mb-2 leading-snug line-clamp-2 group-hover:text-indigo-400 transition-colors">
+                                        {item.title}
+                                    </h4>
+
+                                    <p className="text-sm text-gray-400 line-clamp-2 mb-3 flex-1">
+                                        {item.rawContent}
+                                    </p>
+
+                                    {/* Tags */}
+                                    <div className="flex flex-wrap gap-1 mb-4">
+                                        {item.tags.filter(t => !t.startsWith('snapshot:')).slice(0, 2).map(tag => (
+                                            <span key={tag} className="text-[10px] bg-[#1e3a5f]/50 text-gray-400 px-1.5 py-0.5 rounded border border-[#1e3a5f]/50">
+                                                #{tag}
+                                            </span>
+                                        ))}
+                                    </div>
+
+                                    {/* Footer */}
+                                    <div className="flex items-center justify-between pt-3 border-t border-[#1e3a5f]/40">
+                                        <div className="flex items-center gap-3 text-gray-500 text-xs">
+                                            <div className="flex items-center gap-1 hover:text-red-400 transition-colors">
+                                                <Heart size={14} />
+                                                <span>{formatLikes(item.metrics.likes)}</span>
+                                            </div>
+                                            <div className="flex items-center gap-1 hover:text-amber-400 transition-colors">
+                                                <Bookmark size={14} />
+                                                <span>{item.metrics.bookmarks}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider truncate max-w-[80px]">
+                                                {item.author}
+                                            </span>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onSaveToVault(item);
+                                                }}
+                                                className="text-gray-500 hover:text-indigo-400 transition-colors"
+                                                title="保存到知识库"
+                                            >
+                                                <Save size={16} />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    ))}
-                </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {/* 3. Rankings Lists (3 Columns now) */}

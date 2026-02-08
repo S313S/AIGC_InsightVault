@@ -412,9 +412,13 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const host = req.headers?.host || 'localhost';
+  const requestUrl = new URL(req.url || '/', `https://${host}`);
+  const getQueryParam = (key) => requestUrl.searchParams.get(key);
+
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret) {
-    const token = req.headers['x-cron-secret'] || req.query?.token;
+    const token = req.headers['x-cron-secret'] || getQueryParam('token');
     if (token !== cronSecret) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -426,15 +430,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    const query = req.query || {};
-    const overrideDays = Number(query.days);
-    const overrideTwitterDays = Number(query.twitter_days);
-    const overrideMin = Number(query.min);
-    const overrideLimit = Number(query.limit);
-    const overrideTasks = Number(query.tasks);
-    const overrideParallel = String(query.parallel || '').toLowerCase();
-    const overridePlatform = String(query.platform || '').toLowerCase();
-    const rebuildOnly = String(query.rebuild || '').toLowerCase() === '1' || String(query.rebuild || '').toLowerCase() === 'true';
+    const overrideDays = Number(getQueryParam('days'));
+    const overrideTwitterDays = Number(getQueryParam('twitter_days'));
+    const overrideMin = Number(getQueryParam('min'));
+    const overrideLimit = Number(getQueryParam('limit'));
+    const overrideTasks = Number(getQueryParam('tasks'));
+    const overrideParallel = String(getQueryParam('parallel') || '').toLowerCase();
+    const overridePlatform = String(getQueryParam('platform') || '').toLowerCase();
+    const rebuildRaw = String(getQueryParam('rebuild') || '').toLowerCase();
+    const rebuildOnly = rebuildRaw === '1' || rebuildRaw === 'true';
 
     const effectiveRecentDays = Number.isFinite(overrideDays) && overrideDays > 0 ? overrideDays : RECENT_DAYS;
     const effectiveTwitterDays = Number.isFinite(overrideTwitterDays) && overrideTwitterDays > 0 ? overrideTwitterDays : TWITTER_RECENT_DAYS;
