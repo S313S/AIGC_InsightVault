@@ -347,7 +347,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             <div>
                                 <h2 className="text-xl font-bold text-gray-100">近期热点 · 全部</h2>
                                 <p className="text-sm text-gray-500 mt-1">
-                                    当前快照共 {uniqueTrending.length} 条
+                                    当前快照 {uniqueTrending.length} 条（原始命中 {trendingItems.length} 条）
                                 </p>
                             </div>
                             <button

@@ -888,10 +888,10 @@ const App: React.FC = () => {
         <div className="p-4 border-t border-[#1e3a5f]/30 bg-[#0d1526]/50">
           <div className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/5 transition-colors cursor-pointer">
             <div className="w-8 h-8 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-xs">
-              H
+              X
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-100 truncate">Hunter</p>
+              <p className="text-sm font-medium text-gray-100 truncate">XiaoCi</p>
               <p className="text-xs text-gray-500 truncate">专业版</p>
             </div>
           </div>
