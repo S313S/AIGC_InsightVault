@@ -136,7 +136,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {/* 1. Header & Stats Section */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="col-span-1 md:col-span-2 bg-gradient-to-br from-gray-900 to-indigo-900 rounded-2xl p-6 text-white shadow-lg">
-                    <h2 className="text-2xl font-bold mb-2">早上好，Hunter。</h2>
+                    <h2 className="text-2xl font-bold mb-2">早上好，XiaoCi。</h2>
                     <p className="text-indigo-200 mb-6 max-w-md text-sm leading-relaxed">
                         你的监测任务已捕获 <span className="font-bold text-white">{trendingItems.length} 条高价值内容</span>。
                     </p>
