@@ -116,24 +116,30 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
     // Helper for relative time
     const formatTimeAgo = (dateStr: string) => {
         if (!dateStr) return '';
-        if (dateStr === '刚刚') return '刚刚'; // Backwards compatibility
+        if (dateStr === '刚刚' || /^just\s*now$/i.test(dateStr)) return '刚刚'; // Backwards compatibility
 
-        try {
-            const date = new Date(dateStr);
-            const now = new Date();
-            const diffMs = now.getTime() - date.getTime();
-            const diffMins = Math.floor(diffMs / 60000);
+        const minsAgo = dateStr.match(/^(\d+)\s*minutes?\s*ago$/i);
+        if (minsAgo) return `${minsAgo[1]}分钟前`;
 
-            if (diffMins < 1) return '刚刚';
-            if (diffMins < 60) return `${diffMins}分钟前`;
+        const hoursAgo = dateStr.match(/^(\d+)\s*hours?\s*ago$/i);
+        if (hoursAgo) return `${hoursAgo[1]}小时前`;
 
-            const diffHours = Math.floor(diffMins / 60);
-            if (diffHours < 24) return `${diffHours}小时前`;
-
-            return `${date.getMonth() + 1}月${date.getDate()}日`;
-        } catch (e) {
+        const date = new Date(dateStr);
+        if (Number.isNaN(date.getTime())) {
             return dateStr;
         }
+
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+
+        if (diffMins < 1) return '刚刚';
+        if (diffMins < 60) return `${diffMins}分钟前`;
+
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours < 24) return `${diffHours}小时前`;
+
+        return `${date.getMonth() + 1}月${date.getDate()}日`;
     };
 
     const handleSearch = async () => {
