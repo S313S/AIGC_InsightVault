@@ -24,12 +24,15 @@ const XHS_DELAY_MS = 1000;
 const XHS_RETRIES = 2;
 const TWITTER_REQUIRE_TERMS = ['Claude', 'GPT', 'LLM', 'OpenAI', 'Anthropic', 'Gemini'];
 const COVER_PROMPT_MAX_LENGTH = 500;
+const HIGH_ENGAGEMENT_QUALITY_BYPASS = 5000;
 const QUALITY_FALLBACK_POSITIVE = [
   'tutorial', 'workflow', 'tips', 'how to', 'step by step', 'guide', 'setup', 'build',
   'prompt engineering', 'use case', 'demo', 'walkthrough', 'comparison', 'review',
   'best practices', 'toolchain', 'deep dive',
+  'release', 'upgrade', 'launch',
   '教程', '实操', '工作流', '技巧', '分享', '经验', '玩法', '用法', '攻略', '测评',
-  '对比', '上手', '指南', '保姆级', '干货', '实战', '案例'
+  '对比', '上手', '指南', '保姆级', '干货', '实战', '案例',
+  '发布', '升级', '重大更新'
 ];
 const QUALITY_FALLBACK_BLACKLIST = [
   'hiring', 'giveaway', 'breaking news', 'subscribe', 'follow me',
@@ -853,7 +856,13 @@ export default async function handler(req, res) {
         if (item.platform === 'Xiaohongshu') platformFunnel.xiaohongshu.afterAI += 1;
       }
 
-      results = results.filter((r) => passesQualityFilter(r, effectivePositiveKeywords, effectiveBlacklistKeywords));
+      results = results.filter((r) => {
+        const interaction = computeInteraction(r);
+        if (interaction >= HIGH_ENGAGEMENT_QUALITY_BYPASS) {
+          return true;
+        }
+        return passesQualityFilter(r, effectivePositiveKeywords, effectiveBlacklistKeywords);
+      });
       funnel.afterQuality += results.length;
       for (const item of results) {
         if (item.platform === 'Twitter') platformFunnel.twitter.afterQuality += 1;
@@ -910,6 +919,7 @@ export default async function handler(req, res) {
         effective: {
           minInteraction: effectiveMinInteraction,
           trustedMinInteraction: effectiveTrustedMinInteraction,
+          qualityBypassInteraction: HIGH_ENGAGEMENT_QUALITY_BYPASS,
           qualityPositiveCount: effectivePositiveKeywords.length,
           qualityBlacklistCount: effectiveBlacklistKeywords.length,
           trustedHandles: trustedHandles.length
@@ -1053,6 +1063,7 @@ export default async function handler(req, res) {
         days: effectiveRecentDays,
         minInteraction: effectiveMinInteraction,
         trustedMinInteraction: effectiveTrustedMinInteraction,
+        qualityBypassInteraction: HIGH_ENGAGEMENT_QUALITY_BYPASS,
         limit: effectiveLimit,
         tasks: effectiveMaxTasks,
         parallel,

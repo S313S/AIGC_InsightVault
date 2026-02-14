@@ -38,8 +38,10 @@ const POSITIVE_SEED = [
   'tutorial', 'workflow', 'tips', 'how to', 'step by step', 'guide', 'setup', 'build',
   'prompt engineering', 'use case', 'demo', 'walkthrough', 'comparison', 'review',
   'best practices', 'toolchain', 'deep dive',
+  'release', 'upgrade', 'launch',
   '教程', '实操', '工作流', '技巧', '分享', '经验', '玩法', '用法', '攻略', '测评',
-  '对比', '上手', '指南', '保姆级', '干货', '实战', '案例'
+  '对比', '上手', '指南', '保姆级', '干货', '实战', '案例',
+  '发布', '升级', '重大更新'
 ];
 
 const BLACKLIST_SEED = [
@@ -108,17 +110,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     setThresholdInput(String(settings.minEngagement));
     setTrustedThresholdInput(String(settings.trustedMinEngagement));
 
-    if (isSupabaseConnected() && keywords.length === 0) {
+    if (isSupabaseConnected()) {
+      const existingSet = new Set(
+        (keywords || []).map(k => `${k.type}::${String(k.keyword || '').trim().toLowerCase()}`)
+      );
       const seedPayload = [
         ...POSITIVE_SEED.map(keyword => ({ keyword, type: 'positive' as const })),
         ...BLACKLIST_SEED.map(keyword => ({ keyword, type: 'blacklist' as const }))
-      ];
+      ].filter(entry => {
+        const key = `${entry.type}::${entry.keyword.trim().toLowerCase()}`;
+        return !existingSet.has(key);
+      });
 
-      for (const entry of seedPayload) {
-        await saveQualityKeyword(entry);
+      if (seedPayload.length > 0) {
+        for (const entry of seedPayload) {
+          await saveQualityKeyword(entry);
+        }
+        const seededKeywords = await getQualityKeywords();
+        setQualityKeywords(seededKeywords);
       }
-      const seededKeywords = await getQualityKeywords();
-      setQualityKeywords(seededKeywords);
     }
 
     setIsLoading(false);
