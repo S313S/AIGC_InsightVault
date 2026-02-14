@@ -48,7 +48,7 @@ const BLACKLIST_SEED = [
   '招聘', '抽奖', '转发抽', '广告', '优惠', '打折', '求职', '招人'
 ];
 
-const DEFAULT_SETTINGS: MonitorSettings = { minEngagement: 500 };
+const DEFAULT_SETTINGS: MonitorSettings = { minEngagement: 500, trustedMinEngagement: 1000 };
 
 const normalizeHandle = (handle: string) => handle.replace(/^@+/, '').trim();
 
@@ -77,6 +77,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   const [editingDraft, setEditingDraft] = useState<TrustedAccount | null>(null);
 
   const [thresholdInput, setThresholdInput] = useState(String(DEFAULT_SETTINGS.minEngagement));
+  const [trustedThresholdInput, setTrustedThresholdInput] = useState(String(DEFAULT_SETTINGS.trustedMinEngagement));
 
   const positiveKeywords = useMemo(
     () => qualityKeywords.filter(k => k.type === 'positive'),
@@ -105,6 +106,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     setQualityKeywords(keywords);
     setMonitorSettings(settings);
     setThresholdInput(String(settings.minEngagement));
+    setTrustedThresholdInput(String(settings.trustedMinEngagement));
 
     if (isSupabaseConnected() && keywords.length === 0) {
       const seedPayload = [
@@ -219,18 +221,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
 
   const saveThreshold = async () => {
     const minEngagement = Number(thresholdInput);
+    const trustedMinEngagement = Number(trustedThresholdInput);
     if (!Number.isFinite(minEngagement) || minEngagement < 0) {
       flashMessage('请输入有效的非负数字');
       return;
     }
+    if (!Number.isFinite(trustedMinEngagement) || trustedMinEngagement < 0) {
+      flashMessage('请输入有效的信任账号阈值');
+      return;
+    }
 
-    const success = await updateMonitorSetting('min_engagement', String(Math.floor(minEngagement)));
-    if (!success) {
+    const [saveMin, saveTrustedMin] = await Promise.all([
+      updateMonitorSetting('min_engagement', String(Math.floor(minEngagement))),
+      updateMonitorSetting('trusted_min_engagement', String(Math.floor(trustedMinEngagement)))
+    ]);
+    if (!saveMin || !saveTrustedMin) {
       flashMessage('保存失败，请检查 Supabase 配置');
       return;
     }
 
-    setMonitorSettings({ minEngagement: Math.floor(minEngagement) });
+    setMonitorSettings({
+      minEngagement: Math.floor(minEngagement),
+      trustedMinEngagement: Math.floor(trustedMinEngagement)
+    });
     flashMessage('阈值已保存');
   };
 
@@ -434,20 +447,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   );
 
   const renderThresholdTab = () => (
-    <div className="rounded-xl border border-[#1e3a5f]/50 bg-[#0a0f1a]/60 p-5 space-y-4 max-w-xl">
-      <div>
+    <div className="rounded-xl border border-[#1e3a5f]/50 bg-[#0a0f1a]/60 p-5 space-y-5 max-w-2xl">
+      <div className="space-y-3">
         <p className="text-sm text-gray-300 font-medium">Minimum engagement (likes + comments)</p>
         <p className="text-xs text-gray-500 mt-1">最低互动量（点赞 + 评论）</p>
-      </div>
-
-      <div className="flex gap-2 items-center">
         <input
           type="number"
           min={0}
           value={thresholdInput}
           onChange={(e) => setThresholdInput(e.target.value)}
-          className="w-40 bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-sm text-gray-100 outline-none focus:border-indigo-500"
+          className="w-48 bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-sm text-gray-100 outline-none focus:border-indigo-500"
         />
+        <div className="text-xs text-gray-400">
+          当前值: <span className="text-gray-200">{monitorSettings.minEngagement}</span>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <p className="text-sm text-gray-300 font-medium">Trusted accounts minimum engagement</p>
+        <p className="text-xs text-gray-500 mt-1">信任账号最低互动量（点赞 + 评论）</p>
+        <input
+          type="number"
+          min={0}
+          value={trustedThresholdInput}
+          onChange={(e) => setTrustedThresholdInput(e.target.value)}
+          className="w-48 bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-sm text-gray-100 outline-none focus:border-indigo-500"
+        />
+        <div className="text-xs text-gray-400">
+          当前值: <span className="text-gray-200">{monitorSettings.trustedMinEngagement}</span>
+        </div>
+      </div>
+
+      <div className="pt-1">
         <button
           onClick={saveThreshold}
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-sm font-medium text-white"
@@ -455,12 +486,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
           <Check size={14} /> 保存
         </button>
       </div>
-
-      <div className="text-xs text-gray-400">
-        当前值: <span className="text-gray-200">{monitorSettings.minEngagement}</span>
-      </div>
       <p className="text-xs text-gray-500">
-        信任账号的帖子不受此阈值限制。
+        说明: 信任账号和普通账号使用不同阈值，均会参与过滤。
       </p>
     </div>
   );

@@ -37,11 +37,117 @@ const isValidUUID = (id: string): boolean => {
     return uuidRegex.test(id);
 };
 
+const toArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : []);
+
+const uniqStrings = (arr: (string | null | undefined)[]): string[] =>
+    Array.from(new Set(arr.map(v => (v || '').trim()).filter(Boolean)));
+
+const normalizeSourceUrl = (url: string): string => {
+    const raw = (url || '').trim();
+    if (!raw || raw === '#') return '';
+    try {
+        const u = new URL(raw);
+        u.search = '';
+        u.hash = '';
+        return u.toString();
+    } catch {
+        return raw.split('?')[0].trim();
+    }
+};
+
+const normalizeText = (value: string): string => (value || '').trim().toLowerCase();
+
+const buildCardDedupKey = (card: KnowledgeCard): string => {
+    const normalizedUrl = normalizeSourceUrl(card.sourceUrl);
+    if (normalizedUrl) return `url:${normalizedUrl}`;
+
+    return `meta:${normalizeText(card.platform)}|${normalizeText(card.title)}|${normalizeText(card.author)}|${normalizeText(card.rawContent).slice(0, 120)}`;
+};
+
+const mergeAiAnalysis = (base: KnowledgeCard['aiAnalysis'], incoming: KnowledgeCard['aiAnalysis']) => {
+    const baseSummary = String(base?.summary || '');
+    const incomingSummary = String(incoming?.summary || '');
+
+    return {
+        summary: incomingSummary.length > baseSummary.length ? incomingSummary : baseSummary,
+        usageScenarios: uniqStrings([...toArray(base?.usageScenarios), ...toArray(incoming?.usageScenarios)]),
+        coreKnowledge: uniqStrings([...toArray(base?.coreKnowledge), ...toArray(incoming?.coreKnowledge)]),
+        extractedPrompts: uniqStrings([...toArray(base?.extractedPrompts), ...toArray(incoming?.extractedPrompts)]),
+    };
+};
+
+const scoreCardCompleteness = (card: KnowledgeCard): number => {
+    const metrics = card.metrics || { likes: 0, bookmarks: 0, comments: 0 };
+    const metricTotal = Number(metrics.likes || 0) + Number(metrics.bookmarks || 0) + Number(metrics.comments || 0);
+    const ai = card.aiAnalysis || { summary: '', usageScenarios: [], coreKnowledge: [], extractedPrompts: [] };
+
+    return (
+        (card.userNotes?.length || 0) * 0.2 +
+        (ai.summary?.length || 0) * 0.2 +
+        (ai.usageScenarios?.length || 0) * 15 +
+        (ai.coreKnowledge?.length || 0) * 15 +
+        (ai.extractedPrompts?.length || 0) * 20 +
+        (card.rawContent?.length || 0) * 0.02 +
+        (card.tags?.length || 0) * 8 +
+        (card.collections?.length || 0) * 20 +
+        metricTotal * 0.01 +
+        (card.coverImage ? 30 : 0)
+    );
+};
+
+const mergeCardsForDedup = (a: KnowledgeCard, b: KnowledgeCard): KnowledgeCard => {
+    const primary = scoreCardCompleteness(a) >= scoreCardCompleteness(b) ? a : b;
+    const secondary = primary === a ? b : a;
+
+    return {
+        ...primary,
+        id: a.id,
+        sourceUrl: normalizeSourceUrl(primary.sourceUrl) || normalizeSourceUrl(secondary.sourceUrl) || '#',
+        coverImage: primary.coverImage || secondary.coverImage || '',
+        rawContent: (secondary.rawContent?.length || 0) > (primary.rawContent?.length || 0)
+            ? secondary.rawContent
+            : primary.rawContent,
+        userNotes: (secondary.userNotes?.length || 0) > (primary.userNotes?.length || 0)
+            ? secondary.userNotes
+            : primary.userNotes,
+        metrics: {
+            likes: Math.max(Number(a.metrics?.likes || 0), Number(b.metrics?.likes || 0)),
+            bookmarks: Math.max(Number(a.metrics?.bookmarks || 0), Number(b.metrics?.bookmarks || 0)),
+            comments: Math.max(Number(a.metrics?.comments || 0), Number(b.metrics?.comments || 0)),
+        },
+        aiAnalysis: mergeAiAnalysis(a.aiAnalysis, b.aiAnalysis),
+        tags: uniqStrings([...toArray(a.tags), ...toArray(b.tags)]),
+        collections: uniqStrings([...toArray(a.collections), ...toArray(b.collections)]),
+    };
+};
+
+const dedupeCards = (cards: KnowledgeCard[]): KnowledgeCard[] => {
+    const grouped = new Map<string, KnowledgeCard>();
+
+    for (const card of cards) {
+        const key = buildCardDedupKey(card);
+        const existing = grouped.get(key);
+        if (!existing) {
+            grouped.set(key, {
+                ...card,
+                sourceUrl: normalizeSourceUrl(card.sourceUrl) || '#',
+                tags: uniqStrings(card.tags || []),
+                collections: uniqStrings(card.collections || []),
+            });
+            continue;
+        }
+
+        grouped.set(key, mergeCardsForDedup(existing, card));
+    }
+
+    return Array.from(grouped.values());
+};
+
 // 将前端 KnowledgeCard 转换为数据库行
 const cardToDb = (card: KnowledgeCard, isTrending: boolean = false, skipId: boolean = false) => {
     const dbRow: any = {
         title: card.title,
-        source_url: card.sourceUrl,
+        source_url: normalizeSourceUrl(card.sourceUrl) || '#',
         platform: card.platform,
         author: card.author,
         date: card.date,
@@ -50,9 +156,9 @@ const cardToDb = (card: KnowledgeCard, isTrending: boolean = false, skipId: bool
         content_type: card.contentType,
         raw_content: card.rawContent,
         ai_analysis: card.aiAnalysis,
-        tags: card.tags,
+        tags: uniqStrings(card.tags || []),
         user_notes: card.userNotes || '',
-        collections: card.collections || [],
+        collections: uniqStrings(card.collections || []),
         is_trending: isTrending,
     };
 
@@ -149,7 +255,7 @@ export const getKnowledgeCards = async (): Promise<KnowledgeCard[]> => {
         return [];
     }
 
-    return (data || []).map(dbToCard);
+    return dedupeCards((data || []).map(dbToCard));
 };
 
 export const getTrendingCards = async (): Promise<KnowledgeCard[]> => {
@@ -166,7 +272,7 @@ export const getTrendingCards = async (): Promise<KnowledgeCard[]> => {
         return [];
     }
 
-    const cards = (data || []).map(dbToCard);
+    const cards = dedupeCards((data || []).map(dbToCard));
     const snapshotTags = cards
         .map(c => c.tags?.find(t => typeof t === 'string' && t.startsWith('snapshot:')) || '')
         .filter(Boolean)
@@ -181,9 +287,47 @@ export const getTrendingCards = async (): Promise<KnowledgeCard[]> => {
 export const saveCard = async (card: KnowledgeCard, isTrending: boolean = false): Promise<boolean> => {
     if (!isSupabaseConnected() || !supabase) return false;
 
+    const normalizedCard: KnowledgeCard = {
+        ...card,
+        sourceUrl: normalizeSourceUrl(card.sourceUrl) || '#',
+        tags: uniqStrings(card.tags || []),
+        collections: uniqStrings(card.collections || []),
+    };
+    const normalizedSourceUrl = normalizeSourceUrl(normalizedCard.sourceUrl);
+
+    if (normalizedSourceUrl) {
+        const { data: existingRows, error: queryError } = await supabase
+            .from('knowledge_cards')
+            .select('*')
+            .eq('is_trending', isTrending)
+            .eq('source_url', normalizedSourceUrl)
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+        if (queryError) {
+            console.error('Error checking existing card:', queryError);
+            return false;
+        }
+
+        const existing = existingRows?.[0];
+        if (existing) {
+            const merged = mergeCardsForDedup(dbToCard(existing), normalizedCard);
+            const { error: updateError } = await supabase
+                .from('knowledge_cards')
+                .update(cardToDb(merged, isTrending, true))
+                .eq('id', existing.id);
+
+            if (updateError) {
+                console.error('Error updating existing card during save:', updateError);
+                return false;
+            }
+            return true;
+        }
+    }
+
     const { error } = await supabase
         .from('knowledge_cards')
-        .upsert(cardToDb(card, isTrending));
+        .upsert(cardToDb(normalizedCard, isTrending));
 
     if (error) {
         console.error('Error saving card:', error);
@@ -229,6 +373,50 @@ export const deleteCard = async (cardId: string): Promise<boolean> => {
 export const moveTrendingToVault = async (card: KnowledgeCard): Promise<boolean> => {
     if (!isSupabaseConnected() || !supabase) return false;
 
+    const normalizedSourceUrl = normalizeSourceUrl(card.sourceUrl);
+
+    if (normalizedSourceUrl) {
+        const { data: existingRows, error: existingError } = await supabase
+            .from('knowledge_cards')
+            .select('*')
+            .eq('is_trending', false)
+            .eq('source_url', normalizedSourceUrl)
+            .neq('id', card.id)
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+        if (existingError) {
+            console.error('Error checking existing vault card:', existingError);
+            return false;
+        }
+
+        const existing = existingRows?.[0];
+        if (existing) {
+            const merged = mergeCardsForDedup(dbToCard(existing), { ...card, sourceUrl: normalizedSourceUrl });
+            const { error: updateError } = await supabase
+                .from('knowledge_cards')
+                .update(cardToDb(merged, false, true))
+                .eq('id', existing.id);
+
+            if (updateError) {
+                console.error('Error merging duplicate vault card:', updateError);
+                return false;
+            }
+
+            const { error: deleteError } = await supabase
+                .from('knowledge_cards')
+                .delete()
+                .eq('id', card.id);
+
+            if (deleteError) {
+                console.error('Error deleting duplicate trending card:', deleteError);
+                return false;
+            }
+
+            return true;
+        }
+    }
+
     const { error } = await supabase
         .from('knowledge_cards')
         .update({ is_trending: false })
@@ -263,12 +451,29 @@ export const getCollections = async (): Promise<Collection[]> => {
     // 获取所有卡片来计算 itemCount
     const { data: cards } = await supabase
         .from('knowledge_cards')
-        .select('collections')
+        .select('collections,source_url,title,author,platform,raw_content')
         .eq('is_trending', false);
 
     if (cards) {
+        const dedupedCollectionRefs = new Map<string, Set<string>>();
+
+        for (const row of cards) {
+            const normalizedUrl = normalizeSourceUrl(row.source_url || '');
+            const dedupeKey = normalizedUrl
+                ? `url:${normalizedUrl}`
+                : `meta:${normalizeText(row.platform || '')}|${normalizeText(row.title || '')}|${normalizeText(row.author || '')}|${normalizeText(row.raw_content || '').slice(0, 120)}`;
+
+            const existingRefs = dedupedCollectionRefs.get(dedupeKey) || new Set<string>();
+            for (const cid of toArray(row.collections)) {
+                if (cid) existingRefs.add(cid);
+            }
+            dedupedCollectionRefs.set(dedupeKey, existingRefs);
+        }
+
+        const dedupedCards = Array.from(dedupedCollectionRefs.values()).map(refs => Array.from(refs));
+
         collections.forEach(col => {
-            col.itemCount = cards.filter(c => c.collections?.includes(col.id)).length;
+            col.itemCount = dedupedCards.filter(refs => refs.includes(col.id)).length;
         });
     }
 
@@ -526,7 +731,7 @@ export const deleteQualityKeyword = async (id: string): Promise<boolean> => {
 };
 
 export const getMonitorSettings = async (): Promise<MonitorSettings> => {
-    const defaults: MonitorSettings = { minEngagement: 500 };
+    const defaults: MonitorSettings = { minEngagement: 500, trustedMinEngagement: 1000 };
     if (!isSupabaseConnected() || !supabase) return defaults;
 
     const { data, error } = await supabase
@@ -540,8 +745,12 @@ export const getMonitorSettings = async (): Promise<MonitorSettings> => {
 
     const map = new Map<string, string>((data || []).map((row: any) => [row.key, row.value]));
     const minValue = Number(map.get('min_engagement'));
+    const trustedMinValue = Number(map.get('trusted_min_engagement'));
     return {
-        minEngagement: Number.isFinite(minValue) && minValue >= 0 ? minValue : defaults.minEngagement
+        minEngagement: Number.isFinite(minValue) && minValue >= 0 ? minValue : defaults.minEngagement,
+        trustedMinEngagement: Number.isFinite(trustedMinValue) && trustedMinValue >= 0
+            ? trustedMinValue
+            : defaults.trustedMinEngagement
     };
 };
 

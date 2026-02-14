@@ -718,7 +718,7 @@ export default async function handler(req, res) {
             let trustedResults = [];
             if (!trustedQueryRan && trustedHandles.length > 0) {
               trustedQueryRan = true;
-              const trustedQuery = `(${trustedHandles.map(handle => `from:${handle}`).join(' OR ')}) has:media -is:retweet -is:reply`;
+              const trustedQuery = `(${trustedHandles.map(handle => `from:${handle}`).join(' OR ')}) -is:retweet -is:reply`;
               try {
                 const trustedLimit = Math.min(Math.max(effectiveLimit * Math.min(trustedHandles.length, 3), 10), 100);
                 trustedResults = await searchTwitterByQuery(trustedQuery, trustedLimit, xBearerToken, 'recency');

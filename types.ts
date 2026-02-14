@@ -114,6 +114,7 @@ export interface QualityKeyword {
 
 export interface MonitorSettings {
   minEngagement: number;
+  trustedMinEngagement: number;
 }
 
 export interface ChatMessage {
