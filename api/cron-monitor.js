@@ -16,12 +16,14 @@ const DEFAULT_MONITOR_KEYWORDS = [
 const DEFAULT_PLATFORMS = ['xiaohongshu', 'twitter'];
 const DEFAULT_LIMIT = 10;
 const DEFAULT_MIN_INTERACTION = 500;
+const DEFAULT_TRUSTED_MIN_INTERACTION = 1000;
 const RECENT_DAYS = 3;
 const TWITTER_RECENT_DAYS = 7;
 const MAX_TASKS_PER_RUN = 3;
 const XHS_DELAY_MS = 1000;
 const XHS_RETRIES = 2;
 const TWITTER_REQUIRE_TERMS = ['Claude', 'GPT', 'LLM', 'OpenAI', 'Anthropic', 'Gemini'];
+const COVER_PROMPT_MAX_LENGTH = 500;
 const QUALITY_FALLBACK_POSITIVE = [
   'tutorial', 'workflow', 'tips', 'how to', 'step by step', 'guide', 'setup', 'build',
   'prompt engineering', 'use case', 'demo', 'walkthrough', 'comparison', 'review',
@@ -331,7 +333,7 @@ const mapTwitterSearchResult = (tweet, userById, mediaByKey) => {
     .map(m => m.url || m.preview_image_url)
     .filter(Boolean);
 
-  const coverImage = images[0] || user.profile_image_url || '';
+  const coverImage = images[0] || '';
 
   return {
     noteId: tweet.id,
@@ -340,7 +342,7 @@ const mapTwitterSearchResult = (tweet, userById, mediaByKey) => {
     author: user.username || user.name || '',
     authorAvatar: user.profile_image_url || '',
     coverImage,
-    images: images.length > 0 ? images : (user.profile_image_url ? [user.profile_image_url] : []),
+    images,
     metrics: {
       likes: tweet.public_metrics?.like_count || 0,
       bookmarks: tweet.public_metrics?.bookmark_count || 0,
@@ -439,6 +441,48 @@ const searchTwitter = async (keywordsOrKeyword, limit, bearerToken, queryOpts) =
   return searchTwitterByQuery(query, limit, bearerToken, 'relevancy');
 };
 
+const generateCoverImage = async (postText) => {
+  const apiKey = process.env.DASHSCOPE_API_KEY;
+  const appId = process.env.DASHSCOPE_APP_ID;
+  if (!apiKey || !appId) return '';
+
+  const endpoint = `https://dashscope.aliyuncs.com/api/v1/apps/${appId}/completion`;
+  const truncatedText = String(postText || '').slice(0, COVER_PROMPT_MAX_LENGTH);
+  if (!truncatedText) return '';
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      input: { prompt: truncatedText },
+      parameters: {},
+      debug: {}
+    }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.code) {
+    throw new Error(data?.message || `Bailian API error: ${response.status}`);
+  }
+
+  const output = data?.output || {};
+  if (Array.isArray(output.images) && output.images.length > 0) {
+    return output.images[0]?.url || output.images[0] || '';
+  }
+
+  if (typeof output.text === 'string' && output.text) {
+    const markdownImg = output.text.match(/!\[.*?\]\((https?:\/\/[^\)]+)\)/);
+    if (markdownImg) return markdownImg[1];
+    const plainUrl = output.text.match(/(https?:\/\/[^\s\)]+\.(png|jpg|jpeg|webp|gif))/i);
+    if (plainUrl) return plainUrl[1];
+  }
+
+  return '';
+};
+
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -465,6 +509,7 @@ export default async function handler(req, res) {
     const overrideDays = Number(getQueryParam('days'));
     const overrideTwitterDays = Number(getQueryParam('twitter_days'));
     const overrideMin = Number(getQueryParam('min'));
+    const overrideTrustedMin = Number(getQueryParam('trusted_min'));
     const overrideLimit = Number(getQueryParam('limit'));
     const overrideTasks = Number(getQueryParam('tasks'));
     const overrideParallel = String(getQueryParam('parallel') || '').toLowerCase();
@@ -475,6 +520,9 @@ export default async function handler(req, res) {
     const effectiveRecentDays = Number.isFinite(overrideDays) && overrideDays > 0 ? overrideDays : RECENT_DAYS;
     const effectiveTwitterDays = Number.isFinite(overrideTwitterDays) && overrideTwitterDays > 0 ? overrideTwitterDays : TWITTER_RECENT_DAYS;
     let effectiveMinInteraction = Number.isFinite(overrideMin) && overrideMin >= 0 ? overrideMin : DEFAULT_MIN_INTERACTION;
+    let effectiveTrustedMinInteraction = Number.isFinite(overrideTrustedMin) && overrideTrustedMin >= 0
+      ? overrideTrustedMin
+      : DEFAULT_TRUSTED_MIN_INTERACTION;
     const effectiveLimit = Number.isFinite(overrideLimit) && overrideLimit > 0 ? overrideLimit : DEFAULT_LIMIT;
     const effectiveMaxTasks = Number.isFinite(overrideTasks) && overrideTasks > 0 ? overrideTasks : MAX_TASKS_PER_RUN;
     const parallel = overrideParallel === '1' || overrideParallel === 'true';
@@ -567,15 +615,22 @@ export default async function handler(req, res) {
     const { data: settingRows, error: settingsError } = await supabase
       .from('monitor_settings')
       .select('key, value')
-      .eq('key', 'min_engagement');
+      .in('key', ['min_engagement', 'trusted_min_engagement']);
     if (settingsError) {
       console.warn('[cron-monitor] failed to read monitor_settings:', settingsError.message || settingsError);
     }
-    const dbMinRaw = Number(settingRows?.[0]?.value);
+    const settingsMap = new Map((settingRows || []).map((row) => [row.key, row.value]));
+    const dbMinRaw = Number(settingsMap.get('min_engagement'));
+    const dbTrustedMinRaw = Number(settingsMap.get('trusted_min_engagement'));
     if (!(Number.isFinite(overrideMin) && overrideMin >= 0)) {
       effectiveMinInteraction = Number.isFinite(dbMinRaw) && dbMinRaw >= 0
         ? dbMinRaw
         : DEFAULT_MIN_INTERACTION;
+    }
+    if (!(Number.isFinite(overrideTrustedMin) && overrideTrustedMin >= 0)) {
+      effectiveTrustedMinInteraction = Number.isFinite(dbTrustedMinRaw) && dbTrustedMinRaw >= 0
+        ? dbTrustedMinRaw
+        : DEFAULT_TRUSTED_MIN_INTERACTION;
     }
 
     const { data: keywordRows, error: keywordError } = await supabase
@@ -663,7 +718,7 @@ export default async function handler(req, res) {
             let trustedResults = [];
             if (!trustedQueryRan && trustedHandles.length > 0) {
               trustedQueryRan = true;
-              const trustedQuery = `(${trustedHandles.map(handle => `from:${handle}`).join(' OR ')}) -is:retweet`;
+              const trustedQuery = `(${trustedHandles.map(handle => `from:${handle}`).join(' OR ')}) has:media -is:retweet -is:reply`;
               try {
                 const trustedLimit = Math.min(Math.max(effectiveLimit * Math.min(trustedHandles.length, 3), 10), 100);
                 trustedResults = await searchTwitterByQuery(trustedQuery, trustedLimit, xBearerToken, 'recency');
@@ -756,15 +811,17 @@ export default async function handler(req, res) {
       if (minValue > 0) {
         results = results.filter((r) => {
           const interaction = computeInteraction(r);
-          const trustedBypass = Boolean(r._fromTrustedAccount);
-          const passed = trustedBypass || interaction >= minValue;
+          const isTrusted = Boolean(r._fromTrustedAccount);
+          const appliedMin = isTrusted ? effectiveTrustedMinInteraction : minValue;
+          const passed = interaction >= appliedMin;
           if (engagementDebug.length < 40) {
             engagementDebug.push({
               platform: r.platform,
               author: r.author || '',
-              trustedBypass,
+              trustedBypass: false,
+              isTrusted,
               interaction,
-              minValue,
+              minValue: appliedMin,
               passed,
               url: r.sourceUrl || ''
             });
@@ -816,13 +873,32 @@ export default async function handler(req, res) {
     }
     const candidates = Array.from(uniqueByUrl.values());
     funnel.candidates = candidates.length;
+    let generatedCoverCount = 0;
+
+    for (const item of candidates) {
+      if (item?.platform !== 'Twitter') continue;
+      if (item.coverImage) continue;
+      const textForImage = `${item.title || ''}\n${item.desc || ''}`.trim();
+      if (!textForImage) continue;
+      try {
+        const generated = await generateCoverImage(textForImage);
+        if (generated) {
+          item.coverImage = generated;
+          generatedCoverCount += 1;
+        }
+      } catch (coverErr) {
+        console.warn('[cron-monitor] failed to generate cover image:', coverErr.message || coverErr);
+      }
+    }
 
     if (candidates.length === 0) {
       console.log('[cron-monitor] no candidates after filters', {
         effectiveMinInteraction,
+        effectiveTrustedMinInteraction,
         positiveKeywords: effectivePositiveKeywords.length,
         blacklistKeywords: effectiveBlacklistKeywords.length,
         trustedHandles: trustedHandles.length,
+        generatedCoverCount,
         funnel
       });
       console.log('[cron-monitor] engagement debug sample', engagementDebug.slice(0, 10));
@@ -831,6 +907,7 @@ export default async function handler(req, res) {
         updatedTasks: updatedTasks.length,
         effective: {
           minInteraction: effectiveMinInteraction,
+          trustedMinInteraction: effectiveTrustedMinInteraction,
           qualityPositiveCount: effectivePositiveKeywords.length,
           qualityBlacklistCount: effectiveBlacklistKeywords.length,
           trustedHandles: trustedHandles.length
@@ -838,6 +915,7 @@ export default async function handler(req, res) {
         funnel,
         platformFunnel,
         platformStats,
+        generatedCoverCount,
         engagementDebug: engagementDebug.slice(0, 20),
         platformErrors
       });
@@ -972,6 +1050,7 @@ export default async function handler(req, res) {
       effective: {
         days: effectiveRecentDays,
         minInteraction: effectiveMinInteraction,
+        trustedMinInteraction: effectiveTrustedMinInteraction,
         limit: effectiveLimit,
         tasks: effectiveMaxTasks,
         parallel,
@@ -986,6 +1065,7 @@ export default async function handler(req, res) {
       platformTotals,
       platformFunnel,
       twitterSamples,
+      generatedCoverCount,
       engagementDebug: engagementDebug.slice(0, 20),
       platformErrors
     });
