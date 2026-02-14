@@ -96,6 +96,26 @@ export interface SocialSearchResult {
   platform: Platform;
 }
 
+export interface TrustedAccount {
+  id: string;
+  platform: string; // 'twitter' | 'xiaohongshu'
+  handle: string; // without @
+  category: string; // 'image_gen' | 'video_gen' | 'vibe_coding'
+  notes: string;
+  createdAt?: string;
+}
+
+export interface QualityKeyword {
+  id: string;
+  keyword: string;
+  type: 'positive' | 'blacklist';
+  createdAt?: string;
+}
+
+export interface MonitorSettings {
+  minEngagement: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';

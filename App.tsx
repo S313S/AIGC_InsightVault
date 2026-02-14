@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { LayoutGrid, Plus, Search, Database, Menu, MessageSquare, Activity, Home, Folder, X, Check, MoreVertical, Edit2, Trash2, CheckSquare, FolderPlus, Sparkles, Loader2 } from './components/Icons';
+import { LayoutGrid, Plus, Search, Database, Menu, MessageSquare, Activity, Home, Folder, X, Check, MoreVertical, Edit2, Trash2, CheckSquare, FolderPlus, Sparkles, Loader2, Settings } from './components/Icons';
 import { Card } from './components/Card';
 import { DetailModal } from './components/DetailModal';
 import { AddContentModal } from './components/AddContentModal';
 import { ChatView } from './components/ChatView';
 import { MonitoringView } from './components/MonitoringView';
 import { DashboardView } from './components/DashboardView';
+import { SettingsModal } from './components/SettingsModal';
 import { INITIAL_DATA, INITIAL_TASKS, TRENDING_DATA, INITIAL_COLLECTIONS } from './mockData';
 import { KnowledgeCard, FilterState, TrackingTask, Collection, ContentType, Platform, SocialSearchResult, TaskStatus } from './types';
 import { isSupabaseConnected } from './services/supabaseClient';
@@ -29,6 +30,7 @@ const App: React.FC = () => {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [selectedCard, setSelectedCard] = useState<KnowledgeCard | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState<ViewMode>('dashboard');
 
@@ -894,6 +896,13 @@ const App: React.FC = () => {
               <p className="text-sm font-medium text-gray-100 truncate">XiaoCi</p>
               <p className="text-xs text-gray-500 truncate">专业版</p>
             </div>
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-1.5 rounded-md text-gray-500 hover:text-gray-200 hover:bg-white/10 transition-colors"
+              title="设置"
+            >
+              <Settings size={16} />
+            </button>
           </div>
         </div>
       </aside>
@@ -1147,6 +1156,10 @@ const App: React.FC = () => {
           onClose={() => setIsAddModalOpen(false)}
           onAdd={handleAddCard}
         />
+      )}
+
+      {showSettings && (
+        <SettingsModal onClose={() => setShowSettings(false)} />
       )}
 
       {/* Add To Collection Modal */}

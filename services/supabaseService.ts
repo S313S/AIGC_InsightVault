@@ -1,5 +1,15 @@
 import { supabase, isSupabaseConnected } from './supabaseClient';
-import { KnowledgeCard, Collection, TrackingTask, Platform, ContentType, TaskStatus } from '../types';
+import {
+    KnowledgeCard,
+    Collection,
+    TrackingTask,
+    Platform,
+    ContentType,
+    TaskStatus,
+    TrustedAccount,
+    QualityKeyword,
+    MonitorSettings
+} from '../types';
 
 // ============ 类型转换工具 ============
 
@@ -106,6 +116,22 @@ const taskToDb = (task: TrackingTask, skipId: boolean = false, includeConfig: bo
 
     return dbRow;
 };
+
+const dbToTrustedAccount = (row: any): TrustedAccount => ({
+    id: row.id,
+    platform: row.platform || 'twitter',
+    handle: row.handle || '',
+    category: row.category || 'vibe_coding',
+    notes: row.notes || '',
+    createdAt: row.created_at || undefined,
+});
+
+const dbToQualityKeyword = (row: any): QualityKeyword => ({
+    id: row.id,
+    keyword: row.keyword || '',
+    type: row.type === 'blacklist' ? 'blacklist' : 'positive',
+    createdAt: row.created_at || undefined,
+});
 
 // ============ 知识卡片 CRUD ============
 
@@ -353,6 +379,188 @@ export const deleteTask = async (taskId: string): Promise<boolean> => {
 
     if (error) {
         console.error('Error deleting task:', error);
+        return false;
+    }
+
+    return true;
+};
+
+// ============ 质量过滤设置 CRUD ============
+
+export const getTrustedAccounts = async (): Promise<TrustedAccount[]> => {
+    if (!isSupabaseConnected() || !supabase) return [];
+
+    const { data, error } = await supabase
+        .from('trusted_accounts')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Error fetching trusted accounts:', error);
+        return [];
+    }
+
+    return (data || []).map(dbToTrustedAccount);
+};
+
+export const saveTrustedAccount = async (
+    account: Omit<TrustedAccount, 'id' | 'createdAt'>
+): Promise<TrustedAccount | null> => {
+    if (!isSupabaseConnected() || !supabase) return null;
+
+    const normalizedHandle = account.handle.replace(/^@+/, '').trim();
+    const payload = {
+        platform: (account.platform || 'twitter').toLowerCase(),
+        handle: normalizedHandle,
+        category: account.category || 'vibe_coding',
+        notes: account.notes || ''
+    };
+
+    const { data, error } = await supabase
+        .from('trusted_accounts')
+        .insert(payload)
+        .select('*')
+        .single();
+
+    if (error) {
+        console.error('Error saving trusted account:', error);
+        return null;
+    }
+
+    return dbToTrustedAccount(data);
+};
+
+export const updateTrustedAccount = async (account: TrustedAccount): Promise<boolean> => {
+    if (!isSupabaseConnected() || !supabase) return false;
+
+    const normalizedHandle = account.handle.replace(/^@+/, '').trim();
+    const { error } = await supabase
+        .from('trusted_accounts')
+        .update({
+            platform: (account.platform || 'twitter').toLowerCase(),
+            handle: normalizedHandle,
+            category: account.category,
+            notes: account.notes || ''
+        })
+        .eq('id', account.id);
+
+    if (error) {
+        console.error('Error updating trusted account:', error);
+        return false;
+    }
+
+    return true;
+};
+
+export const deleteTrustedAccount = async (id: string): Promise<boolean> => {
+    if (!isSupabaseConnected() || !supabase) return false;
+
+    const { error } = await supabase
+        .from('trusted_accounts')
+        .delete()
+        .eq('id', id);
+
+    if (error) {
+        console.error('Error deleting trusted account:', error);
+        return false;
+    }
+
+    return true;
+};
+
+export const getQualityKeywords = async (): Promise<QualityKeyword[]> => {
+    if (!isSupabaseConnected() || !supabase) return [];
+
+    const { data, error } = await supabase
+        .from('quality_keywords')
+        .select('*')
+        .order('type', { ascending: true })
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Error fetching quality keywords:', error);
+        return [];
+    }
+
+    return (data || []).map(dbToQualityKeyword);
+};
+
+export const saveQualityKeyword = async (
+    keyword: Omit<QualityKeyword, 'id' | 'createdAt'>
+): Promise<QualityKeyword | null> => {
+    if (!isSupabaseConnected() || !supabase) return null;
+
+    const payload = {
+        keyword: keyword.keyword.trim(),
+        type: keyword.type === 'blacklist' ? 'blacklist' : 'positive'
+    };
+
+    const { data, error } = await supabase
+        .from('quality_keywords')
+        .insert(payload)
+        .select('*')
+        .single();
+
+    if (error) {
+        console.error('Error saving quality keyword:', error);
+        return null;
+    }
+
+    return dbToQualityKeyword(data);
+};
+
+export const deleteQualityKeyword = async (id: string): Promise<boolean> => {
+    if (!isSupabaseConnected() || !supabase) return false;
+
+    const { error } = await supabase
+        .from('quality_keywords')
+        .delete()
+        .eq('id', id);
+
+    if (error) {
+        console.error('Error deleting quality keyword:', error);
+        return false;
+    }
+
+    return true;
+};
+
+export const getMonitorSettings = async (): Promise<MonitorSettings> => {
+    const defaults: MonitorSettings = { minEngagement: 500 };
+    if (!isSupabaseConnected() || !supabase) return defaults;
+
+    const { data, error } = await supabase
+        .from('monitor_settings')
+        .select('key, value');
+
+    if (error) {
+        console.error('Error fetching monitor settings:', error);
+        return defaults;
+    }
+
+    const map = new Map<string, string>((data || []).map((row: any) => [row.key, row.value]));
+    const minValue = Number(map.get('min_engagement'));
+    return {
+        minEngagement: Number.isFinite(minValue) && minValue >= 0 ? minValue : defaults.minEngagement
+    };
+};
+
+export const updateMonitorSetting = async (key: string, value: string): Promise<boolean> => {
+    if (!isSupabaseConnected() || !supabase) return false;
+
+    const { error } = await supabase
+        .from('monitor_settings')
+        .upsert(
+            {
+                key,
+                value,
+                updated_at: new Date().toISOString()
+            },
+            { onConflict: 'key' }
+        );
+
+    if (error) {
+        console.error(`Error updating monitor setting (${key}):`, error);
         return false;
     }
 

@@ -15,13 +15,25 @@ const DEFAULT_MONITOR_KEYWORDS = [
 ];
 const DEFAULT_PLATFORMS = ['xiaohongshu', 'twitter'];
 const DEFAULT_LIMIT = 10;
-const DEFAULT_MIN_INTERACTION = 5000;
+const DEFAULT_MIN_INTERACTION = 500;
 const RECENT_DAYS = 3;
 const TWITTER_RECENT_DAYS = 7;
 const MAX_TASKS_PER_RUN = 3;
 const XHS_DELAY_MS = 1000;
 const XHS_RETRIES = 2;
 const TWITTER_REQUIRE_TERMS = ['Claude', 'GPT', 'LLM', 'OpenAI', 'Anthropic', 'Gemini'];
+const QUALITY_FALLBACK_POSITIVE = [
+  'tutorial', 'workflow', 'tips', 'how to', 'step by step', 'guide', 'setup', 'build',
+  'prompt engineering', 'use case', 'demo', 'walkthrough', 'comparison', 'review',
+  'best practices', 'toolchain', 'deep dive',
+  '教程', '实操', '工作流', '技巧', '分享', '经验', '玩法', '用法', '攻略', '测评',
+  '对比', '上手', '指南', '保姆级', '干货', '实战', '案例'
+];
+const QUALITY_FALLBACK_BLACKLIST = [
+  'hiring', 'giveaway', 'breaking news', 'subscribe', 'follow me',
+  'sponsored', 'ad', 'promotion', 'discount', 'coupon',
+  '招聘', '抽奖', '转发抽', '广告', '优惠', '打折', '求职', '招人'
+];
 
 // Expanded AI keyword pool for better coverage (from research on Twitter/X and Xiaohongshu trends)
 const AI_KEYWORDS = [
@@ -170,6 +182,11 @@ const parsePublishTime = (dateStr) => {
   return null;
 };
 
+const toNumber = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+};
+
 const isRecentEnough = (dateStr, windowDays = RECENT_DAYS) => {
   const dt = parsePublishTime(dateStr);
   if (!dt) return true;
@@ -182,15 +199,26 @@ const computeInteraction = (item) => {
   if (!item) return 0;
   if (item.platform === 'Twitter') {
     const raw = item.metricsRaw || {};
-    const likes = raw.like_count ?? item.metrics?.likes ?? 0;
-    const replies = raw.reply_count ?? item.metrics?.comments ?? 0;
-    const retweets = raw.retweet_count ?? item.metrics?.shares ?? 0;
-    const quotes = raw.quote_count ?? item.metrics?.quotes ?? 0;
-    const bookmarks = raw.bookmark_count ?? item.metrics?.bookmarks ?? 0;
-    return likes + replies + retweets + quotes + bookmarks;
+    const likes = toNumber(raw.like_count ?? item.metrics?.likes);
+    const comments = toNumber(raw.reply_count ?? item.metrics?.comments);
+    return likes + comments;
   }
-  // Xiaohongshu + others
-  return (item.metrics?.likes || 0) + (item.metrics?.bookmarks || 0) + (item.metrics?.comments || 0);
+  // Xiaohongshu + others: keep same metric rule (likes + comments)
+  return toNumber(item.metrics?.likes) + toNumber(item.metrics?.comments);
+};
+
+const passesQualityFilter = (item, positiveKeywords, blacklistKeywords) => {
+  const text = `${item?.title || ''} ${item?.desc || ''}`.toLowerCase();
+  const blacklist = (blacklistKeywords || []).map(k => String(k || '').toLowerCase()).filter(Boolean);
+  const positive = (positiveKeywords || []).map(k => String(k || '').toLowerCase()).filter(Boolean);
+
+  const isBlacklisted = blacklist.some(kw => text.includes(kw));
+  if (isBlacklisted) return false;
+
+  if (item?._fromTrustedAccount) return true;
+
+  if (positive.length === 0) return true;
+  return positive.some(kw => text.includes(kw));
 };
 
 const buildTrendingRow = (result, snapshotTag) => {
@@ -381,11 +409,9 @@ const buildTwitterQuery = (keywords, opts) => {
   return pieces.join(' ').trim();
 };
 
-const searchTwitter = async (keywordsOrKeyword, limit, bearerToken, queryOpts) => {
+const searchTwitterByQuery = async (query, limit, bearerToken, sortOrder = 'relevancy') => {
   const maxResults = Math.min(Math.max(Number(limit) || 20, 10), 100);
-  const keywords = Array.isArray(keywordsOrKeyword) ? keywordsOrKeyword : [keywordsOrKeyword];
-  const query = buildTwitterQuery(keywords, queryOpts);
-  const endpoint = `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=${maxResults}&sort_order=relevancy&tweet.fields=created_at,public_metrics,author_id,attachments&expansions=author_id,attachments.media_keys&user.fields=username,name,profile_image_url&media.fields=type,url,preview_image_url`;
+  const endpoint = `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=${maxResults}&sort_order=${encodeURIComponent(sortOrder)}&tweet.fields=created_at,public_metrics,author_id,attachments&expansions=author_id,attachments.media_keys&user.fields=username,name,profile_image_url&media.fields=type,url,preview_image_url`;
 
   const { response, data } = await fetchJson(endpoint, {
     headers: {
@@ -405,6 +431,12 @@ const searchTwitter = async (keywordsOrKeyword, limit, bearerToken, queryOpts) =
   const mediaByKey = new Map(media.map(m => [m.media_key, m]));
 
   return tweets.map(tweet => mapTwitterSearchResult(tweet, userById, mediaByKey));
+};
+
+const searchTwitter = async (keywordsOrKeyword, limit, bearerToken, queryOpts) => {
+  const keywords = Array.isArray(keywordsOrKeyword) ? keywordsOrKeyword : [keywordsOrKeyword];
+  const query = buildTwitterQuery(keywords, queryOpts);
+  return searchTwitterByQuery(query, limit, bearerToken, 'relevancy');
 };
 
 export default async function handler(req, res) {
@@ -442,7 +474,7 @@ export default async function handler(req, res) {
 
     const effectiveRecentDays = Number.isFinite(overrideDays) && overrideDays > 0 ? overrideDays : RECENT_DAYS;
     const effectiveTwitterDays = Number.isFinite(overrideTwitterDays) && overrideTwitterDays > 0 ? overrideTwitterDays : TWITTER_RECENT_DAYS;
-    const effectiveMinInteraction = Number.isFinite(overrideMin) && overrideMin >= 0 ? overrideMin : DEFAULT_MIN_INTERACTION;
+    let effectiveMinInteraction = Number.isFinite(overrideMin) && overrideMin >= 0 ? overrideMin : DEFAULT_MIN_INTERACTION;
     const effectiveLimit = Number.isFinite(overrideLimit) && overrideLimit > 0 ? overrideLimit : DEFAULT_LIMIT;
     const effectiveMaxTasks = Number.isFinite(overrideTasks) && overrideTasks > 0 ? overrideTasks : MAX_TASKS_PER_RUN;
     const parallel = overrideParallel === '1' || overrideParallel === 'true';
@@ -532,6 +564,49 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'No upstream API tokens configured' });
     }
 
+    const { data: settingRows, error: settingsError } = await supabase
+      .from('monitor_settings')
+      .select('key, value')
+      .eq('key', 'min_engagement');
+    if (settingsError) {
+      console.warn('[cron-monitor] failed to read monitor_settings:', settingsError.message || settingsError);
+    }
+    const dbMinRaw = Number(settingRows?.[0]?.value);
+    if (!(Number.isFinite(overrideMin) && overrideMin >= 0)) {
+      effectiveMinInteraction = Number.isFinite(dbMinRaw) && dbMinRaw >= 0
+        ? dbMinRaw
+        : DEFAULT_MIN_INTERACTION;
+    }
+
+    const { data: keywordRows, error: keywordError } = await supabase
+      .from('quality_keywords')
+      .select('keyword, type');
+    if (keywordError) {
+      console.warn('[cron-monitor] failed to read quality_keywords:', keywordError.message || keywordError);
+    }
+    const positiveKeywords = (keywordRows || [])
+      .filter(k => k?.type === 'positive' && k?.keyword)
+      .map(k => String(k.keyword).trim())
+      .filter(Boolean);
+    const blacklistKeywords = (keywordRows || [])
+      .filter(k => k?.type === 'blacklist' && k?.keyword)
+      .map(k => String(k.keyword).trim())
+      .filter(Boolean);
+    const effectivePositiveKeywords = positiveKeywords.length > 0 ? positiveKeywords : QUALITY_FALLBACK_POSITIVE;
+    const effectiveBlacklistKeywords = blacklistKeywords.length > 0 ? blacklistKeywords : QUALITY_FALLBACK_BLACKLIST;
+
+    const { data: trustedRows, error: trustedError } = await supabase
+      .from('trusted_accounts')
+      .select('handle, platform')
+      .eq('platform', 'twitter');
+    if (trustedError) {
+      console.warn('[cron-monitor] failed to read trusted_accounts:', trustedError.message || trustedError);
+    }
+    const trustedHandles = (trustedRows || [])
+      .map(row => String(row?.handle || '').replace(/^@+/, '').trim().toLowerCase())
+      .filter(Boolean);
+    const trustedHandleSet = new Set(trustedHandles);
+
     // Fixed keyword-pool mode: always run against DEFAULT_MONITOR_KEYWORDS
     const keywordJobs = DEFAULT_MONITOR_KEYWORDS.map(keyword => ({
       keyword,
@@ -551,8 +626,8 @@ export default async function handler(req, res) {
       xiaohongshu: { fetched: 0, output: 0 }
     };
     const platformFunnel = {
-      twitter: { fetched: 0, afterMinInteraction: 0, afterRecent: 0, afterAI: 0 },
-      xiaohongshu: { fetched: 0, afterMinInteraction: 0, afterRecent: 0, afterAI: 0 }
+      twitter: { fetched: 0, afterMinInteraction: 0, afterRecent: 0, afterAI: 0, afterQuality: 0 },
+      xiaohongshu: { fetched: 0, afterMinInteraction: 0, afterRecent: 0, afterAI: 0, afterQuality: 0 }
     };
     const twitterSamples = [];
     const funnel = {
@@ -560,13 +635,16 @@ export default async function handler(req, res) {
       afterMinInteraction: 0,
       afterRecent: 0,
       afterAI: 0,
+      afterQuality: 0,
       candidates: 0
     };
+    const engagementDebug = [];
     const snapshotId = new Date().toISOString();
     const snapshotTag = `snapshot:${snapshotId}`;
     const updatedTasks = [];
 
     let twitterQueried = false;
+    let trustedQueryRan = false;
 
     for (const task of tasksToRun) {
       const platforms = (task.platforms && task.platforms.length > 0) ? task.platforms : DEFAULT_PLATFORMS;
@@ -581,9 +659,35 @@ export default async function handler(req, res) {
               platformErrors.push({ platform: 'twitter', error: 'X API Bearer Token not configured' });
               return [];
             }
-            const results = await searchTwitter(twitterKeywordPool, effectiveLimit, xBearerToken, twitterQueryOpts);
+            const keywordResults = await searchTwitter(twitterKeywordPool, effectiveLimit, xBearerToken, twitterQueryOpts);
+            let trustedResults = [];
+            if (!trustedQueryRan && trustedHandles.length > 0) {
+              trustedQueryRan = true;
+              const trustedQuery = `(${trustedHandles.map(handle => `from:${handle}`).join(' OR ')}) -is:retweet`;
+              try {
+                const trustedLimit = Math.min(Math.max(effectiveLimit * Math.min(trustedHandles.length, 3), 10), 100);
+                trustedResults = await searchTwitterByQuery(trustedQuery, trustedLimit, xBearerToken, 'recency');
+              } catch (trustedErr) {
+                platformErrors.push({
+                  platform: 'twitter',
+                  error: `trusted-feed: ${trustedErr.message || 'Unknown error'}`
+                });
+              }
+            }
+            const results = [...keywordResults, ...trustedResults];
+            for (const item of results) {
+              const author = String(item?.author || '').toLowerCase();
+              if (trustedHandleSet.has(author)) {
+                item._fromTrustedAccount = true;
+              }
+            }
             twitterQueried = true;
-            platformStats.push({ platform: 'twitter', count: results.length });
+            platformStats.push({
+              platform: 'twitter',
+              count: results.length,
+              keywordCount: keywordResults.length,
+              trustedCount: trustedResults.length
+            });
             platformTotals.twitter.fetched += results.length;
             return results;
           }
@@ -650,7 +754,23 @@ export default async function handler(req, res) {
 
       const minValue = effectiveMinInteraction;
       if (minValue > 0) {
-        results = results.filter((r) => computeInteraction(r) >= minValue);
+        results = results.filter((r) => {
+          const interaction = computeInteraction(r);
+          const trustedBypass = Boolean(r._fromTrustedAccount);
+          const passed = trustedBypass || interaction >= minValue;
+          if (engagementDebug.length < 40) {
+            engagementDebug.push({
+              platform: r.platform,
+              author: r.author || '',
+              trustedBypass,
+              interaction,
+              minValue,
+              passed,
+              url: r.sourceUrl || ''
+            });
+          }
+          return passed;
+        });
       }
       funnel.afterMinInteraction += results.length;
       for (const item of results) {
@@ -674,6 +794,13 @@ export default async function handler(req, res) {
         if (item.platform === 'Xiaohongshu') platformFunnel.xiaohongshu.afterAI += 1;
       }
 
+      results = results.filter((r) => passesQualityFilter(r, effectivePositiveKeywords, effectiveBlacklistKeywords));
+      funnel.afterQuality += results.length;
+      for (const item of results) {
+        if (item.platform === 'Twitter') platformFunnel.twitter.afterQuality += 1;
+        if (item.platform === 'Xiaohongshu') platformFunnel.xiaohongshu.afterQuality += 1;
+      }
+
       allResults.push(...results);
       for (const item of results) {
         if (item.platform === 'Twitter') platformTotals.twitter.output += 1;
@@ -691,10 +818,27 @@ export default async function handler(req, res) {
     funnel.candidates = candidates.length;
 
     if (candidates.length === 0) {
+      console.log('[cron-monitor] no candidates after filters', {
+        effectiveMinInteraction,
+        positiveKeywords: effectivePositiveKeywords.length,
+        blacklistKeywords: effectiveBlacklistKeywords.length,
+        trustedHandles: trustedHandles.length,
+        funnel
+      });
+      console.log('[cron-monitor] engagement debug sample', engagementDebug.slice(0, 10));
       return res.status(200).json({
         inserted: 0,
         updatedTasks: updatedTasks.length,
+        effective: {
+          minInteraction: effectiveMinInteraction,
+          qualityPositiveCount: effectivePositiveKeywords.length,
+          qualityBlacklistCount: effectiveBlacklistKeywords.length,
+          trustedHandles: trustedHandles.length
+        },
+        funnel,
+        platformFunnel,
         platformStats,
+        engagementDebug: engagementDebug.slice(0, 20),
         platformErrors
       });
     }
@@ -720,7 +864,6 @@ export default async function handler(req, res) {
       .filter(c => !existingNorms.has(normalizeSourceUrl(c.sourceUrl)))
       .map(c => buildTrendingRow(c, snapshotTag));
     let updatedExisting = 0;
-    const candidateByUrl = new Map(candidates.map(c => [c.sourceUrl, c]));
 
     if (toInsert.length > 0) {
       const { error: insertError } = await supabase
@@ -818,6 +961,8 @@ export default async function handler(req, res) {
 
     // Skip tracking_tasks updates in keyword-pool mode
 
+    console.log('[cron-monitor] engagement debug sample', engagementDebug.slice(0, 10));
+
     return res.status(200).json({
       inserted: toInsert.length,
       updatedExisting,
@@ -831,13 +976,17 @@ export default async function handler(req, res) {
         tasks: effectiveMaxTasks,
         parallel,
         twitter_days: effectiveTwitterDays,
-        twitter_require_terms: TWITTER_REQUIRE_TERMS
+        twitter_require_terms: TWITTER_REQUIRE_TERMS,
+        qualityPositiveCount: effectivePositiveKeywords.length,
+        qualityBlacklistCount: effectiveBlacklistKeywords.length,
+        trustedHandles: trustedHandles.length
       },
       funnel,
       platformStats,
       platformTotals,
       platformFunnel,
       twitterSamples,
+      engagementDebug: engagementDebug.slice(0, 20),
       platformErrors
     });
   } catch (err) {
