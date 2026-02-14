@@ -470,14 +470,16 @@ const generateCoverImage = async (postText) => {
 
   const output = data?.output || {};
   if (Array.isArray(output.images) && output.images.length > 0) {
-    return output.images[0]?.url || output.images[0] || '';
+    const firstImage = output.images[0]?.url || output.images[0] || '';
+    const sanitized = String(firstImage).trim();
+    return /^https?:\/\//i.test(sanitized) ? sanitized : '';
   }
 
   if (typeof output.text === 'string' && output.text) {
     const markdownImg = output.text.match(/!\[.*?\]\((https?:\/\/[^\)]+)\)/);
-    if (markdownImg) return markdownImg[1];
+    if (markdownImg) return String(markdownImg[1]).trim();
     const plainUrl = output.text.match(/(https?:\/\/[^\s\)]+\.(png|jpg|jpeg|webp|gif))/i);
-    if (plainUrl) return plainUrl[1];
+    if (plainUrl) return String(plainUrl[1]).trim();
   }
 
   return '';

@@ -2,6 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { KnowledgeCard, TrackingTask, Platform, TaskStatus } from '../types';
 import { Flame, ArrowRight, Save, ExternalLink, Activity, LayoutGrid, Clock, Heart, TrendingUp, Bookmark, Sparkles } from './Icons';
 
+const FALLBACK_COVER = 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop';
+
 interface DashboardViewProps {
     tasks: TrackingTask[];
     trendingItems: KnowledgeCard[];
@@ -25,6 +27,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         if (!url) return '';
         const [base] = url.split('?');
         return base.trim();
+    };
+
+    const safeCover = (url?: string) => {
+        const value = String(url || '').trim();
+        if (!value) return FALLBACK_COVER;
+        return /^https?:\/\//i.test(value) ? value : FALLBACK_COVER;
     };
 
     const uniqueTrending = useMemo(() => {
@@ -101,7 +109,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             {/* Thumbnail */}
             <div className="w-12 h-12 bg-[#1e3a5f]/50 rounded-lg overflow-hidden flex-shrink-0 relative">
-                <img src={item.coverImage} alt={item.title} className="w-full h-full object-cover" />
+                <img
+                    src={safeCover(item.coverImage)}
+                    alt={item.title}
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.src = FALLBACK_COVER;
+                    }}
+                    className="w-full h-full object-cover"
+                />
             </div>
 
             {/* Content */}
@@ -208,8 +225,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                 {/* Cover Image Area */}
                                 <div className="h-40 relative bg-[#1e3a5f]/30 overflow-hidden">
                                     <img
-                                        src={item.coverImage}
+                                        src={safeCover(item.coverImage)}
                                         alt={item.title}
+                                        referrerPolicy="no-referrer"
+                                        onError={(e) => {
+                                            const target = e.target as HTMLImageElement;
+                                            target.src = FALLBACK_COVER;
+                                        }}
                                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                                     />
                                     {/* Overlay Sparkles for Prompts */}
@@ -367,8 +389,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                     >
                                         <div className="h-40 relative bg-[#1e3a5f]/30 overflow-hidden">
                                             <img
-                                                src={item.coverImage}
+                                                src={safeCover(item.coverImage)}
                                                 alt={item.title}
+                                                referrerPolicy="no-referrer"
+                                                onError={(e) => {
+                                                    const target = e.target as HTMLImageElement;
+                                                    target.src = FALLBACK_COVER;
+                                                }}
                                                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                                             />
                                         </div>
