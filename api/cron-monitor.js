@@ -623,14 +623,14 @@ export default async function handler(req, res) {
     const { data: settingRows, error: settingsError } = await supabase
       .from('monitor_settings')
       .select('key, value')
-      .in('key', ['min_engagement', 'trusted_min_engagement', 'twitter_split_keywords']);
+      .in('key', ['min_engagement', 'trusted_min_engagement', 'split_keywords', 'twitter_split_keywords']);
     if (settingsError) {
       console.warn('[cron-monitor] failed to read monitor_settings:', settingsError.message || settingsError);
     }
     const settingsMap = new Map((settingRows || []).map((row) => [row.key, row.value]));
     const dbMinRaw = Number(settingsMap.get('min_engagement'));
     const dbTrustedMinRaw = Number(settingsMap.get('trusted_min_engagement'));
-    const dbSplitRaw = String(settingsMap.get('twitter_split_keywords') || '').toLowerCase();
+    const dbSplitRaw = String(settingsMap.get('split_keywords') || settingsMap.get('twitter_split_keywords') || '').toLowerCase();
     if (!(Number.isFinite(overrideMin) && overrideMin >= 0)) {
       effectiveMinInteraction = Number.isFinite(dbMinRaw) && dbMinRaw >= 0
         ? dbMinRaw
@@ -679,7 +679,7 @@ export default async function handler(req, res) {
       keyword,
       platforms: effectivePlatforms
     }));
-    const tasksToRun = keywordJobs.slice(0, effectiveMaxTasks);
+    const tasksToRun = effectiveSplit ? keywordJobs : keywordJobs.slice(0, effectiveMaxTasks);
     const twitterKeywordPool = DEFAULT_MONITOR_KEYWORDS.slice(0, effectiveMaxTasks);
     const twitterSplitKeywordPool = [...DEFAULT_MONITOR_KEYWORDS];
     const twitterQueryOpts = {

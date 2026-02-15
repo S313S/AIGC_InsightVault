@@ -50,7 +50,7 @@ const BLACKLIST_SEED = [
   '招聘', '抽奖', '转发抽', '广告', '优惠', '打折', '求职', '招人'
 ];
 
-const DEFAULT_SETTINGS: MonitorSettings = { minEngagement: 500, trustedMinEngagement: 1000, twitterSplitKeywords: false };
+const DEFAULT_SETTINGS: MonitorSettings = { minEngagement: 500, trustedMinEngagement: 1000, splitKeywords: false };
 
 const normalizeHandle = (handle: string) => handle.replace(/^@+/, '').trim();
 
@@ -254,21 +254,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     setMonitorSettings({
       minEngagement: Math.floor(minEngagement),
       trustedMinEngagement: Math.floor(trustedMinEngagement),
-      twitterSplitKeywords: monitorSettings.twitterSplitKeywords
+      splitKeywords: monitorSettings.splitKeywords
     });
     flashMessage('阈值已保存');
   };
 
   const handleToggleSplitKeywords = async (value: boolean) => {
     setIsSavingSplit(true);
-    const success = await updateMonitorSetting('twitter_split_keywords', value ? 'true' : 'false');
+    const success = await updateMonitorSetting('split_keywords', value ? 'true' : 'false');
     setIsSavingSplit(false);
     if (!success) {
       flashMessage('保存分词搜索开关失败');
       return;
     }
-    setMonitorSettings(prev => ({ ...prev, twitterSplitKeywords: value }));
-    flashMessage(`Twitter 分词搜索已${value ? '开启' : '关闭'}`);
+    setMonitorSettings(prev => ({ ...prev, splitKeywords: value }));
+    flashMessage(`全量关键词搜索已${value ? '开启' : '关闭'}`);
   };
 
   const renderTrustedTab = () => (
@@ -504,37 +504,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
 
       <div className="space-y-3 rounded-lg border border-[#1e3a5f]/40 bg-[#0d1526]/40 p-4">
         <div className="flex items-center gap-2">
-          <p className="text-sm text-gray-300 font-medium">Per-keyword Twitter queries for broader coverage</p>
+          <p className="text-sm text-gray-300 font-medium">全量关键词搜索 / Split Keyword Search</p>
           <div className="group relative">
             <button
               type="button"
               className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#3b82f6]/60 text-[10px] font-bold text-[#93c5fd] hover:bg-[#3b82f6]/15 focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/40"
-              aria-label="Per-keyword Twitter queries for broader coverage"
+              aria-label="Split keyword search across platforms"
             >
               i
             </button>
             <div className="pointer-events-none absolute left-1/2 top-6 z-20 hidden w-80 -translate-x-1/2 rounded-lg border border-[#1e3a5f]/80 bg-[#0a1628] p-3 text-xs text-gray-300 shadow-xl group-hover:block group-focus-within:block">
               <p>
-                When enabled, cron monitor queries Twitter once per keyword (instead of one combined query), improving recall beyond the single-call 100-result cap, but consuming more API quota.
+                When enabled, cron monitor queries each keyword independently across enabled platforms for broader recall, but consumes more API quota and time.
               </p>
               <p className="mt-2 text-gray-400">
-                启用后，监控任务会按关键词分别调用 Twitter（而不是合并成一次查询），可突破单次调用最多 100 条结果的限制、减少漏抓，但会消耗更多 API 配额。
+                启用后，监控任务会按关键词分别调用各平台 API（而不是合并成一次查询），覆盖更全面，但会消耗更多 API 配额和执行时间。
               </p>
             </div>
           </div>
         </div>
-        <p className="text-xs text-gray-500 mt-1">按关键词分别查询 Twitter，覆盖更全面</p>
+        <p className="text-xs text-gray-500 mt-1">按关键词分别查询各平台 API，覆盖更全面</p>
         <button
           type="button"
           disabled={isSavingSplit}
-          onClick={() => handleToggleSplitKeywords(!monitorSettings.twitterSplitKeywords)}
+          onClick={() => handleToggleSplitKeywords(!monitorSettings.splitKeywords)}
           className={`inline-flex items-center px-3 py-1.5 rounded-md border text-xs font-semibold transition-colors ${
-            monitorSettings.twitterSplitKeywords
+            monitorSettings.splitKeywords
               ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300'
               : 'border-gray-600/70 bg-gray-800/60 text-gray-300'
           } ${isSavingSplit ? 'opacity-60 cursor-not-allowed' : 'hover:border-indigo-400/70'}`}
         >
-          {monitorSettings.twitterSplitKeywords ? 'ON' : 'OFF'}
+          {monitorSettings.splitKeywords ? 'ON' : 'OFF'}
         </button>
       </div>
 
@@ -604,7 +604,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
               onClick={() => setActiveTab('threshold')}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'threshold' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
             >
-              互动阈值
+              互动阈值设置
             </button>
             <button
               onClick={() => setActiveTab('about')}

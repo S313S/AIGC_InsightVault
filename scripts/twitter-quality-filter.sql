@@ -40,7 +40,7 @@ set value = excluded.value,
     updated_at = now();
 
 insert into monitor_settings (key, value)
-values ('twitter_split_keywords', 'false')
+values ('split_keywords', 'false')
 on conflict (key) do update
 set value = excluded.value,
     updated_at = now();

@@ -115,7 +115,7 @@ export interface QualityKeyword {
 export interface MonitorSettings {
   minEngagement: number;
   trustedMinEngagement: number;
-  twitterSplitKeywords: boolean;
+  splitKeywords: boolean;
 }
 
 export interface ChatMessage {
