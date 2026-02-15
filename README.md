@@ -15,7 +15,15 @@ View your app in AI Studio: https://ai.studio/apps/drive/1kKnUAfJ9j-8NUlTuLW57Ms
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Set required env vars in `.env` (or Vercel project env):
+   - `VITE_GEMINI_API_KEY`
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+   - `X_API_BEARER_TOKEN` (Twitter/X fetch & search)
+   - `JUSTONEAPI_TOKEN` and/or `TIKHUB_API_TOKEN` (Xiaohongshu fetch/search, supports fallback)
+   - Optional: `XHS_NOTE_PROVIDER=auto|justone|tikhub` (default `auto`, for single-note fetch)
+   - Optional: `XHS_SEARCH_PROVIDER=auto|justone|tikhub` (default `auto`, for keyword search)
+   - Optional: `TIKHUB_XHS_SEARCH_PATH` (default `/api/v1/xiaohongshu/web_v2/fetch_search_notes`)
 3. Run the app:
    `npm run dev`
  

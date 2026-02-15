@@ -2,6 +2,8 @@
 // Path: /api/search-social
 
 const API_BASE = 'https://api.justoneapi.com';
+const API_BASE_TIKHUB = 'https://api.tikhub.io';
+const TIKHUB_SEARCH_PATH_DEFAULT = '/api/v1/xiaohongshu/web_v2/fetch_search_notes';
 
 export default async function handler(req, res) {
     // CORS headers
@@ -24,13 +26,18 @@ export default async function handler(req, res) {
             return res.status(400).json({ error: 'keyword is required' });
         }
 
-        const token = process.env.JUSTONEAPI_TOKEN;
-        if (!token) {
-            return res.status(500).json({ error: 'API token not configured' });
-        }
+        const justOneToken = process.env.JUSTONEAPI_TOKEN;
+        const tikhubToken = process.env.TIKHUB_API_TOKEN;
 
         if (platform === 'xiaohongshu') {
-            const results = await searchXiaohongshu(keyword, page, sort, noteType, noteTime, token, limit);
+            if (!justOneToken && !tikhubToken) {
+                return res.status(500).json({ error: 'Xiaohongshu API token not configured (JUSTONEAPI_TOKEN or TIKHUB_API_TOKEN)' });
+            }
+            const results = await searchXiaohongshu(keyword, page, sort, noteType, noteTime, {
+                justOneToken,
+                tikhubToken,
+                limit
+            });
             return res.status(200).json(results);
         }
 
@@ -47,8 +54,34 @@ export default async function handler(req, res) {
     }
 }
 
-async function searchXiaohongshu(keyword, page, sort, noteType, noteTime, token, limit) {
-    // Build search URL
+const parseMaybeJson = (value) => {
+    if (typeof value !== 'string') return value;
+    try {
+        return JSON.parse(value);
+    } catch {
+        return value;
+    }
+};
+
+const extractTikhubSearchNotes = (payload) => {
+    const wrapper = parseMaybeJson(payload?.data);
+    if (!wrapper || typeof wrapper !== 'object') return [];
+
+    const candidates = [
+        wrapper?.items,
+        wrapper?.data?.items,
+        wrapper?.notes,
+        wrapper?.note_list,
+        wrapper?.feeds
+    ];
+    const list = candidates.find(Array.isArray) || [];
+
+    return list
+        .map((item) => (item && typeof item === 'object' && item.note ? item.note : item))
+        .filter((note) => note && typeof note === 'object' && note.id);
+};
+
+async function searchXiaohongshuViaJustOne(keyword, page, sort, noteType, noteTime, token, limit) {
     let url = `${API_BASE}/api/xiaohongshu/search-note/v2?token=${token}&keyword=${encodeURIComponent(keyword)}&page=${page}&sort=${sort}&noteType=${noteType}`;
 
     if (noteTime) {
@@ -77,6 +110,76 @@ async function searchXiaohongshu(keyword, page, sort, noteType, noteTime, token,
         page,
         results: notes,
     };
+}
+
+async function searchXiaohongshuViaTikhub(keyword, page, sort, noteType, noteTime, token, limit) {
+    const params = new URLSearchParams({
+        keyword: String(keyword || ''),
+        page: String(page || 1),
+        sort: String(sort || 'general'),
+        noteType: String(noteType || '_0'),
+    });
+    if (noteTime) params.set('noteTime', String(noteTime));
+
+    const path = process.env.TIKHUB_XHS_SEARCH_PATH || TIKHUB_SEARCH_PATH_DEFAULT;
+    const endpoint = `${API_BASE_TIKHUB}${path}?${params.toString()}`;
+
+    const response = await fetch(endpoint, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(payload?.message_zh || payload?.message || `TikHub API error: ${response.status}`);
+    }
+    if (payload?.code !== 200) {
+        throw new Error(payload?.message_zh || payload?.message || `TikHub API error (code: ${payload?.code})`);
+    }
+
+    let notes = extractTikhubSearchNotes(payload).map(mapSearchResult);
+    if (limit && Number.isFinite(Number(limit))) {
+        notes = notes.slice(0, Number(limit));
+    }
+
+    return {
+        total: notes.length,
+        page,
+        results: notes,
+    };
+}
+
+async function searchXiaohongshu(keyword, page, sort, noteType, noteTime, options) {
+    const { justOneToken, tikhubToken, limit } = options || {};
+    const preferredProvider = String(process.env.XHS_SEARCH_PROVIDER || 'auto').toLowerCase();
+    const providers = [];
+
+    if (preferredProvider === 'tikhub') {
+        if (tikhubToken) providers.push('tikhub');
+        if (justOneToken) providers.push('justone');
+    } else if (preferredProvider === 'justone') {
+        if (justOneToken) providers.push('justone');
+        if (tikhubToken) providers.push('tikhub');
+    } else {
+        if (justOneToken) providers.push('justone');
+        if (tikhubToken) providers.push('tikhub');
+    }
+
+    let lastErr = null;
+    for (const provider of providers) {
+        try {
+            if (provider === 'justone') {
+                return await searchXiaohongshuViaJustOne(keyword, page, sort, noteType, noteTime, justOneToken, limit);
+            }
+            if (provider === 'tikhub') {
+                return await searchXiaohongshuViaTikhub(keyword, page, sort, noteType, noteTime, tikhubToken, limit);
+            }
+        } catch (err) {
+            lastErr = err;
+        }
+    }
+
+    throw lastErr || new Error('All Xiaohongshu providers failed');
 }
 
 async function searchTwitter(keyword, limit) {

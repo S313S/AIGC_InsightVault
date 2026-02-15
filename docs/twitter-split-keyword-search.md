@@ -4,6 +4,11 @@
 
 ---
 
+快速参考（通俗版）：
+- `docs/cron-monitor-response-guide.md`（`/api/cron-monitor` 返回字段说明 + 信任账号排查）
+
+---
+
 ## 1. Problem Description / 问题描述
 
 ### Current Behavior / 当前行为

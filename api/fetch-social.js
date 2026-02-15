@@ -1,5 +1,7 @@
-// Vercel Serverless Function: Fetch Social Media Content via JustOneAPI
-// Environment Variable Required: JUSTONEAPI_TOKEN
+// Vercel Serverless Function: Fetch Social Media Content via multi-provider upstream APIs
+// Environment Variables:
+// - XHS: JUSTONEAPI_TOKEN and/or TIKHUB_API_TOKEN
+// - X: X_API_BEARER_TOKEN
 
 export default async function handler(req, res) {
     // CORS headers
@@ -21,10 +23,8 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'URL is required' });
     }
 
-    const token = process.env.JUSTONEAPI_TOKEN;
-    if (!token) {
-        return res.status(500).json({ error: 'API token not configured' });
-    }
+    const justOneToken = process.env.JUSTONEAPI_TOKEN;
+    const tikhubToken = process.env.TIKHUB_API_TOKEN;
 
     try {
         // Detect platform and extract ID
@@ -37,9 +37,17 @@ export default async function handler(req, res) {
         let apiResponse;
 
         if (parsed.platform === 'xiaohongshu') {
-            apiResponse = await fetchXiaohongshu(parsed.id, token, parsed.originalUrl, parsed.xsecToken);
+            if (!justOneToken && !tikhubToken) {
+                return res.status(500).json({ error: 'Xiaohongshu API token not configured (JUSTONEAPI_TOKEN or TIKHUB_API_TOKEN)' });
+            }
+            apiResponse = await fetchXiaohongshu(parsed.id, {
+                justOneToken,
+                tikhubToken,
+                originalUrl: parsed.originalUrl,
+                xsecToken: parsed.xsecToken
+            });
         } else if (parsed.platform === 'twitter') {
-            apiResponse = await fetchTwitter(parsed.id, token);
+            apiResponse = await fetchTwitter(parsed.id);
         }
 
         // Map to unified format
@@ -117,8 +125,10 @@ function parseUrl(input) {
 // ============ API Calls ============
 
 const API_BASE_XHS = 'https://api.justoneapi.com'; // JustOneAPI prod-global for Xiaohongshu
+const API_BASE_TIKHUB = 'https://api.tikhub.io';
 const XHS_PRIMARY_NOTE_DETAIL = '/api/xiaohongshu-pgy/api/solar/note/noteId/detail/v1';
 const XHS_LEGACY_NOTE_DETAIL = '/api/xiaohongshu/get-note-detail/v1';
+const TIKHUB_NOTE_DETAIL_V2 = '/api/v1/xiaohongshu/web_v2/fetch_feed_notes_v2';
 
 // Step 1: Convert share URL to get real noteId (only for xhslink.com short links)
 async function transferShareUrl(shareUrl, token) {
@@ -142,36 +152,44 @@ async function transferShareUrl(shareUrl, token) {
     return data.data;
 }
 
-async function fetchXiaohongshu(noteId, token, originalUrl, incomingXsecToken) {
-    // If original URL is a xhslink.com short link, transfer it first to get real noteId
-    let xsecToken = incomingXsecToken || null;
-    if (originalUrl && originalUrl.includes('xhslink.com')) {
-        const transferResult = await transferShareUrl(originalUrl, token);
+async function resolveXhsNoteId(noteId, originalUrl, xsecToken, justOneToken) {
+    let resolvedId = noteId;
+    let resolvedXsecToken = xsecToken || null;
 
-        // Try to get noteId directly, or extract from redirect_url
+    // If original URL is a xhslink.com short link, use JustOne transfer API to resolve real noteId.
+    if (!resolvedId && originalUrl && originalUrl.includes('xhslink.com')) {
+        if (!justOneToken) {
+            throw new Error('Short-link resolution requires JUSTONEAPI_TOKEN');
+        }
+
+        const transferResult = await transferShareUrl(originalUrl, justOneToken);
+
         if (transferResult && transferResult.noteId) {
-            noteId = transferResult.noteId;
+            resolvedId = transferResult.noteId;
         } else if (transferResult && transferResult.redirect_url) {
-            // Extract noteId from redirect_url like: /discovery/item/697877ba0000000009038355
             const noteMatch = transferResult.redirect_url.match(/\/(?:discovery\/item|explore)\/([a-zA-Z0-9]+)/);
             if (noteMatch) {
-                noteId = noteMatch[1];
+                resolvedId = noteMatch[1];
             } else {
                 throw new Error(`Cannot extract noteId from redirect_url: ${transferResult.redirect_url}`);
             }
-            // Extract xsec_token from redirect_url
             const tokenMatch = transferResult.redirect_url.match(/xsec_token=([^&]+)/);
             if (tokenMatch) {
-                xsecToken = decodeURIComponent(tokenMatch[1]);
+                resolvedXsecToken = decodeURIComponent(tokenMatch[1]);
             }
         } else {
             throw new Error(`Transfer API returned unexpected format: ${JSON.stringify(transferResult)}`);
         }
     }
 
-    if (!noteId) {
+    if (!resolvedId) {
         throw new Error('noteId is required to fetch Xiaohongshu content');
     }
+
+    return { noteId: resolvedId, xsecToken: resolvedXsecToken };
+}
+
+async function fetchXiaohongshuFromJustOne(noteId, token, xsecToken) {
 
     const fetchXhsDetail = async (apiPath, retries = 1, retryDelayMs = 250) => {
         let lastErr = null;
@@ -216,7 +234,83 @@ async function fetchXiaohongshu(noteId, token, originalUrl, incomingXsecToken) {
     }
 }
 
-async function fetchTwitter(tweetId, token) {
+async function fetchXiaohongshuFromTikhub(noteId, token) {
+    const endpoint = `${API_BASE_TIKHUB}${TIKHUB_NOTE_DETAIL_V2}?note_id=${encodeURIComponent(noteId)}`;
+    const response = await fetch(endpoint, {
+        headers: {
+            'Authorization': `Bearer ${token}`,
+        }
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(payload?.message_zh || payload?.message || `TikHub API error: ${response.status}`);
+    }
+    if (payload?.code !== 200) {
+        throw new Error(payload?.message_zh || payload?.message || `TikHub API error (code: ${payload?.code})`);
+    }
+
+    let wrapper = payload?.data;
+    if (typeof wrapper === 'string') {
+        try {
+            wrapper = JSON.parse(wrapper);
+        } catch {
+            throw new Error('TikHub returned invalid data payload');
+        }
+    }
+    if (!wrapper || typeof wrapper !== 'object') {
+        throw new Error('TikHub API returned empty data');
+    }
+
+    const noteData = wrapper?.note_list?.[0] || wrapper;
+    noteData._user = wrapper?.user;
+    return noteData;
+}
+
+async function fetchXiaohongshu(noteId, options) {
+    const { justOneToken, tikhubToken, originalUrl, xsecToken } = options || {};
+    const resolved = await resolveXhsNoteId(noteId, originalUrl, xsecToken, justOneToken);
+
+    const preferredProvider = String(process.env.XHS_NOTE_PROVIDER || 'auto').toLowerCase();
+    const availableProviders = [];
+
+    if (preferredProvider === 'tikhub') {
+        if (tikhubToken) availableProviders.push('tikhub');
+        if (justOneToken) availableProviders.push('justone');
+    } else if (preferredProvider === 'justone') {
+        if (justOneToken) availableProviders.push('justone');
+        if (tikhubToken) availableProviders.push('tikhub');
+    } else {
+        if (justOneToken) availableProviders.push('justone');
+        if (tikhubToken) availableProviders.push('tikhub');
+    }
+
+    if (availableProviders.length === 0) {
+        throw new Error('No Xiaohongshu provider token configured');
+    }
+
+    let lastError = null;
+    for (const provider of availableProviders) {
+        try {
+            if (provider === 'justone') {
+                const data = await fetchXiaohongshuFromJustOne(resolved.noteId, justOneToken, resolved.xsecToken);
+                data._provider = 'justone';
+                return data;
+            }
+            if (provider === 'tikhub') {
+                const data = await fetchXiaohongshuFromTikhub(resolved.noteId, tikhubToken);
+                data._provider = 'tikhub';
+                return data;
+            }
+        } catch (err) {
+            lastError = err;
+        }
+    }
+
+    throw lastError || new Error('All Xiaohongshu providers failed');
+}
+
+async function fetchTwitter(tweetId) {
     // Use official X API v2
     const xBearerToken = process.env.X_API_BEARER_TOKEN;
     if (!xBearerToken) {
@@ -367,7 +461,7 @@ async function mapToKnowledgeCard(data, platform) {
                 comments,
             },
             tags,
-            sourceUrl: data.noteLink || `https://www.xiaohongshu.com/explore/${noteId}`,
+            sourceUrl: data.noteLink || data.share_info?.link || data.mini_program_info?.webpage_url || data.qq_mini_program_info?.webpage_url || `https://www.xiaohongshu.com/explore/${noteId}`,
         };
     }
 
