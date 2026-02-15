@@ -503,7 +503,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
       </div>
 
       <div className="space-y-3 rounded-lg border border-[#1e3a5f]/40 bg-[#0d1526]/40 p-4">
-        <p className="text-sm text-gray-300 font-medium">Twitter 分词搜索 / Split Keyword Search</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm text-gray-300 font-medium">Split Keyword Search</p>
+          <div className="group relative">
+            <button
+              type="button"
+              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#3b82f6]/60 text-[10px] font-bold text-[#93c5fd] hover:bg-[#3b82f6]/15 focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/40"
+              aria-label="Split keyword search details"
+            >
+              i
+            </button>
+            <div className="pointer-events-none absolute left-1/2 top-6 z-20 hidden w-80 -translate-x-1/2 rounded-lg border border-[#1e3a5f]/80 bg-[#0a1628] p-3 text-xs text-gray-300 shadow-xl group-hover:block group-focus-within:block">
+              <p>
+                When enabled, cron monitor queries Twitter once per keyword (instead of one combined query), improving recall beyond the single-call 100-result cap, but consuming more API quota.
+              </p>
+              <p className="mt-2 text-gray-400">
+                启用后，监控任务会按关键词分别调用 Twitter（而不是合并成一次查询），可突破单次调用最多 100 条结果的限制、减少漏抓，但会消耗更多 API 配额。
+              </p>
+            </div>
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 mt-1">Twitter 分词搜索</p>
         <button
           type="button"
           disabled={isSavingSplit}
@@ -517,10 +537,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
           {monitorSettings.twitterSplitKeywords ? 'ON' : 'OFF'}
         </button>
         <p className="text-xs text-gray-500">
-          启用后，每个关键词会独立查询 Twitter API，覆盖更全面，但会消耗更多 API 配额。
+          Per-keyword Twitter queries for broader coverage.
         </p>
         <p className="text-xs text-gray-500">
-          When enabled, each keyword queries Twitter API independently for broader coverage, but uses more API quota.
+          按关键词分别查询 Twitter，覆盖更全面。
         </p>
       </div>
 
