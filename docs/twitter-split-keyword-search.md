@@ -276,3 +276,92 @@ GET /api/cron-monitor?platform=twitter&split=1&limit=30&tasks=15&parallel=1
 
 4. **Dedup Pipeline Unchanged / 去重管道不变**: The entire downstream filtering pipeline (minInteraction → recent → AI relevance → quality keywords → URL dedup) remains identical in both modes. Only the raw tweet fetching strategy changes.
    整个下游过滤管道（minInteraction → recent → AI 相关性 → 质量关键词 → URL 去重）在两种模式下完全相同。仅原始推文获取策略不同。
+
+---
+
+## 7. Response Field Reference / 响应字段说明
+
+Use this section to quickly interpret `GET /api/cron-monitor` JSON results.
+
+用本节快速理解 `GET /api/cron-monitor` 的返回 JSON。
+
+### 7.1 Top-Level Summary Fields / 顶层汇总字段
+
+| Field | Meaning (EN) | 含义（中文） |
+|---|---|---|
+| `inserted` | Number of newly inserted trending rows in `knowledge_cards` | 本次新插入到 `knowledge_cards`（trending）的记录数 |
+| `updatedExisting` | Number of existing trending rows updated/rolled forward | 本次被更新（滚动刷新）的已有 trending 记录数 |
+| `updatedTasks` | Number of tracking tasks updated | 本次更新的 tracking task 数量（当前实现通常为 0） |
+| `candidates` | Final number of candidates after all filters and dedup | 完整过滤和去重后最终候选数 |
+| `tasksRun` | Number of task loops executed | 本次实际执行的任务循环数 |
+
+### 7.2 `effective` / 生效参数
+
+| Field | Meaning (EN) | 含义（中文） |
+|---|---|---|
+| `days` | Effective general recency window (days) | 通用内容的时间窗口（天） |
+| `twitter_days` | Effective Twitter recency window (days) | Twitter 专用时间窗口（天） |
+| `minInteraction` | Interaction threshold for normal accounts | 普通账号互动阈值（点赞+评论） |
+| `trustedMinInteraction` | Interaction threshold for trusted accounts | 信任账号互动阈值（点赞+评论） |
+| `qualityBypassInteraction` | High-engagement bypass threshold for quality keyword gate | 超高互动内容绕过质量词限制的阈值 |
+| `limit` | Max results per Twitter API call | 每次 Twitter API 调用最大返回数 |
+| `tasks` | Effective `tasks` param | 生效的 `tasks` 参数 |
+| `parallel` | Whether platform/keyword queries run concurrently | 是否并发执行查询 |
+| `split` | Whether per-keyword split mode is enabled | 是否启用分词模式（按关键词独立查询） |
+| `twitter_require_terms` | Required query terms appended to Twitter search | Twitter 查询中附加的必含词 |
+| `qualityPositiveCount` | Count of positive quality keywords in DB | 正向质量关键词数量 |
+| `qualityBlacklistCount` | Count of blacklist quality keywords in DB | 黑名单质量关键词数量 |
+| `trustedHandles` | Count of trusted Twitter accounts loaded from DB | 从 DB 加载到的信任 Twitter 账号数量 |
+
+### 7.3 Funnel Fields / 漏斗字段
+
+| Field | Meaning (EN) | 含义（中文） |
+|---|---|---|
+| `funnel.fetched` | Raw fetched item count before filtering | 过滤前原始抓取总数 |
+| `funnel.afterMinInteraction` | Remaining after interaction threshold | 互动阈值过滤后剩余数 |
+| `funnel.afterRecent` | Remaining after recency filter | 时效过滤后剩余数 |
+| `funnel.afterAI` | Remaining after AI relevance filter | AI 相关性过滤后剩余数 |
+| `funnel.afterQuality` | Remaining after quality-keyword filter | 质量关键词过滤后剩余数 |
+| `funnel.candidates` | Final candidates after dedup | 最终候选（去重后） |
+
+### 7.4 Platform-Level Fields / 平台级字段
+
+| Field | Meaning (EN) | 含义（中文） |
+|---|---|---|
+| `platformStats[].count` | Total fetched items for the platform | 该平台总抓取数 |
+| `platformStats[].keywordCount` | Count fetched via keyword query path | 关键词查询路径抓取数 |
+| `platformStats[].trustedCount` | Count fetched via trusted-account query path | 信任账号查询路径抓取数 |
+| `platformStats[].split` | Whether split mode was active for this run | 本次该平台是否启用 split |
+| `platformStats[].keywordTasks` | Number of keyword tasks used by Twitter fetch | Twitter 抓取使用的关键词任务数 |
+| `platformTotals.*.fetched` | Platform fetched total (same stage as funnel fetched) | 平台抓取总数（同漏斗 fetched 阶段） |
+| `platformTotals.*.output` | Platform output count after quality stage | 平台在质量过滤后的输出数 |
+| `platformFunnel.*` | Per-platform funnel counters by stage | 各平台分阶段漏斗统计 |
+
+### 7.5 Debug/Diagnostics Fields / 调试字段
+
+| Field | Meaning (EN) | 含义（中文） |
+|---|---|---|
+| `twitterSamples` | Small sample of fetched Twitter items for spot-checking | Twitter 抓取样本（用于快速抽查） |
+| `generatedCoverCount` | Number of cover images generated this run | 本次自动生成封面数量 |
+| `engagementDebug` | Sample-level interaction-threshold decisions | 互动阈值判定样本（不是全量） |
+| `platformErrors` | Platform-level errors collected during this run | 本次运行中的平台错误列表 |
+
+### 7.6 Trusted Accounts FAQ / 信任账号常见疑问
+
+**Q: Why does it look like trusted accounts were not collected?**
+
+**问：为什么看起来像没有采集到信任账号？**
+
+Check these fields first:
+
+先看以下字段：
+
+1. `effective.trustedHandles` > 0 means trusted handles were loaded from DB.
+2. `platformStats[].trustedCount` > 0 means trusted-account query fetched data successfully.
+3. `engagementDebug` is only a sample, not the full set.
+4. Trusted items still go through downstream filters (recent/AI/quality/dedup), so fetched != final output.
+
+1. `effective.trustedHandles` > 0 表示已从 DB 读到信任账号配置。
+2. `platformStats[].trustedCount` > 0 表示信任账号查询确实抓到了数据。
+3. `engagementDebug` 只是样本，不是全量。
+4. 信任账号内容仍需经过后续过滤（时效/AI/质量/去重），因此“抓到”不等于“最终输出”。
