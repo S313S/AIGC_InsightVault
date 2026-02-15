@@ -518,6 +518,8 @@ export default async function handler(req, res) {
     const overrideLimit = Number(getQueryParam('limit'));
     const overrideTasks = Number(getQueryParam('tasks'));
     const overrideParallel = String(getQueryParam('parallel') || '').toLowerCase();
+    const overrideSplit = String(getQueryParam('split') || '').toLowerCase();
+    const hasOverrideSplit = overrideSplit !== '';
     const overridePlatform = String(getQueryParam('platform') || '').toLowerCase();
     const rebuildRaw = String(getQueryParam('rebuild') || '').toLowerCase();
     const rebuildOnly = rebuildRaw === '1' || rebuildRaw === 'true';
@@ -531,6 +533,7 @@ export default async function handler(req, res) {
     const effectiveLimit = Number.isFinite(overrideLimit) && overrideLimit > 0 ? overrideLimit : DEFAULT_LIMIT;
     const effectiveMaxTasks = Number.isFinite(overrideTasks) && overrideTasks > 0 ? overrideTasks : MAX_TASKS_PER_RUN;
     const parallel = overrideParallel === '1' || overrideParallel === 'true';
+    let effectiveSplit = overrideSplit === '1' || overrideSplit === 'true';
     const effectivePlatforms = overridePlatform === 'twitter'
       ? ['twitter']
       : overridePlatform === 'xiaohongshu' || overridePlatform === 'xhs'
@@ -620,13 +623,14 @@ export default async function handler(req, res) {
     const { data: settingRows, error: settingsError } = await supabase
       .from('monitor_settings')
       .select('key, value')
-      .in('key', ['min_engagement', 'trusted_min_engagement']);
+      .in('key', ['min_engagement', 'trusted_min_engagement', 'twitter_split_keywords']);
     if (settingsError) {
       console.warn('[cron-monitor] failed to read monitor_settings:', settingsError.message || settingsError);
     }
     const settingsMap = new Map((settingRows || []).map((row) => [row.key, row.value]));
     const dbMinRaw = Number(settingsMap.get('min_engagement'));
     const dbTrustedMinRaw = Number(settingsMap.get('trusted_min_engagement'));
+    const dbSplitRaw = String(settingsMap.get('twitter_split_keywords') || '').toLowerCase();
     if (!(Number.isFinite(overrideMin) && overrideMin >= 0)) {
       effectiveMinInteraction = Number.isFinite(dbMinRaw) && dbMinRaw >= 0
         ? dbMinRaw
@@ -636,6 +640,9 @@ export default async function handler(req, res) {
       effectiveTrustedMinInteraction = Number.isFinite(dbTrustedMinRaw) && dbTrustedMinRaw >= 0
         ? dbTrustedMinRaw
         : DEFAULT_TRUSTED_MIN_INTERACTION;
+    }
+    if (!hasOverrideSplit) {
+      effectiveSplit = dbSplitRaw === '1' || dbSplitRaw === 'true';
     }
 
     const { data: keywordRows, error: keywordError } = await supabase
@@ -674,6 +681,7 @@ export default async function handler(req, res) {
     }));
     const tasksToRun = keywordJobs.slice(0, effectiveMaxTasks);
     const twitterKeywordPool = DEFAULT_MONITOR_KEYWORDS.slice(0, effectiveMaxTasks);
+    const twitterSplitKeywordPool = [...DEFAULT_MONITOR_KEYWORDS];
     const twitterQueryOpts = {
       requireTerms: TWITTER_REQUIRE_TERMS
     };
@@ -719,7 +727,32 @@ export default async function handler(req, res) {
               platformErrors.push({ platform: 'twitter', error: 'X API Bearer Token not configured' });
               return [];
             }
-            const keywordResults = await searchTwitter(twitterKeywordPool, effectiveLimit, xBearerToken, twitterQueryOpts);
+            let keywordResults = [];
+            if (effectiveSplit) {
+              const runKeywordSearch = async (keyword) => {
+                try {
+                  return await searchTwitter([keyword], effectiveLimit, xBearerToken, twitterQueryOpts);
+                } catch (err) {
+                  platformErrors.push({
+                    platform: 'twitter',
+                    error: `split-keyword "${keyword}": ${err.message || 'Unknown error'}`
+                  });
+                  return [];
+                }
+              };
+
+              if (parallel) {
+                const splitResponses = await Promise.all(twitterSplitKeywordPool.map(runKeywordSearch));
+                keywordResults = splitResponses.flat();
+              } else {
+                for (const keyword of twitterSplitKeywordPool) {
+                  const oneKeywordResults = await runKeywordSearch(keyword);
+                  keywordResults.push(...oneKeywordResults);
+                }
+              }
+            } else {
+              keywordResults = await searchTwitter(twitterKeywordPool, effectiveLimit, xBearerToken, twitterQueryOpts);
+            }
             let trustedResults = [];
             if (!trustedQueryRan && trustedHandles.length > 0) {
               trustedQueryRan = true;
@@ -746,7 +779,9 @@ export default async function handler(req, res) {
               platform: 'twitter',
               count: results.length,
               keywordCount: keywordResults.length,
-              trustedCount: trustedResults.length
+              trustedCount: trustedResults.length,
+              split: effectiveSplit,
+              keywordTasks: effectiveSplit ? twitterSplitKeywordPool.length : twitterKeywordPool.length
             });
             platformTotals.twitter.fetched += results.length;
             return results;
@@ -920,6 +955,7 @@ export default async function handler(req, res) {
           minInteraction: effectiveMinInteraction,
           trustedMinInteraction: effectiveTrustedMinInteraction,
           qualityBypassInteraction: HIGH_ENGAGEMENT_QUALITY_BYPASS,
+          split: effectiveSplit,
           qualityPositiveCount: effectivePositiveKeywords.length,
           qualityBlacklistCount: effectiveBlacklistKeywords.length,
           trustedHandles: trustedHandles.length
@@ -1067,6 +1103,7 @@ export default async function handler(req, res) {
         limit: effectiveLimit,
         tasks: effectiveMaxTasks,
         parallel,
+        split: effectiveSplit,
         twitter_days: effectiveTwitterDays,
         twitter_require_terms: TWITTER_REQUIRE_TERMS,
         qualityPositiveCount: effectivePositiveKeywords.length,

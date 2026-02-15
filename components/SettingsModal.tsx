@@ -50,7 +50,7 @@ const BLACKLIST_SEED = [
   '招聘', '抽奖', '转发抽', '广告', '优惠', '打折', '求职', '招人'
 ];
 
-const DEFAULT_SETTINGS: MonitorSettings = { minEngagement: 500, trustedMinEngagement: 1000 };
+const DEFAULT_SETTINGS: MonitorSettings = { minEngagement: 500, trustedMinEngagement: 1000, twitterSplitKeywords: false };
 
 const normalizeHandle = (handle: string) => handle.replace(/^@+/, '').trim();
 
@@ -80,6 +80,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
 
   const [thresholdInput, setThresholdInput] = useState(String(DEFAULT_SETTINGS.minEngagement));
   const [trustedThresholdInput, setTrustedThresholdInput] = useState(String(DEFAULT_SETTINGS.trustedMinEngagement));
+  const [isSavingSplit, setIsSavingSplit] = useState(false);
 
   const positiveKeywords = useMemo(
     () => qualityKeywords.filter(k => k.type === 'positive'),
@@ -252,9 +253,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
 
     setMonitorSettings({
       minEngagement: Math.floor(minEngagement),
-      trustedMinEngagement: Math.floor(trustedMinEngagement)
+      trustedMinEngagement: Math.floor(trustedMinEngagement),
+      twitterSplitKeywords: monitorSettings.twitterSplitKeywords
     });
     flashMessage('阈值已保存');
+  };
+
+  const handleToggleSplitKeywords = async (value: boolean) => {
+    setIsSavingSplit(true);
+    const success = await updateMonitorSetting('twitter_split_keywords', value ? 'true' : 'false');
+    setIsSavingSplit(false);
+    if (!success) {
+      flashMessage('保存分词搜索开关失败');
+      return;
+    }
+    setMonitorSettings(prev => ({ ...prev, twitterSplitKeywords: value }));
+    flashMessage(`Twitter 分词搜索已${value ? '开启' : '关闭'}`);
   };
 
   const renderTrustedTab = () => (
@@ -486,6 +500,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         <div className="text-xs text-gray-400">
           当前值: <span className="text-gray-200">{monitorSettings.trustedMinEngagement}</span>
         </div>
+      </div>
+
+      <div className="space-y-3 rounded-lg border border-[#1e3a5f]/40 bg-[#0d1526]/40 p-4">
+        <p className="text-sm text-gray-300 font-medium">Twitter 分词搜索 / Split Keyword Search</p>
+        <button
+          type="button"
+          disabled={isSavingSplit}
+          onClick={() => handleToggleSplitKeywords(!monitorSettings.twitterSplitKeywords)}
+          className={`inline-flex items-center px-3 py-1.5 rounded-md border text-xs font-semibold transition-colors ${
+            monitorSettings.twitterSplitKeywords
+              ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300'
+              : 'border-gray-600/70 bg-gray-800/60 text-gray-300'
+          } ${isSavingSplit ? 'opacity-60 cursor-not-allowed' : 'hover:border-indigo-400/70'}`}
+        >
+          {monitorSettings.twitterSplitKeywords ? 'ON' : 'OFF'}
+        </button>
+        <p className="text-xs text-gray-500">
+          启用后，每个关键词会独立查询 Twitter API，覆盖更全面，但会消耗更多 API 配额。
+        </p>
+        <p className="text-xs text-gray-500">
+          When enabled, each keyword queries Twitter API independently for broader coverage, but uses more API quota.
+        </p>
       </div>
 
       <div className="pt-1">
