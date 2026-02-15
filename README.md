@@ -23,7 +23,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1kKnUAfJ9j-8NUlTuLW57Ms
    - `JUSTONEAPI_TOKEN` and/or `TIKHUB_API_TOKEN` (Xiaohongshu fetch/search, supports fallback)
    - Optional: `XHS_NOTE_PROVIDER=auto|justone|tikhub` (default `auto`, for single-note fetch)
    - Optional: `XHS_SEARCH_PROVIDER=auto|justone|tikhub` (default `auto`, for keyword search)
-   - Optional: `TIKHUB_XHS_SEARCH_PATH` (default `/api/v1/xiaohongshu/web_v2/fetch_search_notes`)
+   - Optional: `TIKHUB_XHS_SEARCH_PATH` (default `/api/v1/xiaohongshu/app/search_notes`)
 3. Run the app:
    `npm run dev`
  

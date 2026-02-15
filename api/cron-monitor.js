@@ -292,7 +292,7 @@ const getSupabaseClient = () => {
 
 const API_BASE_XHS = 'https://api.justoneapi.com';
 const API_BASE_TIKHUB = 'https://api.tikhub.io';
-const TIKHUB_SEARCH_PATH_DEFAULT = '/api/v1/xiaohongshu/web_v2/fetch_search_notes';
+const TIKHUB_SEARCH_PATH_DEFAULT = '/api/v1/xiaohongshu/app/search_notes';
 const DEFAULT_TIMEOUT_MS = 15000;
 
 const buildXhsImageUrl = (fileid) => {
@@ -399,6 +399,44 @@ const fetchJson = async (url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) => {
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+const toTikhubSortType = (sort) => {
+  const s = String(sort || '').trim();
+  if (!s) return 'general';
+  const map = {
+    general: 'general',
+    time_descending: 'time_descending',
+    popularity_descending: 'popularity_descending',
+    comment_descending: 'comment_descending',
+    collect_descending: 'collect_descending'
+  };
+  return map[s] || 'general';
+};
+
+const toTikhubNoteType = (noteType) => {
+  const s = String(noteType || '').trim();
+  if (!s || s === '_0') return '不限';
+  if (s === 'video' || s === '视频笔记' || s === '_1') return '视频笔记';
+  if (s === 'normal' || s === '普通笔记' || s === '_2') return '普通笔记';
+  return '不限';
+};
+
+const toTikhubNoteTime = (noteTime) => {
+  const s = String(noteTime || '').trim();
+  if (!s) return '不限';
+  const map = {
+    all: '不限',
+    any: '不限',
+    '24h': '一天内',
+    '7d': '一周内',
+    '6m': '半年内',
+    '一天内': '一天内',
+    '一周内': '一周内',
+    '半年内': '半年内',
+    '不限': '不限'
+  };
+  return map[s] || '不限';
+};
+
 const parseMaybeJson = (value) => {
   if (typeof value !== 'string') return value;
   try {
@@ -454,10 +492,10 @@ const searchXiaohongshuViaTikhub = async (keyword, page, sort, noteType, noteTim
   const params = new URLSearchParams({
     keyword: String(keyword || ''),
     page: String(page || 1),
-    sort: String(sort || 'general'),
-    noteType: String(noteType || '_0')
+    sort_type: toTikhubSortType(sort),
+    filter_note_type: toTikhubNoteType(noteType),
+    filter_note_time: toTikhubNoteTime(noteTime)
   });
-  if (noteTime) params.set('noteTime', String(noteTime));
 
   const path = process.env.TIKHUB_XHS_SEARCH_PATH || TIKHUB_SEARCH_PATH_DEFAULT;
   const endpoint = `${API_BASE_TIKHUB}${path}?${params.toString()}`;
@@ -492,8 +530,8 @@ const searchXiaohongshu = async (keyword, page, sort, noteType, noteTime, option
     if (justOneToken) providers.push('justone');
     if (tikhubToken) providers.push('tikhub');
   } else {
-    if (justOneToken) providers.push('justone');
     if (tikhubToken) providers.push('tikhub');
+    if (justOneToken) providers.push('justone');
   }
 
   let lastErr = null;
