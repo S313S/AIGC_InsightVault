@@ -504,7 +504,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
 
       <div className="space-y-3 rounded-lg border border-[#1e3a5f]/40 bg-[#0d1526]/40 p-4">
         <div className="flex items-center gap-2">
-          <p className="text-sm text-gray-300 font-medium">Per-keyword Twitter queries for broader coverage.</p>
+          <p className="text-sm text-gray-300 font-medium">Per-keyword Twitter queries for broader coverage</p>
           <div className="group relative">
             <button
               type="button"
@@ -523,7 +523,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
             </div>
           </div>
         </div>
-        <p className="text-xs text-gray-500 mt-1">按关键词分别查询 Twitter，覆盖更全面。</p>
+        <p className="text-xs text-gray-500 mt-1">按关键词分别查询 Twitter，覆盖更全面</p>
         <button
           type="button"
           disabled={isSavingSplit}
