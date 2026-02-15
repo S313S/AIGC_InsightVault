@@ -504,12 +504,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
 
       <div className="space-y-3 rounded-lg border border-[#1e3a5f]/40 bg-[#0d1526]/40 p-4">
         <div className="flex items-center gap-2">
-          <p className="text-sm text-gray-300 font-medium">Split Keyword Search</p>
+          <p className="text-sm text-gray-300 font-medium">Per-keyword Twitter queries for broader coverage.</p>
           <div className="group relative">
             <button
               type="button"
               className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#3b82f6]/60 text-[10px] font-bold text-[#93c5fd] hover:bg-[#3b82f6]/15 focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/40"
-              aria-label="Split keyword search details"
+              aria-label="Per-keyword Twitter queries for broader coverage"
             >
               i
             </button>
@@ -523,7 +523,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
             </div>
           </div>
         </div>
-        <p className="text-xs text-gray-500 mt-1">Twitter 分词搜索</p>
+        <p className="text-xs text-gray-500 mt-1">按关键词分别查询 Twitter，覆盖更全面。</p>
         <button
           type="button"
           disabled={isSavingSplit}
@@ -536,12 +536,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         >
           {monitorSettings.twitterSplitKeywords ? 'ON' : 'OFF'}
         </button>
-        <p className="text-xs text-gray-500">
-          Per-keyword Twitter queries for broader coverage.
-        </p>
-        <p className="text-xs text-gray-500">
-          按关键词分别查询 Twitter，覆盖更全面。
-        </p>
       </div>
 
       <div className="pt-1">
