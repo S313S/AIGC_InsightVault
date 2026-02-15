@@ -23,8 +23,10 @@ const MAX_TASKS_PER_RUN = 3;
 const XHS_DELAY_MS = 1000;
 const XHS_RETRIES = 2;
 const TWITTER_REQUIRE_TERMS = ['Claude', 'GPT', 'LLM', 'OpenAI', 'Anthropic', 'Gemini'];
-const COVER_PROMPT_MAX_LENGTH = 500;
+const SOFT_TIMEOUT_GUARD_MS = 260000;
 const HIGH_ENGAGEMENT_QUALITY_BYPASS = 5000;
+const FALLBACK_COVER_POOL_SIZE = 100;
+const FALLBACK_COVER_BASE_PATH = '/fallback-covers';
 const QUALITY_FALLBACK_POSITIVE = [
   'tutorial', 'workflow', 'tips', 'how to', 'step by step', 'guide', 'setup', 'build',
   'prompt engineering', 'use case', 'demo', 'walkthrough', 'comparison', 'review',
@@ -264,6 +266,23 @@ const normalizeSourceUrl = (url) => {
   return url.split('?')[0].trim();
 };
 
+const hashSeed = (value) => {
+  const input = String(value || '');
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = ((hash << 5) - hash) + input.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+};
+
+const getFallbackCoverPath = (seed) => {
+  const index = (hashSeed(seed) % FALLBACK_COVER_POOL_SIZE) + 1;
+  return `${FALLBACK_COVER_BASE_PATH}/cover-${String(index).padStart(3, '0')}.svg`;
+};
+
+const isFallbackCoverPath = (url) => String(url || '').includes(`${FALLBACK_COVER_BASE_PATH}/cover-`);
+
 const getSupabaseClient = () => {
   const url = process.env.VITE_SUPABASE_URL;
   const key = process.env.VITE_SUPABASE_ANON_KEY;
@@ -336,7 +355,10 @@ const mapTwitterSearchResult = (tweet, userById, mediaByKey) => {
     .map(m => m.url || m.preview_image_url)
     .filter(Boolean);
 
-  const coverImage = images[0] || '';
+  const sourceUrl = user.username
+    ? `https://twitter.com/${user.username}/status/${tweet.id}`
+    : `https://twitter.com/i/web/status/${tweet.id}`;
+  const coverImage = images[0] || getFallbackCoverPath(sourceUrl || tweet.id || user.username || '');
 
   return {
     noteId: tweet.id,
@@ -357,7 +379,7 @@ const mapTwitterSearchResult = (tweet, userById, mediaByKey) => {
     publishTime: tweet.created_at || '',
     xsecToken: '',
     platform: 'Twitter',
-    sourceUrl: user.username ? `https://twitter.com/${user.username}/status/${tweet.id}` : `https://twitter.com/i/web/status/${tweet.id}`,
+    sourceUrl,
   };
 };
 
@@ -375,13 +397,13 @@ const fetchJson = async (url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) => {
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-const searchXiaohongshu = async (keyword, page, sort, noteType, noteTime, token, limit) => {
+const searchXiaohongshu = async (keyword, page, sort, noteType, noteTime, token, limit, timeoutMs = DEFAULT_TIMEOUT_MS) => {
   let url = `${API_BASE_XHS}/api/xiaohongshu/search-note/v2?token=${token}&keyword=${encodeURIComponent(keyword)}&page=${page}&sort=${sort}&noteType=${noteType}`;
   if (noteTime) {
     url += `&noteTime=${encodeURIComponent(noteTime)}`;
   }
 
-  const { data } = await fetchJson(url);
+  const { data } = await fetchJson(url, {}, timeoutMs);
 
   if (data.code !== 0) {
     throw new Error(data.message || `Search API error (code: ${data.code})`);
@@ -444,50 +466,6 @@ const searchTwitter = async (keywordsOrKeyword, limit, bearerToken, queryOpts) =
   return searchTwitterByQuery(query, limit, bearerToken, 'relevancy');
 };
 
-const generateCoverImage = async (postText) => {
-  const apiKey = process.env.DASHSCOPE_API_KEY;
-  const appId = process.env.DASHSCOPE_APP_ID;
-  if (!apiKey || !appId) return '';
-
-  const endpoint = `https://dashscope.aliyuncs.com/api/v1/apps/${appId}/completion`;
-  const truncatedText = String(postText || '').slice(0, COVER_PROMPT_MAX_LENGTH);
-  if (!truncatedText) return '';
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      input: { prompt: truncatedText },
-      parameters: {},
-      debug: {}
-    }),
-  });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || data?.code) {
-    throw new Error(data?.message || `Bailian API error: ${response.status}`);
-  }
-
-  const output = data?.output || {};
-  if (Array.isArray(output.images) && output.images.length > 0) {
-    const firstImage = output.images[0]?.url || output.images[0] || '';
-    const sanitized = String(firstImage).trim();
-    return /^https?:\/\//i.test(sanitized) ? sanitized : '';
-  }
-
-  if (typeof output.text === 'string' && output.text) {
-    const markdownImg = output.text.match(/!\[.*?\]\((https?:\/\/[^\)]+)\)/);
-    if (markdownImg) return String(markdownImg[1]).trim();
-    const plainUrl = output.text.match(/(https?:\/\/[^\s\)]+\.(png|jpg|jpeg|webp|gif))/i);
-    if (plainUrl) return String(plainUrl[1]).trim();
-  }
-
-  return '';
-};
-
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -511,6 +489,9 @@ export default async function handler(req, res) {
   }
 
   try {
+    const runStartedAt = Date.now();
+    const isNearTimeout = () => (Date.now() - runStartedAt) >= SOFT_TIMEOUT_GUARD_MS;
+
     const overrideDays = Number(getQueryParam('days'));
     const overrideTwitterDays = Number(getQueryParam('twitter_days'));
     const overrideMin = Number(getQueryParam('min'));
@@ -707,6 +688,7 @@ export default async function handler(req, res) {
       candidates: 0
     };
     const engagementDebug = [];
+    let runtimeGuardTriggered = false;
     const snapshotId = new Date().toISOString();
     const snapshotTag = `snapshot:${snapshotId}`;
     const updatedTasks = [];
@@ -715,6 +697,11 @@ export default async function handler(req, res) {
     let trustedQueryRan = false;
 
     for (const task of tasksToRun) {
+      if (isNearTimeout()) {
+        runtimeGuardTriggered = true;
+        console.warn('[cron-monitor] runtime guard triggered before processing all tasks');
+        break;
+      }
       const platforms = (task.platforms && task.platforms.length > 0) ? task.platforms : DEFAULT_PLATFORMS;
       const runOne = async (p) => {
         const platformName = p === 'Twitter' || p === 'twitter' ? 'twitter' : 'xiaohongshu';
@@ -790,9 +777,12 @@ export default async function handler(req, res) {
             platformErrors.push({ platform: 'xiaohongshu', error: 'JustOneAPI token not configured' });
             return [];
           }
+          const xhsRetries = effectiveSplit ? 1 : XHS_RETRIES;
+          const xhsDelay = effectiveSplit ? 250 : XHS_DELAY_MS;
+          const xhsTimeoutMs = effectiveSplit ? 8000 : DEFAULT_TIMEOUT_MS;
           let results = [];
           let lastError = null;
-          for (let attempt = 0; attempt <= XHS_RETRIES; attempt += 1) {
+          for (let attempt = 0; attempt <= xhsRetries; attempt += 1) {
             try {
               results = await searchXiaohongshu(
                 task.keyword,
@@ -801,20 +791,21 @@ export default async function handler(req, res) {
                 '_0',
                 undefined,
                 justOneToken,
-                effectiveLimit
+                effectiveLimit,
+                xhsTimeoutMs
               );
               lastError = null;
               break;
             } catch (err) {
               lastError = err;
-              await sleep(XHS_DELAY_MS);
+              await sleep(xhsDelay);
             }
           }
           if (lastError) {
             throw lastError;
           }
           // Rate-limit between XHS calls to reduce timeouts
-          await sleep(XHS_DELAY_MS);
+          await sleep(xhsDelay);
           platformStats.push({ platform: 'xiaohongshu', count: results.length });
           platformTotals.xiaohongshu.fetched += results.length;
           return results;
@@ -919,21 +910,15 @@ export default async function handler(req, res) {
     }
     const candidates = Array.from(uniqueByUrl.values());
     funnel.candidates = candidates.length;
-    let generatedCoverCount = 0;
-
+    let fallbackCoverCount = 0;
     for (const item of candidates) {
       if (item?.platform !== 'Twitter') continue;
-      if (item.coverImage) continue;
-      const textForImage = `${item.title || ''}\n${item.desc || ''}`.trim();
-      if (!textForImage) continue;
-      try {
-        const generated = await generateCoverImage(textForImage);
-        if (generated) {
-          item.coverImage = generated;
-          generatedCoverCount += 1;
-        }
-      } catch (coverErr) {
-        console.warn('[cron-monitor] failed to generate cover image:', coverErr.message || coverErr);
+      if (!item.coverImage) {
+        const seed = item.sourceUrl || item.noteId || `${item.author || ''}-${item.publishTime || ''}`;
+        item.coverImage = getFallbackCoverPath(seed);
+      }
+      if (isFallbackCoverPath(item.coverImage)) {
+        fallbackCoverCount += 1;
       }
     }
 
@@ -944,7 +929,7 @@ export default async function handler(req, res) {
         positiveKeywords: effectivePositiveKeywords.length,
         blacklistKeywords: effectiveBlacklistKeywords.length,
         trustedHandles: trustedHandles.length,
-        generatedCoverCount,
+        fallbackCoverCount,
         funnel
       });
       console.log('[cron-monitor] engagement debug sample', engagementDebug.slice(0, 10));
@@ -963,7 +948,9 @@ export default async function handler(req, res) {
         funnel,
         platformFunnel,
         platformStats,
-        generatedCoverCount,
+        fallbackCoverCount,
+        runtimeMs: Date.now() - runStartedAt,
+        runtimeGuardTriggered,
         engagementDebug: engagementDebug.slice(0, 20),
         platformErrors
       });
@@ -1115,7 +1102,9 @@ export default async function handler(req, res) {
       platformTotals,
       platformFunnel,
       twitterSamples,
-      generatedCoverCount,
+      fallbackCoverCount,
+      runtimeMs: Date.now() - runStartedAt,
+      runtimeGuardTriggered,
       engagementDebug: engagementDebug.slice(0, 20),
       platformErrors
     });

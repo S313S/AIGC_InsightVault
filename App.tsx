@@ -412,8 +412,10 @@ const App: React.FC = () => {
       }
     };
 
+    const isFallbackPoolCover = (url?: string) => /\/fallback-covers\/cover-\d{3}\.svg$/i.test(String(url || '').trim());
+
     const enrichCoverImage = async (target: KnowledgeCard) => {
-      if (target.coverImage) return target;
+      if (target.coverImage && !isFallbackPoolCover(target.coverImage)) return target;
       if (!target.sourceUrl) return target;
 
       try {

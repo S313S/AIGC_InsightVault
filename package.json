@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "generate:fallback-covers": "node scripts/generate-fallback-covers.mjs",
     "cleanup:dedupe:dry": "node scripts/cleanup-supabase-duplicates.mjs",
     "cleanup:dedupe": "node scripts/cleanup-supabase-duplicates.mjs --apply"
   },
