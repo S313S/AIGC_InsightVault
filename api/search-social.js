@@ -236,7 +236,10 @@ const getTwitterTimeRange = (noteTime) => {
     const s = String(noteTime || '').trim();
     if (!s || s === 'all' || s === '不限') return {};
 
-    const end = new Date();
+    // X recent search requires end_time to be at least 10s earlier than request time.
+    // Keep a wider buffer to avoid boundary errors under network latency / clock drift.
+    const SAFETY_MS = 20 * 1000;
+    const end = new Date(Date.now() - SAFETY_MS);
     const start = new Date(end);
     if (s === '一天内' || s === '24h') {
         start.setDate(start.getDate() - 1);
@@ -277,30 +280,48 @@ async function searchTwitter(keyword, limit, sort, noteTime) {
 
     const query = `${keyword} -is:retweet -is:reply`;
     const { startTime, endTime } = getTwitterTimeRange(noteTime);
-    const params = new URLSearchParams({
+    const baseParams = {
         query,
         max_results: String(candidateSize),
         'tweet.fields': 'created_at,public_metrics,author_id,attachments',
         expansions: 'author_id,attachments.media_keys',
         'user.fields': 'username,name,profile_image_url',
         'media.fields': 'type,url,preview_image_url'
-    });
-    if (startTime) params.set('start_time', startTime);
-    if (endTime) params.set('end_time', endTime);
+    };
 
-    const endpoint = `https://api.x.com/2/tweets/search/recent?${params.toString()}`;
+    const doSearch = async (useTimeRange) => {
+        const params = new URLSearchParams(baseParams);
+        if (useTimeRange && startTime) params.set('start_time', startTime);
+        if (useTimeRange && endTime) params.set('end_time', endTime);
 
-    const response = await fetch(endpoint, {
-        headers: {
-            'Authorization': `Bearer ${xBearerToken}`
+        const endpoint = `https://api.x.com/2/tweets/search/recent?${params.toString()}`;
+        const response = await fetch(endpoint, {
+            headers: {
+                'Authorization': `Bearer ${xBearerToken}`
+            }
+        });
+        const data = await response.json();
+
+        if (!response.ok || data.errors) {
+            const message = data.errors?.[0]?.message || `X API error: ${response.status}`;
+            const err = new Error(message);
+            err._twitterApiMessage = message;
+            throw err;
         }
-    });
+        return data;
+    };
 
-    const data = await response.json();
-
-    if (!response.ok || data.errors) {
-        const message = data.errors?.[0]?.message || `X API error: ${response.status}`;
-        throw new Error(message);
+    let data;
+    try {
+        data = await doSearch(Boolean(startTime || endTime));
+    } catch (error) {
+        const message = String(error?._twitterApiMessage || error?.message || '');
+        const mayBeTimeWindowIssue = /end_time|start_time|prior to the request time/i.test(message);
+        if (mayBeTimeWindowIssue && (startTime || endTime)) {
+            data = await doSearch(false);
+        } else {
+            throw error;
+        }
     }
 
     const tweets = data.data || [];
