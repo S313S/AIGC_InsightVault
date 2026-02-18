@@ -42,7 +42,7 @@ export default async function handler(req, res) {
         }
 
         if (platform === 'twitter') {
-            const results = await searchTwitter(keyword, limit);
+            const results = await searchTwitter(keyword, limit, sort, noteTime);
             return res.status(200).json(results);
         }
 
@@ -220,15 +220,75 @@ async function searchXiaohongshu(keyword, page, sort, noteType, noteTime, option
     throw lastErr || new Error('All Xiaohongshu providers failed');
 }
 
-async function searchTwitter(keyword, limit) {
+const normalizeTwitterSort = (sort) => {
+    const s = String(sort || '').trim();
+    const allowed = new Set([
+        'general',
+        'time_descending',
+        'popularity_descending',
+        'comment_descending',
+        'collect_descending',
+    ]);
+    return allowed.has(s) ? s : 'general';
+};
+
+const getTwitterTimeRange = (noteTime) => {
+    const s = String(noteTime || '').trim();
+    if (!s || s === 'all' || s === '不限') return {};
+
+    const end = new Date();
+    const start = new Date(end);
+    if (s === '一天内' || s === '24h') {
+        start.setDate(start.getDate() - 1);
+    } else if (s === '一周内' || s === '7d') {
+        start.setDate(start.getDate() - 7);
+    } else if (s === '半年内' || s === '6m') {
+        // /search/recent 最多支持近 7 天，这里做降级兼容。
+        start.setDate(start.getDate() - 7);
+    } else {
+        return {};
+    }
+
+    return {
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+    };
+};
+
+const getTwitterEngagementScore = (item) => {
+    const likes = Number(item?.metrics?.likes || 0);
+    const comments = Number(item?.metrics?.comments || 0);
+    const bookmarks = Number(item?.metrics?.bookmarks || 0);
+    const shares = Number(item?.metrics?.shares || 0);
+    return likes + comments * 2 + bookmarks + shares * 2;
+};
+
+async function searchTwitter(keyword, limit, sort, noteTime) {
     const xBearerToken = process.env.X_API_BEARER_TOKEN;
     if (!xBearerToken) {
         throw new Error('X API Bearer Token not configured');
     }
 
-    const maxResults = Math.min(Math.max(Number(limit) || 20, 10), 100);
-    const query = `${keyword} -is:retweet`;
-    const endpoint = `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=${maxResults}&tweet.fields=created_at,public_metrics,author_id,attachments&expansions=author_id,attachments.media_keys&user.fields=username,name,profile_image_url&media.fields=type,url,preview_image_url`;
+    const normalizedSort = normalizeTwitterSort(sort);
+    const requestedLimit = Math.min(Math.max(Number(limit) || 20, 1), 100);
+    const candidateSize = normalizedSort === 'popularity_descending'
+        ? Math.min(Math.max(requestedLimit * 5, 50), 100)
+        : Math.min(Math.max(requestedLimit, 10), 100);
+
+    const query = `${keyword} -is:retweet -is:reply`;
+    const { startTime, endTime } = getTwitterTimeRange(noteTime);
+    const params = new URLSearchParams({
+        query,
+        max_results: String(candidateSize),
+        'tweet.fields': 'created_at,public_metrics,author_id,attachments',
+        expansions: 'author_id,attachments.media_keys',
+        'user.fields': 'username,name,profile_image_url',
+        'media.fields': 'type,url,preview_image_url'
+    });
+    if (startTime) params.set('start_time', startTime);
+    if (endTime) params.set('end_time', endTime);
+
+    const endpoint = `https://api.x.com/2/tweets/search/recent?${params.toString()}`;
 
     const response = await fetch(endpoint, {
         headers: {
@@ -250,7 +310,24 @@ async function searchTwitter(keyword, limit) {
     const userById = new Map(users.map(u => [u.id, u]));
     const mediaByKey = new Map(media.map(m => [m.media_key, m]));
 
-    const results = tweets.map(tweet => mapTwitterSearchResult(tweet, userById, mediaByKey));
+    const mapped = tweets.map(tweet => mapTwitterSearchResult(tweet, userById, mediaByKey));
+    let results = mapped;
+
+    if (normalizedSort === 'time_descending') {
+        results = [...mapped].sort(
+            (a, b) => new Date(b.publishTime || 0).getTime() - new Date(a.publishTime || 0).getTime()
+        );
+    } else if (normalizedSort === 'popularity_descending') {
+        const ranked = [...mapped].sort((a, b) => getTwitterEngagementScore(b) - getTwitterEngagementScore(a));
+        const nonZero = ranked.filter(item => getTwitterEngagementScore(item) > 0);
+        results = nonZero.length >= Math.min(requestedLimit, 5) ? nonZero : ranked;
+    } else if (normalizedSort === 'comment_descending') {
+        results = [...mapped].sort((a, b) => Number(b.metrics.comments || 0) - Number(a.metrics.comments || 0));
+    } else if (normalizedSort === 'collect_descending') {
+        results = [...mapped].sort((a, b) => Number(b.metrics.bookmarks || 0) - Number(a.metrics.bookmarks || 0));
+    }
+
+    results = results.slice(0, requestedLimit);
 
     return {
         total: results.length,
