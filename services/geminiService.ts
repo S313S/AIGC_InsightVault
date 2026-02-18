@@ -15,14 +15,31 @@ const buildPromptPayload = (payload: { mode: string; message: string; context?: 
 
   if (mode === 'analysis') {
     const prompt = `
-Analyze the following social media post content about AI tools.
-Extract the following information in strict JSON format:
-1. "summary": A concise summary of the post (max 100 words).
-2. "usageScenarios": A list of specific use cases mentioned or implied.
-3. "coreKnowledge": Key insights, tips, or methodologies.
-4. "extractedPrompts": Any exact prompt text found in the content. If none, return an empty array.
+你是「帖子整理 Agent（小白版）」。
+目标：把帖子内容翻译成通俗中文，并给出可直接上手的操作建议。
 
-Content: "${message}"
+严格返回 JSON，不要返回任何额外文本，结构如下：
+{
+  "summary": "用通俗中文总结帖子，80-160字，避免术语堆砌",
+  "usageScenarios": [
+    "场景1：谁在什么情况下可以用（含1个具体动作）",
+    "场景2：..."
+  ],
+  "coreKnowledge": [
+    "知识点1：结论 + 为什么 + 怎么做（可执行）",
+    "知识点2：..."
+  ],
+  "extractedPrompts": ["从原文中提取的提示词原文，若无则空数组"]
+}
+
+规则：
+1) 必须使用简体中文。
+2) 若原文是英文或中英混合，先理解后翻译成中文表达。
+3) usageScenarios 至少 2 条，coreKnowledge 至少 2 条，每条要具体可执行。
+4) 若内容与 AI/技术实操关系弱，也要给出“如何判断是否值得跟进”的场景与方法，不能留空。
+
+帖子内容：
+"${message}"
     `.trim();
 
     return {
@@ -157,11 +174,39 @@ const toStringArray = (value: unknown): string[] => {
 };
 
 const normalizeAIAnalysis = (analysis: Partial<AIAnalysis>): AIAnalysis => ({
-  summary: typeof analysis.summary === 'string' ? analysis.summary : String(analysis.summary || ''),
-  usageScenarios: toStringArray(analysis.usageScenarios),
-  coreKnowledge: toStringArray(analysis.coreKnowledge),
+  summary: typeof analysis.summary === 'string' ? analysis.summary.trim() : String(analysis.summary || '').trim(),
+  usageScenarios: toStringArray(analysis.usageScenarios).slice(0, 8),
+  coreKnowledge: toStringArray(analysis.coreKnowledge).slice(0, 8),
   extractedPrompts: toStringArray(analysis.extractedPrompts)
 });
+
+const ensureAnalysisCompleteness = (analysis: AIAnalysis, sourceContent: string): AIAnalysis => {
+  const normalizedSource = (sourceContent || '').trim();
+  const fallbackSummary = normalizedSource
+    ? `这条内容主要在表达：${normalizedSource.slice(0, 120)}${normalizedSource.length > 120 ? '…' : ''}`
+    : '这条内容信息较少，建议先补充帖子正文再做深入分析。';
+
+  const usageScenarios = analysis.usageScenarios.length > 0
+    ? analysis.usageScenarios
+    : [
+      '场景：你刚接触这个主题。做法：先按帖子关键词搜3条高互动案例，对比共同步骤后再实操。',
+      '场景：你想判断是否值得投入。做法：先做一次10分钟小实验，用结果决定是否继续深挖。'
+    ];
+
+  const coreKnowledge = analysis.coreKnowledge.length > 0
+    ? analysis.coreKnowledge
+    : [
+      '先小范围验证再扩大投入：先做最小可行测试，记录输入、过程和结果，避免盲目照搬。',
+      '把经验变成可复用流程：沉淀为“目标-步骤-参数-结果-复盘”五段笔记，下次可直接套用。'
+    ];
+
+  return {
+    summary: analysis.summary || fallbackSummary,
+    usageScenarios,
+    coreKnowledge,
+    extractedPrompts: analysis.extractedPrompts
+  };
+};
 
 const extractLikelyJson = (text: string): string => {
   const start = text.indexOf('{');
@@ -172,7 +217,7 @@ const extractLikelyJson = (text: string): string => {
   return text;
 };
 
-const parseAIResponse = (responseText: string): AIAnalysis => {
+const parseAIResponse = (responseText: string, sourceContent: string): AIAnalysis => {
   try {
     // Attempt to extract JSON if it's wrapped in code blocks
     const jsonMatch = responseText.match(/```json\n([\s\S]*?)\n```/) || responseText.match(/```\n([\s\S]*?)\n```/);
@@ -180,23 +225,23 @@ const parseAIResponse = (responseText: string): AIAnalysis => {
     const trimmed = candidate.trim();
 
     try {
-      return normalizeAIAnalysis(JSON.parse(trimmed));
+      return ensureAnalysisCompleteness(normalizeAIAnalysis(JSON.parse(trimmed)), sourceContent);
     } catch {
       const extracted = extractLikelyJson(trimmed);
       const repaired = extracted
         .replace(/,\s*([}\]])/g, '$1') // remove trailing commas
         .replace(/\u0000/g, '');
-      return normalizeAIAnalysis(JSON.parse(repaired));
+      return ensureAnalysisCompleteness(normalizeAIAnalysis(JSON.parse(repaired)), sourceContent);
     }
   } catch (e) {
     console.error("Failed to parse Gemini response", e);
     // Fallback if JSON parsing fails
-    return normalizeAIAnalysis({
+    return ensureAnalysisCompleteness(normalizeAIAnalysis({
       summary: "AI 返回内容格式异常，已跳过结构化提取。你可以重试一次，或缩短输入内容。",
       usageScenarios: [],
       coreKnowledge: [],
       extractedPrompts: []
-    });
+    }), sourceContent);
   }
 };
 
@@ -247,7 +292,7 @@ export const analyzeContentWithGemini = async (content: string, toolName?: strin
       message: content
     });
 
-    return parseAIResponse(String(responseText || ''));
+    return parseAIResponse(String(responseText || ''), content);
 
   } catch (error) {
     console.error("Analysis Failed:", error);

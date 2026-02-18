@@ -43,6 +43,18 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
 
   if (!card) return null;
 
+  const fallbackUsageScenarios = [
+    '场景：你第一次接触这个主题。做法：先按帖子关键词搜索3条高互动案例，对比共性步骤后再动手。',
+    '场景：你不确定是否值得投入。做法：先做一次10分钟小实验，再根据结果决定是否继续。'
+  ];
+  const fallbackCoreKnowledge = [
+    '先做最小验证：优先小成本试错，记录输入与结果，避免盲目照搬。',
+    '沉淀可复用模板：按“目标-步骤-参数-结果-复盘”整理，后续可直接复用。'
+  ];
+  const usageScenarios = card.aiAnalysis?.usageScenarios?.length ? card.aiAnalysis.usageScenarios : fallbackUsageScenarios;
+  const coreKnowledge = card.aiAnalysis?.coreKnowledge?.length ? card.aiAnalysis.coreKnowledge : fallbackCoreKnowledge;
+  const summaryText = (card.aiAnalysis?.summary || '').trim() || '当前摘要为空，建议点击“交给 AI 处理”重新生成。';
+
   const handleCopy = (text: string, index: number) => {
     navigator.clipboard.writeText(text);
     setCopiedIndex(index);
@@ -225,26 +237,26 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
               <div className="p-1.5 bg-purple-500/20 rounded-md">
                 <Sparkles size={18} className="text-purple-400" />
               </div>
-              <h3 className="text-lg font-bold text-gray-100">AI 摘要</h3>
+              <h3 className="text-lg font-bold text-gray-100">帖子整理 Agent</h3>
             </div>
 
             <div className="bg-purple-500/10 p-4 rounded-xl border border-purple-500/20 text-gray-300 text-sm leading-relaxed mb-4">
-              {card.aiAnalysis.summary}
+              {summaryText}
             </div>
 
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <h4 className="text-sm font-semibold text-gray-200 mb-2">使用场景</h4>
+                <h4 className="text-sm font-semibold text-gray-200 mb-2">使用场景（可直接照做）</h4>
                 <ul className="list-disc list-inside space-y-1">
-                  {card.aiAnalysis.usageScenarios.map((s, i) => (
+                  {usageScenarios.map((s, i) => (
                     <li key={i} className="text-sm text-gray-400 pl-1">{s}</li>
                   ))}
                 </ul>
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-gray-200 mb-2">核心知识</h4>
+                <h4 className="text-sm font-semibold text-gray-200 mb-2">核心知识（小白版）</h4>
                 <ul className="list-disc list-inside space-y-1">
-                  {card.aiAnalysis.coreKnowledge.map((k, i) => (
+                  {coreKnowledge.map((k, i) => (
                     <li key={i} className="text-sm text-gray-400 pl-1">{k}</li>
                   ))}
                 </ul>

@@ -48,14 +48,31 @@ export default async function handler(req, res) {
 
         if (mode === 'analysis') {
             const prompt = `
-        Analyze the following social media post content about AI tools.
-        Extract the following information in strict JSON format:
-        1. "summary": A concise summary of the post (max 100 words).
-        2. "usageScenarios": A list of specific use cases mentioned or implied.
-        3. "coreKnowledge": Key insights, tips, or methodologies.
-        4. "extractedPrompts": Any exact prompt text found in the content. If none, return an empty array.
+你是「帖子整理 Agent（小白版）」。
+目标：把帖子内容翻译成通俗中文，并给出可直接上手的操作建议。
 
-        Content: "${message}"
+严格返回 JSON，不要返回任何额外文本，结构如下：
+{
+  "summary": "用通俗中文总结帖子，80-160字，避免术语堆砌",
+  "usageScenarios": [
+    "场景1：谁在什么情况下可以用（含1个具体动作）",
+    "场景2：..."
+  ],
+  "coreKnowledge": [
+    "知识点1：结论 + 为什么 + 怎么做（可执行）",
+    "知识点2：..."
+  ],
+  "extractedPrompts": ["从原文中提取的提示词原文，若无则空数组"]
+}
+
+规则：
+1) 必须使用简体中文。
+2) 若原文是英文或中英混合，先理解后翻译成中文表达。
+3) usageScenarios 至少 2 条，coreKnowledge 至少 2 条，每条要具体可执行。
+4) 若内容与 AI/技术实操关系弱，也要给出“如何判断是否值得跟进”的场景与方法，不能留空。
+
+帖子内容：
+"${message}"
       `;
 
             const response = await ai.models.generateContent({
