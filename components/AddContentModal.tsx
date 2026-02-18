@@ -79,7 +79,9 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
         let contentToAnalyze = rawText;
 
         // Call Gemini for AI analysis
-        const analysis = await analyzeContentWithGemini(contentToAnalyze);
+        const analysis = await analyzeContentWithGemini(contentToAnalyze, {
+            imageUrls: (fetchedData?.images || []).filter(Boolean)
+        });
 
         // Use fetched data if available, otherwise fallback
         const extractedTags = (contentToAnalyze || '')
@@ -108,6 +110,7 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
             author: fetchedData?.author || '我',
             date: new Date().toLocaleDateString(),
             coverImage: fetchedData?.coverImage || 'https://picsum.photos/400/300?random=' + Date.now(),
+            images: fetchedData?.images || [],
             metrics: fetchedData?.metrics || { likes: 0, bookmarks: 0, comments: 0 },
             contentType: ContentType.ToolReview,
             rawContent: contentToAnalyze,

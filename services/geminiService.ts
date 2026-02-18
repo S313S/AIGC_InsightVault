@@ -280,7 +280,11 @@ const parseGeminiErrorInfo = (error: unknown): { isQuotaExceeded: boolean; retry
   return { isQuotaExceeded, retrySeconds };
 };
 
-export const analyzeContentWithGemini = async (content: string, toolName?: string): Promise<AIAnalysis> => {
+export const analyzeContentWithGemini = async (
+  content: string,
+  options?: { imageUrls?: string[] },
+  toolName?: string
+): Promise<AIAnalysis> => {
   // If no API key locally AND running locally, use mock
   // But strictly, we check if we can make the call. 
   // For Vercel, the key is on server, so client might not have it.
@@ -289,7 +293,8 @@ export const analyzeContentWithGemini = async (content: string, toolName?: strin
   try {
     const responseText = await callProxyAPI({
       mode: 'analysis',
-      message: content
+      message: content,
+      imageUrls: (options?.imageUrls || []).filter(Boolean)
     });
 
     return parseAIResponse(String(responseText || ''), content);

@@ -156,6 +156,7 @@ const App: React.FC = () => {
       author: result.author,
       date: result.publishTime || '',
       coverImage: result.coverImage || result.images?.[0] || '',
+      images: result.images || [],
       metrics: result.metrics,
       contentType: ContentType.PromptShare,
       rawContent: result.desc || '',
@@ -395,7 +396,17 @@ const App: React.FC = () => {
       if (!content) return target;
 
       try {
-        const analysis = await analyzeContentWithGemini(content);
+        let imageUrls = (target.images || []).filter(Boolean);
+        if (imageUrls.length === 0 && target.sourceUrl) {
+          try {
+            const fetched = await fetchSocialContent(target.sourceUrl);
+            imageUrls = (fetched?.images || []).filter(Boolean);
+          } catch (err) {
+            console.warn('Fetch source images for analysis failed:', err);
+          }
+        }
+
+        const analysis = await analyzeContentWithGemini(content, { imageUrls });
         const summary = analysis?.summary?.trim() || target.aiAnalysis?.summary || '';
         return {
           ...target,

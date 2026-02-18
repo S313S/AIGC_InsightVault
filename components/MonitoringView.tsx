@@ -88,10 +88,30 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
     // 过滤选项状态
     const [minInteraction, setMinInteraction] = useState<string>(''); // 最小互动量
     const [resultLimit, setResultLimit] = useState<number>(20); // 结果数量限制
+    const [debugVision, setDebugVision] = useState<boolean>(() => {
+        try {
+            return localStorage.getItem('vision_debug_enabled') === '1';
+        } catch {
+            return false;
+        }
+    });
 
     // 缓存工具函数
     const CACHE_KEY = 'search_cache';
     const CACHE_EXPIRY = 60 * 60 * 1000; // 1小时
+    const isAnalyzableImageUrl = (url: string) => {
+        const u = String(url || '').trim().toLowerCase();
+        if (!u) return false;
+        if (!/^https?:\/\//i.test(u)) return false;
+        if (u.includes('/fallback-covers/cover-')) return false;
+        if (/\/fallback-covers\/cover-\d{3}\.svg(\?|#|$)/i.test(u)) return false;
+        if (u.includes('dashscope') || u.includes('bailian')) return false;
+        if (u.includes('aliyuncs.com') && (u.includes('dashscope') || u.includes('generated') || u.includes('aigc'))) return false;
+        return true;
+    };
+    const getAnalyzableImageUrls = (result: SocialSearchResult): string[] =>
+        (result.images || []).map(v => String(v || '').trim()).filter(isAnalyzableImageUrl);
+    const getAnalyzableImageCount = (result: SocialSearchResult): number => getAnalyzableImageUrls(result).length;
 
     const getCachedResults = (taskId: string): SocialSearchResult[] | null => {
         try {
@@ -112,6 +132,14 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
             localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
         } catch { }
     };
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('vision_debug_enabled', debugVision ? '1' : '0');
+        } catch {
+            // ignore localStorage failures
+        }
+    }, [debugVision]);
 
     // Helper for relative time
     const formatTimeAgo = (dateStr: string) => {
@@ -331,7 +359,19 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                 const rawText = result.desc || result.title || '';
 
                 // Run AI analysis for structured fields
-                const analysis = await analyzeContentWithGemini(rawText);
+                const analysisImageUrls = getAnalyzableImageUrls(result);
+                if (debugVision) {
+                    console.info('[VisionDebug][Analyze]', {
+                        noteId: result.noteId,
+                        sourceUrl: result.sourceUrl,
+                        totalImages: (result.images || []).filter(Boolean).length,
+                        analyzableImages: analysisImageUrls.length,
+                        imageUrls: analysisImageUrls
+                    });
+                }
+                const analysis = await analyzeContentWithGemini(rawText, {
+                    imageUrls: analysisImageUrls
+                });
                 const analysisOk = Boolean(analysis?.summary) && (
                     (analysis?.usageScenarios?.length || 0) > 0 ||
                     (analysis?.coreKnowledge?.length || 0) > 0 ||
@@ -376,6 +416,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                     author: result.author,
                     date: result.publishTime,
                     coverImage: result.coverImage || result.images?.[0] || '',
+                    images: result.images || [],
                     metrics: result.metrics,
                     contentType: ContentType.PromptShare,
                     rawContent: result.desc || '',
@@ -535,6 +576,24 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                 />
                             </div>
                         </div>
+                        <div className="flex items-center justify-between mt-3 mb-2 p-3 rounded-lg border border-[#1e3a5f]/40 bg-[#0a0f1a]/40">
+                            <div>
+                                <div className="text-sm font-medium text-gray-200">图片分析调试开关</div>
+                                <div className="text-xs text-gray-500 mt-0.5">开启后显示每条结果可分析图片数量，并输出调试日志</div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setDebugVision(v => !v)}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${debugVision ? 'bg-amber-500' : 'bg-[#1e3a5f]/80'}`}
+                                aria-pressed={debugVision}
+                                aria-label="切换图片分析调试"
+                                title="切换图片分析调试"
+                            >
+                                <span
+                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${debugVision ? 'translate-x-6' : 'translate-x-1'}`}
+                                />
+                            </button>
+                        </div>
                         {searchError && (
                             <div className="mb-4 p-3 bg-red-500/10 text-red-400 rounded-lg text-sm border border-red-500/20">
                                 {searchError}
@@ -670,6 +729,8 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                         results={searchResults}
                         keyword={keywords}
                         isLoading={isSearching}
+                        debugVision={debugVision}
+                        getAnalyzableImageCount={getAnalyzableImageCount}
                         onClose={() => setShowResults(false)}
                         onSaveSelected={handleSaveSelected}
                     />

@@ -6,6 +6,8 @@ interface SearchResultsModalProps {
     results: SocialSearchResult[];
     keyword: string;
     isLoading: boolean;
+    debugVision?: boolean;
+    getAnalyzableImageCount?: (result: SocialSearchResult) => number;
     onClose: () => void;
     onSaveSelected: (results: SocialSearchResult[]) => void;
 }
@@ -14,6 +16,8 @@ export const SearchResultsModal: React.FC<SearchResultsModalProps> = ({
     results,
     keyword,
     isLoading,
+    debugVision = false,
+    getAnalyzableImageCount,
     onClose,
     onSaveSelected,
 }) => {
@@ -63,6 +67,11 @@ export const SearchResultsModal: React.FC<SearchResultsModalProps> = ({
                         <p className="text-sm text-gray-500 mt-1">
                             关键词: "{keyword}" · 找到 {results.length} 条结果
                         </p>
+                        {debugVision && (
+                            <p className="text-xs text-amber-400 mt-1">
+                                调试模式：展示每条帖子的图片分析数量（可分析/原始）
+                            </p>
+                        )}
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg">
                         <X size={20} className="text-gray-500 hover:text-gray-300" />
@@ -122,6 +131,11 @@ export const SearchResultsModal: React.FC<SearchResultsModalProps> = ({
                                                 <MessageCircle size={12} /> {result.metrics.comments}
                                             </span>
                                         </div>
+                                        {debugVision && (
+                                            <div className="mt-2 text-xs text-amber-400">
+                                                调试：可分析图片 {getAnalyzableImageCount?.(result) ?? 0} / 原始图片 {(result.images || []).filter(Boolean).length}
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* External Link */}

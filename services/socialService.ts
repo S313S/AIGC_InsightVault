@@ -9,6 +9,7 @@ export interface SocialMediaContent {
     author: string;
     rawContent: string;
     coverImage: string;
+    coverImageSource?: 'media' | 'generated_bailian' | 'none' | string;
     images: string[];
     metrics: {
         likes: number;

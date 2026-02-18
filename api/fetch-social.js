@@ -454,6 +454,7 @@ async function mapToKnowledgeCard(data, platform) {
             author: user.nickName || user.name || user.nickname || '',
             rawContent: data.content || data.desc || '',
             coverImage,
+            coverImageSource: coverImage ? 'media' : 'none',
             images,
             metrics: {
                 likes,
@@ -476,11 +477,13 @@ async function mapToKnowledgeCard(data, platform) {
 
         // Prefer original tweet media first. Generate AI cover only when media is unavailable.
         let coverImage = images[0] || '';
+        let coverImageSource = coverImage ? 'media' : 'none';
         if (!coverImage) {
             const textForImage = data.text || '';
             if (textForImage) {
                 try {
                     coverImage = await generateCoverImage(textForImage);
+                    if (coverImage) coverImageSource = 'generated_bailian';
                 } catch (err) {
                     console.warn('Failed to generate cover image via Bailian:', err.message);
                 }
@@ -493,6 +496,7 @@ async function mapToKnowledgeCard(data, platform) {
             author: data.author?.username || '',
             rawContent: data.text || '',
             coverImage,
+            coverImageSource,
             images,
             metrics: {
                 likes: data.public_metrics?.like_count || 0,

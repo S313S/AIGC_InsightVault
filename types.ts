@@ -39,6 +39,7 @@ export interface KnowledgeCard {
   author: string;
   date: string;
   coverImage: string;
+  images?: string[];
   metrics: EngagementMetrics;
   contentType: ContentType;
   rawContent: string; // The original text from the post

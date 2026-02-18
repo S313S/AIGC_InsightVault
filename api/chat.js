@@ -17,6 +17,56 @@ const cleanMarkdownForPlainText = (text) => {
         .replace(/^\s*>\s+/gm, '');
 };
 
+const MAX_INLINE_IMAGES = 3;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_TOTAL_IMAGE_BYTES = 12 * 1024 * 1024;
+
+const normalizeImageUrls = (value) => {
+    if (!Array.isArray(value)) return [];
+    const shouldSkip = (url) => {
+        const u = String(url || '').trim().toLowerCase();
+        if (!u) return true;
+        if (u.includes('/fallback-covers/cover-')) return true;
+        if (/\/fallback-covers\/cover-\d{3}\.svg(\?|#|$)/i.test(u)) return true;
+        if (u.includes('dashscope') || u.includes('bailian')) return true;
+        if (u.includes('aliyuncs.com') && (u.includes('dashscope') || u.includes('generated') || u.includes('aigc'))) return true;
+        return false;
+    };
+    return Array.from(new Set(
+        value
+            .map((v) => String(v || '').trim())
+            .filter(Boolean)
+            .filter((url) => /^https?:\/\//i.test(url))
+            .filter((url) => !shouldSkip(url))
+    ));
+};
+
+const buildImageInlineParts = async (imageUrls) => {
+    const parts = [];
+    let total = 0;
+    for (const imageUrl of imageUrls.slice(0, MAX_INLINE_IMAGES)) {
+        try {
+            const resp = await fetch(imageUrl);
+            if (!resp.ok) continue;
+            const mimeType = String(resp.headers.get('content-type') || '').split(';')[0].trim() || 'image/jpeg';
+            if (!mimeType.startsWith('image/')) continue;
+            const buffer = Buffer.from(await resp.arrayBuffer());
+            if (!buffer.length || buffer.length > MAX_IMAGE_BYTES) continue;
+            if (total + buffer.length > MAX_TOTAL_IMAGE_BYTES) break;
+            total += buffer.length;
+            parts.push({
+                inlineData: {
+                    mimeType,
+                    data: buffer.toString('base64')
+                }
+            });
+        } catch {
+            // Ignore single-image failure and continue with remaining images.
+        }
+    }
+    return parts;
+};
+
 export default async function handler(req, res) {
     // Add CORS headers
     res.setHeader('Access-Control-Allow-Credentials', true);
@@ -36,7 +86,7 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    const { message, context, mode } = req.body;
+    const { message, context, mode, imageUrls } = req.body;
     const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
     if (!apiKey) {
@@ -75,9 +125,16 @@ export default async function handler(req, res) {
 "${message}"
       `;
 
+            const inlineImageParts = await buildImageInlineParts(normalizeImageUrls(imageUrls));
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
-                contents: prompt,
+                contents: [{
+                    role: 'user',
+                    parts: [
+                        ...inlineImageParts,
+                        { text: prompt }
+                    ]
+                }],
                 config: { responseMimeType: "application/json" }
             });
 
