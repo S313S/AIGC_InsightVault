@@ -1,44 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="AIGC fallback cover 19" data-scene="smart-office">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="AIGC fallback cover 19" data-scene="scene-9">
   <defs>
-    <linearGradient id="g19" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="hsl(343, 78%, 16%)"/>
-      <stop offset="55%" stop-color="hsl(31, 82%, 24%)"/>
-      <stop offset="100%" stop-color="hsl(103, 74%, 14%)"/>
+    <linearGradient id="bg-19" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="hsl(85, 82%, 16%)"/>
+      <stop offset="52%" stop-color="hsl(138, 84%, 23%)"/>
+      <stop offset="100%" stop-color="hsl(198, 78%, 12%)"/>
     </linearGradient>
-    <filter id="blur" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="28"/>
+    <filter id="blur-19" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="26"/>
     </filter>
+    <filter id="soft-19" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+    <filter id="grain-19" x="0%" y="0%" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="247" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.05"/>
+      </feComponentTransfer>
+    </filter>
+    <radialGradient id="vignette-19" cx="50%" cy="45%" r="70%">
+      <stop offset="60%" stop-color="rgba(0,0,0,0)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0.45)"/>
+    </radialGradient>
   </defs>
 
-  <rect width="1200" height="675" fill="url(#g19)"/>
-  <rect y="450" width="1200" height="225" fill="rgba(5, 10, 24, 0.62)"/>
-
-  <circle cx="210" cy="130" r="124" fill="hsl(67, 92%, 60%)" opacity="0.2" filter="url(#blur)"/>
-  <circle cx="980" cy="115" r="112" fill="hsl(61, 94%, 66%)" opacity="0.16" filter="url(#blur)"/>
-  <circle cx="1010" cy="520" r="160" fill="hsl(113, 90%, 62%)" opacity="0.12" filter="url(#blur)"/>
-
-  <g id="workspace-desk">
-    <rect x="110" y="332" width="980" height="230" rx="26" fill="rgba(8, 16, 32, 0.42)" stroke="rgba(158,198,255,0.34)"/>
-    <rect x="168" y="364" width="406" height="138" rx="16" fill="rgba(18, 38, 70, 0.82)" stroke="rgba(150,210,255,0.58)"/>
-    <rect x="626" y="352" width="406" height="146" rx="18" fill="rgba(12, 28, 56, 0.82)" stroke="rgba(120,230,255,0.56)"/>
-    <rect x="216" y="404" width="264" height="14" rx="7" fill="rgba(130, 240, 255, 0.72)"/>
-    <rect x="674" y="396" width="254" height="14" rx="7" fill="rgba(120, 255, 198, 0.72)"/>
-    <rect x="188" y="530" width="824" height="18" rx="9" fill="rgba(185, 220, 255, 0.24)"/>
-  </g>
-
-  <g id="ai-network" stroke-linecap="round">
-    <line x1="688" y1="226" x2="796" y2="282" stroke="rgba(147, 250, 255, 0.62)" stroke-width="3"/>
-    <line x1="796" y1="282" x2="916" y2="236" stroke="rgba(120, 255, 214, 0.62)" stroke-width="3"/>
-    <line x1="796" y1="282" x2="886" y2="342" stroke="rgba(147, 250, 255, 0.58)" stroke-width="3"/>
-    <circle cx="688" cy="226" r="15" fill="rgba(132, 235, 255, 0.8)"/>
-    <circle cx="796" cy="282" r="18" fill="rgba(119, 255, 221, 0.85)"/>
-    <circle cx="916" cy="236" r="14" fill="rgba(143, 232, 255, 0.8)"/>
-    <circle cx="886" cy="342" r="13" fill="rgba(99, 255, 199, 0.82)"/>
-  </g>
-
-  <text x="130" y="158" fill="rgba(238,244,255,0.92)" font-family="'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="56" font-weight="700" letter-spacing="1.2">AIGC Insight Vault</text>
-  <text x="130" y="224" fill="rgba(218,232,255,0.82)" font-family="'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="34" font-weight="600">Smart Office Collaboration</text>
-  <text x="130" y="272" fill="rgba(210,226,255,0.72)" font-family="'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="28" font-weight="500">智能办公协作</text>
-  <text x="130" y="626" fill="rgba(230,240,255,0.72)" font-family="'JetBrains Mono', 'Menlo', monospace" font-size="25" font-weight="600">NO MEDIA • TECH COVER #019</text>
+  <rect width="1200" height="675" fill="url(#bg-19)"/>
+  <circle cx="575" cy="198" r="137" fill="hsl(85, 92%, 62%)" opacity="0.13" filter="url(#blur-19)"/><circle cx="754" cy="564" r="189" fill="hsl(111, 92%, 62%)" opacity="0.08" filter="url(#blur-19)"/><circle cx="660" cy="543" r="157" fill="hsl(137, 92%, 62%)" opacity="0.15" filter="url(#blur-19)"/>
+  <circle cx="224" cy="270" r="36" fill="rgba(210,240,255,0.13)" filter="url(#soft-19)"/><circle cx="877" cy="182" r="34" fill="rgba(210,240,255,0.12)" filter="url(#soft-19)"/><circle cx="979" cy="403" r="33" fill="rgba(210,240,255,0.16)" filter="url(#soft-19)"/><circle cx="470" cy="418" r="60" fill="rgba(210,240,255,0.09)" filter="url(#soft-19)"/><circle cx="1120" cy="204" r="39" fill="rgba(210,240,255,0.11)" filter="url(#soft-19)"/><circle cx="760" cy="133" r="20" fill="rgba(210,240,255,0.08)" filter="url(#soft-19)"/>
+  <polygon points="0,675 1200,675 1174,373 26,373" fill="rgba(8,16,28,0.35)"/>
+  <g id="scene-drone-swarm"><g transform="translate(626,356) scale(1.18)"><rect x="-10" y="-5" width="20" height="10" rx="3" fill="rgba(180,240,255,0.58)"/><line x1="-20" y1="0" x2="20" y2="0" stroke="rgba(150,230,255,0.6)" stroke-width="2"/><line x1="0" y1="-16" x2="0" y2="16" stroke="rgba(150,230,255,0.6)" stroke-width="2"/></g><g transform="translate(977,136) scale(1.16)"><rect x="-10" y="-5" width="20" height="10" rx="3" fill="rgba(180,240,255,0.58)"/><line x1="-20" y1="0" x2="20" y2="0" stroke="rgba(150,230,255,0.6)" stroke-width="2"/><line x1="0" y1="-16" x2="0" y2="16" stroke="rgba(150,230,255,0.6)" stroke-width="2"/></g><g transform="translate(855,235) scale(1.34)"><rect x="-10" y="-5" width="20" height="10" rx="3" fill="rgba(180,240,255,0.58)"/><line x1="-20" y1="0" x2="20" y2="0" stroke="rgba(150,230,255,0.6)" stroke-width="2"/><line x1="0" y1="-16" x2="0" y2="16" stroke="rgba(150,230,255,0.6)" stroke-width="2"/></g><g transform="translate(619,110) scale(1.19)"><rect x="-10" y="-5" width="20" height="10" rx="3" fill="rgba(180,240,255,0.58)"/><line x1="-20" y1="0" x2="20" y2="0" stroke="rgba(150,230,255,0.6)" stroke-width="2"/><line x1="0" y1="-16" x2="0" y2="16" stroke="rgba(150,230,255,0.6)" stroke-width="2"/></g><g transform="translate(147,297) scale(0.97)"><rect x="-10" y="-5" width="20" height="10" rx="3" fill="rgba(180,240,255,0.58)"/><line x1="-20" y1="0" x2="20" y2="0" stroke="rgba(150,230,255,0.6)" stroke-width="2"/><line x1="0" y1="-16" x2="0" y2="16" stroke="rgba(150,230,255,0.6)" stroke-width="2"/></g><g transform="translate(754,360) scale(0.84)"><rect x="-10" y="-5" width="20" height="10" rx="3" fill="rgba(180,240,255,0.58)"/><line x1="-20" y1="0" x2="20" y2="0" stroke="rgba(150,230,255,0.6)" stroke-width="2"/><line x1="0" y1="-16" x2="0" y2="16" stroke="rgba(150,230,255,0.6)" stroke-width="2"/></g><g transform="translate(1028,144) scale(0.86)"><rect x="-10" y="-5" width="20" height="10" rx="3" fill="rgba(180,240,255,0.58)"/><line x1="-20" y1="0" x2="20" y2="0" stroke="rgba(150,230,255,0.6)" stroke-width="2"/><line x1="0" y1="-16" x2="0" y2="16" stroke="rgba(150,230,255,0.6)" stroke-width="2"/></g><g transform="translate(218,280) scale(0.89)"><rect x="-10" y="-5" width="20" height="10" rx="3" fill="rgba(180,240,255,0.58)"/><line x1="-20" y1="0" x2="20" y2="0" stroke="rgba(150,230,255,0.6)" stroke-width="2"/><line x1="0" y1="-16" x2="0" y2="16" stroke="rgba(150,230,255,0.6)" stroke-width="2"/></g><g transform="translate(690,285) scale(0.82)"><rect x="-10" y="-5" width="20" height="10" rx="3" fill="rgba(180,240,255,0.58)"/><line x1="-20" y1="0" x2="20" y2="0" stroke="rgba(150,230,255,0.6)" stroke-width="2"/><line x1="0" y1="-16" x2="0" y2="16" stroke="rgba(150,230,255,0.6)" stroke-width="2"/></g></g>
+  <g id="scene-sparkles"><circle cx="1178" cy="357" r="1.98" fill="rgba(180,240,255,0.41)"/><circle cx="523" cy="599" r="3.37" fill="rgba(180,240,255,0.34)"/><circle cx="752" cy="474" r="1.86" fill="rgba(180,240,255,0.19)"/><circle cx="215" cy="538" r="1.71" fill="rgba(180,240,255,0.33)"/><circle cx="1136" cy="137" r="1.77" fill="rgba(180,240,255,0.39)"/><circle cx="648" cy="59" r="3.38" fill="rgba(180,240,255,0.16)"/><circle cx="325" cy="188" r="2.42" fill="rgba(180,240,255,0.20)"/><circle cx="193" cy="638" r="2.77" fill="rgba(180,240,255,0.23)"/><circle cx="214" cy="181" r="2.04" fill="rgba(180,240,255,0.32)"/><circle cx="518" cy="244" r="2.27" fill="rgba(180,240,255,0.38)"/><circle cx="551" cy="620" r="1.43" fill="rgba(180,240,255,0.31)"/><circle cx="1146" cy="71" r="3.27" fill="rgba(180,240,255,0.44)"/><circle cx="837" cy="127" r="3.37" fill="rgba(180,240,255,0.33)"/><circle cx="1169" cy="259" r="1.88" fill="rgba(180,240,255,0.25)"/><circle cx="775" cy="344" r="2.85" fill="rgba(180,240,255,0.37)"/><circle cx="1163" cy="75" r="1.26" fill="rgba(180,240,255,0.41)"/><circle cx="914" cy="543" r="1.80" fill="rgba(180,240,255,0.17)"/><circle cx="116" cy="272" r="1.32" fill="rgba(180,240,255,0.36)"/><circle cx="489" cy="288" r="2.05" fill="rgba(180,240,255,0.40)"/><circle cx="115" cy="354" r="2.26" fill="rgba(180,240,255,0.16)"/><circle cx="664" cy="288" r="3.21" fill="rgba(180,240,255,0.39)"/><circle cx="293" cy="398" r="1.62" fill="rgba(180,240,255,0.22)"/><circle cx="876" cy="273" r="1.38" fill="rgba(180,240,255,0.37)"/><circle cx="133" cy="522" r="1.39" fill="rgba(180,240,255,0.33)"/><circle cx="573" cy="156" r="2.80" fill="rgba(180,240,255,0.16)"/><circle cx="1110" cy="512" r="1.74" fill="rgba(180,240,255,0.20)"/><circle cx="1059" cy="67" r="2.46" fill="rgba(180,240,255,0.26)"/><circle cx="207" cy="424" r="3.17" fill="rgba(180,240,255,0.44)"/></g>
+  <rect width="1200" height="675" fill="rgba(190,220,255,0.06)"/>
+  <rect width="1200" height="675" filter="url(#grain-19)"/>
+  <rect width="1200" height="675" fill="url(#vignette-19)"/>
+  <rect x="20" y="20" width="1160" height="635" rx="32" fill="none" stroke="rgba(155,220,255,0.24)"/>
 </svg>

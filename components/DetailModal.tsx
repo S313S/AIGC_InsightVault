@@ -89,13 +89,13 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-6">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
 
-      <div className="relative bg-[#0d1526]/95 backdrop-blur-xl rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl border border-[#1e3a5f]/50 flex flex-col md:flex-row">
+      <div className="relative bg-[#0d1526]/95 backdrop-blur-xl rounded-none sm:rounded-2xl w-full h-[100dvh] sm:h-auto sm:max-w-4xl sm:max-h-[90vh] overflow-hidden shadow-2xl border border-[#1e3a5f]/50 flex flex-col md:flex-row">
 
         {/* Header Actions (Absolute) */}
-        <div className="absolute top-4 right-4 z-10 flex gap-2">
+        <div className="absolute top-3 right-3 sm:top-4 sm:right-4 z-10 flex gap-1.5 sm:gap-2">
           {/* Collection Dropdown */}
           <div className="relative" ref={menuRef}>
             <button
@@ -107,7 +107,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
             </button>
 
             {isCollectionMenuOpen && (
-              <div className="absolute right-0 top-12 w-56 bg-[#0d1526]/95 backdrop-blur-xl rounded-xl shadow-xl border border-[#1e3a5f]/50 py-2 animate-in fade-in zoom-in-95 duration-100 z-50">
+              <div className="absolute right-0 top-12 w-52 sm:w-56 max-w-[80vw] bg-[#0d1526]/95 backdrop-blur-xl rounded-xl shadow-xl border border-[#1e3a5f]/50 py-2 animate-in fade-in zoom-in-95 duration-100 z-50">
                 <div className="px-3 py-2 border-b border-[#1e3a5f]/40 mb-1">
                   <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">保存到收藏夹</span>
                 </div>
@@ -153,7 +153,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
         </div>
 
         {/* Left Side: Visuals & Metrics (Scrollable on mobile) */}
-        <div className="w-full md:w-2/5 bg-[#0a0f1a]/50 p-6 overflow-y-auto border-r border-[#1e3a5f]/40">
+        <div className="w-full md:w-2/5 bg-[#0a0f1a]/50 p-4 sm:p-6 overflow-y-auto border-b md:border-b-0 md:border-r border-[#1e3a5f]/40">
           <div className="rounded-xl overflow-hidden shadow-md mb-6 bg-[#1e3a5f]/30">
             <img
               src={card.coverImage || 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop'}
@@ -169,8 +169,8 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
 
           <div className="space-y-4">
             <div>
-              <h2 className="text-xl font-bold text-gray-100 leading-snug mb-2">{card.title}</h2>
-              <div className="flex items-center gap-2 text-sm text-gray-500">
+              <h2 className="text-lg sm:text-xl font-bold text-gray-100 leading-snug mb-2 break-words">{card.title}</h2>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
                 <span className="font-medium text-gray-300">{card.author}</span>
                 <span>•</span>
                 <span>{card.date}</span>
@@ -195,7 +195,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
               </div>
             )}
 
-            <div className="flex items-center justify-between bg-[#0d1526]/60 p-3 rounded-lg border border-[#1e3a5f]/40">
+            <div className="grid grid-cols-3 gap-2 bg-[#0d1526]/60 p-3 rounded-lg border border-[#1e3a5f]/40">
               <div className="flex flex-col items-center">
                 <Heart size={18} className="text-rose-400 mb-1" />
                 <span className="text-xs font-semibold text-gray-300">{card.metrics.likes}</span>
@@ -231,7 +231,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
         </div>
 
         {/* Right Side: Knowledge & Prompts */}
-        <div className="w-full md:w-3/5 bg-[#0d1526]/30 overflow-y-auto p-6 md:p-8">
+        <div className="w-full md:w-3/5 bg-[#0d1526]/30 overflow-y-auto p-4 sm:p-6 md:p-8">
 
           {/* AI Summary Section - Now First */}
           <div className="mb-8">
@@ -284,7 +284,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
                     </pre>
                     <button
                       onClick={() => handleCopy(prompt, idx)}
-                      className="absolute top-2 right-2 p-1.5 bg-white/10 hover:bg-white/20 text-white rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                      className="absolute top-2 right-2 p-1.5 bg-white/10 hover:bg-white/20 text-white rounded-md transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                       title="复制提示词"
                     >
                       {copiedIndex === idx ? <Check size={16} /> : <Copy size={16} />}
@@ -324,19 +324,19 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
                   className="w-full h-48 p-4 bg-[#0a0f1a] border border-[#1e3a5f]/50 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm leading-relaxed resize-none font-mono text-gray-200 placeholder-gray-600"
                   autoFocus
                 />
-                <div className="flex justify-end mt-2 gap-2">
+                <div className="flex flex-col-reverse sm:flex-row justify-end mt-2 gap-2">
                   <button
                     onClick={() => {
                       setNoteContent(card.userNotes || '');
                       setIsEditingNote(false);
                     }}
-                    className="px-3 py-1.5 text-xs font-medium text-gray-400 hover:bg-white/5 rounded-md"
+                    className="w-full sm:w-auto px-3 py-1.5 text-xs font-medium text-gray-400 hover:bg-white/5 rounded-md"
                   >
                     取消
                   </button>
                   <button
                     onClick={handleSaveNote}
-                    className="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 rounded-md flex items-center gap-1"
+                    className="w-full sm:w-auto px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 rounded-md flex items-center justify-center gap-1"
                   >
                     <Save size={14} />
                     保存笔记

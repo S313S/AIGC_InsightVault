@@ -1,44 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="AIGC fallback cover 78" data-scene="product-lab">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="AIGC fallback cover 78" data-scene="scene-8">
   <defs>
-    <linearGradient id="g78" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="hsl(6, 78%, 16%)"/>
-      <stop offset="55%" stop-color="hsl(54, 82%, 24%)"/>
-      <stop offset="100%" stop-color="hsl(126, 74%, 14%)"/>
+    <linearGradient id="bg-78" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="hsl(327, 82%, 16%)"/>
+      <stop offset="52%" stop-color="hsl(18, 84%, 23%)"/>
+      <stop offset="100%" stop-color="hsl(103, 78%, 12%)"/>
     </linearGradient>
-    <filter id="blur" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="28"/>
+    <filter id="blur-78" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="26"/>
     </filter>
+    <filter id="soft-78" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+    <filter id="grain-78" x="0%" y="0%" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="1014" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.05"/>
+      </feComponentTransfer>
+    </filter>
+    <radialGradient id="vignette-78" cx="50%" cy="45%" r="70%">
+      <stop offset="60%" stop-color="rgba(0,0,0,0)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0.45)"/>
+    </radialGradient>
   </defs>
 
-  <rect width="1200" height="675" fill="url(#g78)"/>
-  <rect y="450" width="1200" height="225" fill="rgba(5, 10, 24, 0.62)"/>
-
-  <circle cx="210" cy="130" r="124" fill="hsl(90, 92%, 60%)" opacity="0.2" filter="url(#blur)"/>
-  <circle cx="980" cy="115" r="112" fill="hsl(84, 94%, 66%)" opacity="0.16" filter="url(#blur)"/>
-  <circle cx="1010" cy="520" r="160" fill="hsl(136, 90%, 62%)" opacity="0.12" filter="url(#blur)"/>
-
-  <g id="workspace-desk">
-    <rect x="110" y="332" width="980" height="230" rx="26" fill="rgba(8, 16, 32, 0.42)" stroke="rgba(158,198,255,0.34)"/>
-    <rect x="168" y="364" width="406" height="138" rx="16" fill="rgba(18, 38, 70, 0.82)" stroke="rgba(150,210,255,0.58)"/>
-    <rect x="626" y="352" width="406" height="146" rx="18" fill="rgba(12, 28, 56, 0.82)" stroke="rgba(120,230,255,0.56)"/>
-    <rect x="216" y="404" width="264" height="14" rx="7" fill="rgba(130, 240, 255, 0.72)"/>
-    <rect x="674" y="396" width="254" height="14" rx="7" fill="rgba(120, 255, 198, 0.72)"/>
-    <rect x="188" y="530" width="824" height="18" rx="9" fill="rgba(185, 220, 255, 0.24)"/>
-  </g>
-
-  <g id="ai-network" stroke-linecap="round">
-    <line x1="688" y1="226" x2="796" y2="282" stroke="rgba(147, 250, 255, 0.62)" stroke-width="3"/>
-    <line x1="796" y1="282" x2="916" y2="236" stroke="rgba(120, 255, 214, 0.62)" stroke-width="3"/>
-    <line x1="796" y1="282" x2="886" y2="342" stroke="rgba(147, 250, 255, 0.58)" stroke-width="3"/>
-    <circle cx="688" cy="226" r="15" fill="rgba(132, 235, 255, 0.8)"/>
-    <circle cx="796" cy="282" r="18" fill="rgba(119, 255, 221, 0.85)"/>
-    <circle cx="916" cy="236" r="14" fill="rgba(143, 232, 255, 0.8)"/>
-    <circle cx="886" cy="342" r="13" fill="rgba(99, 255, 199, 0.82)"/>
-  </g>
-
-  <text x="130" y="158" fill="rgba(238,244,255,0.92)" font-family="'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="56" font-weight="700" letter-spacing="1.2">AIGC Insight Vault</text>
-  <text x="130" y="224" fill="rgba(218,232,255,0.82)" font-family="'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="34" font-weight="600">Product Experiment Lab</text>
-  <text x="130" y="272" fill="rgba(210,226,255,0.72)" font-family="'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="28" font-weight="500">产品实验室</text>
-  <text x="130" y="626" fill="rgba(230,240,255,0.72)" font-family="'JetBrains Mono', 'Menlo', monospace" font-size="25" font-weight="600">NO MEDIA • TECH COVER #078</text>
+  <rect width="1200" height="675" fill="url(#bg-78)"/>
+  <circle cx="543" cy="600" r="185" fill="hsl(327, 92%, 62%)" opacity="0.10" filter="url(#blur-78)"/><circle cx="909" cy="227" r="203" fill="hsl(353, 92%, 62%)" opacity="0.13" filter="url(#blur-78)"/><circle cx="632" cy="422" r="216" fill="hsl(379, 92%, 62%)" opacity="0.16" filter="url(#blur-78)"/>
+  <circle cx="697" cy="119" r="44" fill="rgba(210,240,255,0.11)" filter="url(#soft-78)"/><circle cx="246" cy="182" r="45" fill="rgba(210,240,255,0.16)" filter="url(#soft-78)"/><circle cx="370" cy="442" r="67" fill="rgba(210,240,255,0.15)" filter="url(#soft-78)"/><circle cx="645" cy="217" r="51" fill="rgba(210,240,255,0.13)" filter="url(#soft-78)"/><circle cx="1105" cy="398" r="63" fill="rgba(210,240,255,0.14)" filter="url(#soft-78)"/><circle cx="1138" cy="247" r="23" fill="rgba(210,240,255,0.11)" filter="url(#soft-78)"/>
+  <polygon points="0,675 1200,675 1377,395 -177,395" fill="rgba(8,16,28,0.35)"/>
+  <g id="scene-code-panels"><g><rect x="834" y="249" width="263" height="140" rx="14" fill="rgba(11,24,48,0.55)" stroke="rgba(120,190,255,0.45)"/><rect x="854" y="267" width="209" height="8" rx="4" fill="rgba(120,220,255,0.25)"/><rect x="854" y="289" width="106" height="8" rx="4" fill="rgba(120,220,255,0.34)"/><rect x="854" y="311" width="100" height="8" rx="4" fill="rgba(120,220,255,0.43)"/><rect x="854" y="333" width="121" height="8" rx="4" fill="rgba(120,220,255,0.52)"/><rect x="854" y="355" width="207" height="8" rx="4" fill="rgba(120,220,255,0.61)"/><circle cx="1079" cy="267" r="4" fill="rgba(160,240,255,0.7)"/></g><g><rect x="368" y="143" width="306" height="169" rx="14" fill="rgba(11,24,48,0.55)" stroke="rgba(120,190,255,0.45)"/><rect x="388" y="161" width="190" height="8" rx="4" fill="rgba(120,220,255,0.25)"/><rect x="388" y="183" width="124" height="8" rx="4" fill="rgba(120,220,255,0.34)"/><rect x="388" y="205" width="219" height="8" rx="4" fill="rgba(120,220,255,0.43)"/><circle cx="656" cy="161" r="4" fill="rgba(160,240,255,0.7)"/></g><g><rect x="843" y="419" width="321" height="126" rx="14" fill="rgba(11,24,48,0.55)" stroke="rgba(120,190,255,0.45)"/><rect x="863" y="437" width="202" height="8" rx="4" fill="rgba(120,220,255,0.25)"/><rect x="863" y="459" width="205" height="8" rx="4" fill="rgba(120,220,255,0.34)"/><rect x="863" y="481" width="195" height="8" rx="4" fill="rgba(120,220,255,0.43)"/><circle cx="1146" cy="437" r="4" fill="rgba(160,240,255,0.7)"/></g><g><rect x="463" y="57" width="213" height="177" rx="14" fill="rgba(11,24,48,0.55)" stroke="rgba(120,190,255,0.45)"/><rect x="483" y="75" width="91" height="8" rx="4" fill="rgba(120,220,255,0.25)"/><rect x="483" y="97" width="178" height="8" rx="4" fill="rgba(120,220,255,0.34)"/><rect x="483" y="119" width="176" height="8" rx="4" fill="rgba(120,220,255,0.43)"/><rect x="483" y="141" width="84" height="8" rx="4" fill="rgba(120,220,255,0.52)"/><circle cx="658" cy="75" r="4" fill="rgba(160,240,255,0.7)"/></g><g><rect x="160" y="247" width="220" height="157" rx="14" fill="rgba(11,24,48,0.55)" stroke="rgba(120,190,255,0.45)"/><rect x="180" y="265" width="164" height="8" rx="4" fill="rgba(120,220,255,0.25)"/><rect x="180" y="287" width="84" height="8" rx="4" fill="rgba(120,220,255,0.34)"/><rect x="180" y="309" width="121" height="8" rx="4" fill="rgba(120,220,255,0.43)"/><rect x="180" y="331" width="157" height="8" rx="4" fill="rgba(120,220,255,0.52)"/><rect x="180" y="353" width="178" height="8" rx="4" fill="rgba(120,220,255,0.61)"/><rect x="180" y="375" width="169" height="8" rx="4" fill="rgba(120,220,255,0.70)"/><circle cx="362" cy="265" r="4" fill="rgba(160,240,255,0.7)"/></g></g>
+  <g id="scene-sparkles"><circle cx="94" cy="141" r="2.36" fill="rgba(180,240,255,0.38)"/><circle cx="948" cy="311" r="2.30" fill="rgba(180,240,255,0.36)"/><circle cx="1025" cy="490" r="1.57" fill="rgba(180,240,255,0.27)"/><circle cx="729" cy="499" r="2.44" fill="rgba(180,240,255,0.20)"/><circle cx="275" cy="130" r="2.41" fill="rgba(180,240,255,0.39)"/><circle cx="288" cy="415" r="1.30" fill="rgba(180,240,255,0.20)"/><circle cx="1119" cy="366" r="2.78" fill="rgba(180,240,255,0.16)"/><circle cx="935" cy="279" r="1.68" fill="rgba(180,240,255,0.18)"/><circle cx="679" cy="502" r="1.41" fill="rgba(180,240,255,0.26)"/><circle cx="578" cy="90" r="2.21" fill="rgba(180,240,255,0.38)"/><circle cx="1049" cy="535" r="1.87" fill="rgba(180,240,255,0.28)"/><circle cx="411" cy="271" r="2.13" fill="rgba(180,240,255,0.31)"/><circle cx="266" cy="157" r="1.16" fill="rgba(180,240,255,0.41)"/><circle cx="37" cy="466" r="1.39" fill="rgba(180,240,255,0.43)"/><circle cx="32" cy="340" r="1.77" fill="rgba(180,240,255,0.29)"/><circle cx="37" cy="568" r="1.63" fill="rgba(180,240,255,0.45)"/><circle cx="305" cy="441" r="1.67" fill="rgba(180,240,255,0.40)"/><circle cx="577" cy="528" r="2.07" fill="rgba(180,240,255,0.30)"/><circle cx="1172" cy="91" r="2.29" fill="rgba(180,240,255,0.31)"/><circle cx="1036" cy="302" r="1.91" fill="rgba(180,240,255,0.29)"/><circle cx="908" cy="130" r="2.30" fill="rgba(180,240,255,0.39)"/><circle cx="866" cy="65" r="2.32" fill="rgba(180,240,255,0.41)"/><circle cx="892" cy="635" r="2.18" fill="rgba(180,240,255,0.34)"/><circle cx="494" cy="30" r="2.02" fill="rgba(180,240,255,0.36)"/><circle cx="842" cy="644" r="3.23" fill="rgba(180,240,255,0.29)"/><circle cx="674" cy="481" r="2.77" fill="rgba(180,240,255,0.25)"/><circle cx="355" cy="380" r="2.20" fill="rgba(180,240,255,0.36)"/><circle cx="213" cy="58" r="2.55" fill="rgba(180,240,255,0.38)"/></g>
+  <rect width="1200" height="675" fill="rgba(190,220,255,0.06)"/>
+  <rect width="1200" height="675" filter="url(#grain-78)"/>
+  <rect width="1200" height="675" fill="url(#vignette-78)"/>
+  <rect x="20" y="20" width="1160" height="635" rx="32" fill="none" stroke="rgba(155,220,255,0.24)"/>
 </svg>
