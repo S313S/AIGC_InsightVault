@@ -1,6 +1,7 @@
 // Vercel Cron: periodic social monitoring and trending ingestion
 
 import { createClient } from '@supabase/supabase-js';
+import { resolveContentTypeByPrompts } from '../shared/promptTagging.js';
 
 // Search keywords: high-volume terms covering all 3 categories (used for API searches)
 const DEFAULT_MONITOR_KEYWORDS = [
@@ -246,7 +247,7 @@ const buildTrendingRow = (result, snapshotTag) => {
     date: result.publishTime || '',
     cover_image: result.coverImage || (result.images && result.images[0]) || '',
     metrics: result.metrics || { likes: 0, bookmarks: 0, comments: 0 },
-    content_type: 'PromptShare',
+    content_type: resolveContentTypeByPrompts([]),
     raw_content: result.desc || '',
     ai_analysis: {
       summary,

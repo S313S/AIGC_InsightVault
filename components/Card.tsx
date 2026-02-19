@@ -1,6 +1,7 @@
 import React from 'react';
-import { KnowledgeCard, Platform, ContentType } from '../types';
+import { KnowledgeCard, Platform } from '../types';
 import { Heart, MessageCircle, Bookmark, Sparkles, CheckSquare, Square } from './Icons';
+import { hasPromptEvidence } from '../shared/promptTagging.js';
 
 interface CardProps {
   card: KnowledgeCard;
@@ -31,7 +32,7 @@ export const Card: React.FC<CardProps> = ({
   isSelected = false,
   onToggleSelect
 }) => {
-  const hasPrompts = card.aiAnalysis.extractedPrompts.length > 0;
+  const hasPrompts = hasPromptEvidence(card.aiAnalysis?.extractedPrompts);
 
   const handleClick = (e: React.MouseEvent) => {
     if (isSelectionMode && onToggleSelect) {

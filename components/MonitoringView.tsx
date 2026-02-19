@@ -5,6 +5,7 @@ import { SearchResultsModal } from './SearchResultsModal';
 import { saveCard } from '../services/supabaseService';
 import { analyzeContentWithGemini, classifyContentWithGemini } from '../services/geminiService';
 import { searchSocial } from '../services/socialService';
+import { resolveContentTypeByPrompts } from '../shared/promptTagging.js';
 
 const CATEGORY_TAGS = ['Image Gen', 'Video Gen', 'Vibe Coding'];
 
@@ -418,7 +419,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                     coverImage: result.coverImage || result.images?.[0] || '',
                     images: result.images || [],
                     metrics: result.metrics,
-                    contentType: ContentType.PromptShare,
+                    contentType: resolveContentTypeByPrompts(analysis?.extractedPrompts) as ContentType,
                     rawContent: result.desc || '',
                     aiAnalysis: {
                         summary: analysis?.summary || summaryFallback,

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { KnowledgeCard, TrackingTask, Platform, TaskStatus } from '../types';
 import { Flame, ArrowRight, Save, ExternalLink, Activity, LayoutGrid, Clock, Heart, TrendingUp, Bookmark, Sparkles } from './Icons';
+import { hasPromptEvidence } from '../shared/promptTagging.js';
 
 const GRADIENT_PAIRS = [
     ['#0EA5E9', '#2563EB'],
@@ -273,7 +274,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                                     />
                                     {/* Overlay Sparkles for Prompts */}
-                                    {item.contentType === 'PromptShare' && (
+                                    {hasPromptEvidence(item.aiAnalysis?.extractedPrompts) && (
                                         <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-md flex items-center gap-1">
                                             <Sparkles size={10} className="text-yellow-400" />
                                             <span>提示词</span>

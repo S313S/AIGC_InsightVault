@@ -158,7 +158,7 @@ const App: React.FC = () => {
       coverImage: result.coverImage || result.images?.[0] || '',
       images: result.images || [],
       metrics: result.metrics,
-      contentType: ContentType.PromptShare,
+      contentType: ContentType.ToolReview,
       rawContent: result.desc || '',
       aiAnalysis: {
         summary,

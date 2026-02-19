@@ -17,9 +17,13 @@ const cleanMarkdownForPlainText = (text) => {
         .replace(/^\s*>\s+/gm, '');
 };
 
-const MAX_INLINE_IMAGES = 3;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-const MAX_TOTAL_IMAGE_BYTES = 12 * 1024 * 1024;
+const toInt = (v, fallback) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+};
+const MAX_INLINE_IMAGES = toInt(process.env.GEMINI_MAX_INLINE_IMAGES, 7);
+const MAX_IMAGE_BYTES = toInt(process.env.GEMINI_MAX_IMAGE_BYTES, 5 * 1024 * 1024);
+const MAX_TOTAL_IMAGE_BYTES = toInt(process.env.GEMINI_MAX_TOTAL_IMAGE_BYTES, 18 * 1024 * 1024);
 
 const normalizeImageUrls = (value) => {
     if (!Array.isArray(value)) return [];
@@ -44,7 +48,8 @@ const normalizeImageUrls = (value) => {
 const buildImageInlineParts = async (imageUrls) => {
     const parts = [];
     let total = 0;
-    for (const imageUrl of imageUrls.slice(0, MAX_INLINE_IMAGES)) {
+    const selected = imageUrls.slice(0, MAX_INLINE_IMAGES);
+    for (const imageUrl of selected) {
         try {
             const resp = await fetch(imageUrl);
             if (!resp.ok) continue;
@@ -87,6 +92,9 @@ export default async function handler(req, res) {
     }
 
     const { message, context, mode, imageUrls } = req.body;
+    const requestId = req.headers['x-vercel-id']
+        || req.headers['x-request-id']
+        || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
     if (!apiKey) {
@@ -125,7 +133,17 @@ export default async function handler(req, res) {
 "${message}"
       `;
 
-            const inlineImageParts = await buildImageInlineParts(normalizeImageUrls(imageUrls));
+            const normalizedImageUrls = normalizeImageUrls(imageUrls);
+            const inlineImageParts = await buildImageInlineParts(normalizedImageUrls);
+            console.info('[analysis-image-debug]', {
+                requestId,
+                rawCount: Array.isArray(imageUrls) ? imageUrls.length : 0,
+                normalizedCount: normalizedImageUrls.length,
+                inlineCount: inlineImageParts.length,
+                maxInlineImages: MAX_INLINE_IMAGES,
+                maxImageBytes: MAX_IMAGE_BYTES,
+                maxTotalImageBytes: MAX_TOTAL_IMAGE_BYTES
+            });
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: [{
