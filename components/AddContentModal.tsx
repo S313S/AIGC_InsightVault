@@ -179,7 +179,7 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
                                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 <Sparkles size={18} />
-                                交给 AI 处理
+                                添加到知识库
                             </button>
                         </div>
                     ) : (
