@@ -16,18 +16,18 @@ const buildPromptPayload = (payload: { mode: string; message: string; context?: 
 
   if (mode === 'analysis') {
     const prompt = `
-你是「帖子整理 Agent（小白版）」。
-目标：把帖子内容翻译成通俗中文，并给出可直接上手的操作建议。
+你是「帖子整理 Agent」。
+目标：把帖子内容整理成“简练、通俗、重点清楚”的结果，避免冗长说教。
 
 严格返回 JSON，不要返回任何额外文本，结构如下：
 {
-  "summary": "用通俗中文总结帖子，80-160字，避免术语堆砌",
+  "summary": "一句话总结（40-90字），说清最关键结论",
   "usageScenarios": [
-    "场景1：谁在什么情况下可以用（含1个具体动作）",
+    "场景1（短句，可执行）",
     "场景2：..."
   ],
   "coreKnowledge": [
-    "知识点1：结论 + 为什么 + 怎么做（可执行）",
+    "知识点1（短句，保留关键方法）",
     "知识点2：..."
   ],
   "extractedPrompts": ["从原文中提取的提示词原文，若无则空数组"]
@@ -36,8 +36,10 @@ const buildPromptPayload = (payload: { mode: string; message: string; context?: 
 规则：
 1) 必须使用简体中文。
 2) 若原文是英文或中英混合，先理解后翻译成中文表达。
-3) usageScenarios 至少 2 条，coreKnowledge 至少 2 条，每条要具体可执行。
-4) 若内容与 AI/技术实操关系弱，也要给出“如何判断是否值得跟进”的场景与方法，不能留空。
+3) summary 禁止空话套话，不重复原文，不超过 90 字。
+4) usageScenarios 输出 2-3 条，每条 18-48 字，只写“谁在什么情况下怎么用”。
+5) coreKnowledge 输出 2-3 条，每条 18-56 字，只保留关键结论或方法，不展开“为什么/背景故事”。
+6) 若内容与 AI/技术实操关系弱，也要给出简短可执行建议，不能留空。
 
 帖子内容：
 "${message}"
@@ -206,8 +208,8 @@ const toStringArray = (value: unknown): string[] => {
 
 const normalizeAIAnalysis = (analysis: Partial<AIAnalysis>): AIAnalysis => ({
   summary: typeof analysis.summary === 'string' ? analysis.summary.trim() : String(analysis.summary || '').trim(),
-  usageScenarios: toStringArray(analysis.usageScenarios).slice(0, 8),
-  coreKnowledge: toStringArray(analysis.coreKnowledge).slice(0, 8),
+  usageScenarios: toStringArray(analysis.usageScenarios).slice(0, 3),
+  coreKnowledge: toStringArray(analysis.coreKnowledge).slice(0, 3),
   extractedPrompts: toStringArray(analysis.extractedPrompts)
 });
 
@@ -220,15 +222,15 @@ const ensureAnalysisCompleteness = (analysis: AIAnalysis, sourceContent: string)
   const usageScenarios = analysis.usageScenarios.length > 0
     ? analysis.usageScenarios
     : [
-      '场景：你刚接触这个主题。做法：先按帖子关键词搜3条高互动案例，对比共同步骤后再实操。',
-      '场景：你想判断是否值得投入。做法：先做一次10分钟小实验，用结果决定是否继续深挖。'
+      '新手入门时，先照帖子里的一个步骤做最小实验。',
+      '决定是否投入前，先用10分钟小测试验证是否有效。'
     ];
 
   const coreKnowledge = analysis.coreKnowledge.length > 0
     ? analysis.coreKnowledge
     : [
-      '先小范围验证再扩大投入：先做最小可行测试，记录输入、过程和结果，避免盲目照搬。',
-      '把经验变成可复用流程：沉淀为“目标-步骤-参数-结果-复盘”五段笔记，下次可直接套用。'
+      '先验证再投入，别一次性把时间全砸进去。',
+      '把有效做法沉淀成步骤清单，后续可直接复用。'
     ];
 
   return {

@@ -248,7 +248,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
 
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <h4 className="text-sm font-semibold text-gray-200 mb-2">使用场景（可直接照做）</h4>
+                <h4 className="text-sm font-semibold text-gray-200 mb-2">使用场景</h4>
                 <ul className="list-disc list-inside space-y-1">
                   {usageScenarios.map((s, i) => (
                     <li key={i} className="text-sm text-gray-400 pl-1">{s}</li>
@@ -256,7 +256,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
                 </ul>
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-gray-200 mb-2">核心知识（小白版）</h4>
+                <h4 className="text-sm font-semibold text-gray-200 mb-2">核心知识</h4>
                 <ul className="list-disc list-inside space-y-1">
                   {coreKnowledge.map((k, i) => (
                     <li key={i} className="text-sm text-gray-400 pl-1">{k}</li>

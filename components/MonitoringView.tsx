@@ -451,7 +451,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
     return (
         <div className="flex flex-col h-full bg-[#0d1526]/60 backdrop-blur-md rounded-xl shadow-sm border border-[#1e3a5f]/40 overflow-hidden">
             {/* Header */}
-            <div className="p-6 border-b border-[#1e3a5f]/40 flex items-center justify-between">
+            <div className="p-4 sm:p-6 border-b border-[#1e3a5f]/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                     <h2 className="text-xl font-bold text-gray-100 flex items-center gap-2">
                         <Activity className="text-indigo-400" />
@@ -461,7 +461,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                 </div>
                 <button
                     onClick={() => setIsCreating(true)}
-                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    className="w-full sm:w-auto justify-center flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
                 >
                     <Search size={18} />
                     开始搜索
@@ -469,11 +469,11 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
             </div>
 
             {/* Content */}
-            <div className="p-6 bg-[#0a0f1a]/30 flex-1 overflow-y-auto">
+            <div className="p-4 sm:p-6 bg-[#0a0f1a]/30 flex-1 overflow-y-auto">
 
                 {/* Search Form */}
                 {isCreating && (
-                    <div className="bg-[#0d1526]/80 backdrop-blur-sm p-6 rounded-xl border border-[#1e3a5f]/50 shadow-sm mb-6 animate-in slide-in-from-top-4">
+                    <div className="bg-[#0d1526]/80 backdrop-blur-sm p-4 sm:p-6 rounded-xl border border-[#1e3a5f]/50 shadow-sm mb-6 animate-in slide-in-from-top-4">
                         <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-4">小红书搜索</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                             <div className="md:col-span-2">
@@ -577,7 +577,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                 />
                             </div>
                         </div>
-                        <div className="flex items-center justify-between mt-3 mb-2 p-3 rounded-lg border border-[#1e3a5f]/40 bg-[#0a0f1a]/40">
+                        <div className="flex items-center justify-between gap-3 mt-3 mb-2 p-3 rounded-lg border border-[#1e3a5f]/40 bg-[#0a0f1a]/40">
                             <div>
                                 <div className="text-sm font-medium text-gray-200">图片分析调试开关</div>
                                 <div className="text-xs text-gray-500 mt-0.5">开启后显示每条结果可分析图片数量，并输出调试日志</div>
@@ -600,17 +600,17 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                                 {searchError}
                             </div>
                         )}
-                        <div className="flex justify-end gap-3">
+                        <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
                             <button
                                 onClick={() => setIsCreating(false)}
-                                className="px-4 py-2 text-gray-400 hover:bg-white/5 rounded-lg text-sm font-medium"
+                                className="w-full sm:w-auto px-4 py-2 text-gray-400 hover:bg-white/5 rounded-lg text-sm font-medium"
                             >
                                 取消
                             </button>
                             <button
                                 onClick={handleSearch}
                                 disabled={isSearching || !keywords.trim()}
-                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+                                className="w-full sm:w-auto justify-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2"
                             >
                                 {isSearching && <Loader2 size={16} className="animate-spin" />}
                                 搜索
@@ -623,40 +623,35 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                 {/* Task List */}
                 <div className="space-y-4">
                     {pagedTasks.map(task => (
-                        <div key={task.id} className="bg-[#0d1526]/60 backdrop-blur-sm rounded-xl border border-[#1e3a5f]/40 p-4 flex items-center justify-between hover:border-[#1e3a5f] transition-all">
-                            <div className="flex items-center gap-4">
+                        <div key={task.id} className="bg-[#0d1526]/60 backdrop-blur-sm rounded-xl border border-[#1e3a5f]/40 p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:border-[#1e3a5f] transition-all">
+                            <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${task.status === TaskStatus.Running ? 'bg-green-500/20 text-green-400' : 'bg-[#1e3a5f]/50 text-gray-400'}`}>
                                     {task.status === TaskStatus.Running ? <Loader2 size={20} className="animate-spin" /> : <Check size={20} />}
                                 </div>
-                                <div>
-                                    <h4 className="font-semibold text-gray-100">{task.keywords}</h4>
-                                    <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
+                                <div className="min-w-0">
+                                    <h4 className="font-semibold text-gray-100 break-words">{task.keywords}</h4>
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 mt-1">
                                         <span className="flex items-center gap-1">
                                             <Calendar size={12} />
                                             {task.config?.noteTime || '全部时间'}
                                             {/* (API doesn't return date range, so we show the filter used) */}
                                         </span>
-                                        <span className="flex items-center gap-1">|</span>
                                         <span>{task.platforms.join(', ')}</span>
-                                        <span className="flex items-center gap-1">|</span>
                                         <span className="text-indigo-400">
                                             {task.config?.sort === 'popularity_descending' ? '最热搜索' :
                                                 task.config?.sort === 'time_descending' ? '最新发布' :
                                                     '综合排序'}
                                         </span>
                                         {task.config?.minInteraction && (
-                                            <>
-                                                <span className="flex items-center gap-1">|</span>
-                                                <span className="text-gray-500">
-                                                    最小互动量 {task.config.minInteraction}
-                                                </span>
-                                            </>
+                                            <span className="text-gray-500">
+                                                最小互动量 {task.config.minInteraction}
+                                            </span>
                                         )}
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-8">
+                            <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-6 lg:ml-4">
                                 <div className="text-right">
                                     <div className="text-xs text-gray-500">命中条数</div>
                                     <div className="font-bold text-gray-100 text-lg">{task.itemsFound}</div>
@@ -689,11 +684,11 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                 </div>
 
                 {tasks.length > TASKS_PER_PAGE && (
-                    <div className="flex items-center justify-between mt-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4">
                         <div className="text-xs text-gray-500">
                             {taskStart + 1}-{Math.min(taskStart + TASKS_PER_PAGE, tasks.length)} / {tasks.length}
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                             <button
                                 onClick={handleDeletePage}
                                 disabled={!onDeleteTask || pagedTasks.length === 0}

@@ -709,7 +709,7 @@ const App: React.FC = () => {
   }, [activeCollectionMenuId]);
 
   return (
-    <div className="h-screen overflow-hidden bg-gradient-to-br from-[#0a0f1a] via-[#0d1a2d] to-[#0a0f1a] flex font-sans text-gray-100 relative">
+    <div className="h-[100dvh] overflow-hidden bg-gradient-to-br from-[#0a0f1a] via-[#0d1a2d] to-[#0a0f1a] flex font-sans text-gray-100 relative">
       {/* Deep ocean glow effect */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-1/4 left-1/4 w-[600px] h-[600px] bg-blue-500/10 rounded-full blur-[150px]"></div>
@@ -731,7 +731,7 @@ const App: React.FC = () => {
 
       {/* Sidebar Navigation */}
       <aside className={`
-        fixed lg:sticky top-0 left-0 h-screen w-64 bg-[#0d1526]/80 backdrop-blur-xl border-r border-[#1e3a5f]/50 z-50 transform transition-transform duration-300 ease-in-out flex flex-col
+        fixed lg:sticky top-0 left-0 h-[100dvh] w-64 bg-[#0d1526]/80 backdrop-blur-xl border-r border-[#1e3a5f]/50 z-50 transform transition-transform duration-300 ease-in-out flex flex-col
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         {/* Top Section: Logo & Nav */}
@@ -921,11 +921,11 @@ const App: React.FC = () => {
       </aside>
 
       {/* Main Content */}
-      <main className={`flex-1 flex flex-col overflow-hidden min-h-0 ${activeView !== 'chat' ? 'min-h-screen' : ''}`}>
+      <main className="flex-1 flex flex-col overflow-hidden min-h-0">
 
         {/* Header - hide for chat view */}
         {activeView !== 'chat' && (
-          <header className="sticky top-0 z-30 bg-[#0d1526]/70 backdrop-blur-md border-b border-[#1e3a5f]/40 px-6 py-3 flex items-center justify-between gap-4">
+          <header className="sticky top-0 z-30 bg-[#0d1526]/70 backdrop-blur-md border-b border-[#1e3a5f]/40 px-3 sm:px-6 py-3 flex items-center justify-between gap-3 sm:gap-4">
             <div className="flex items-center gap-4 flex-1">
               <button className="lg:hidden p-2 -ml-2 text-gray-400" onClick={() => setIsSidebarOpen(true)}>
                 <Menu size={24} />
@@ -961,7 +961,7 @@ const App: React.FC = () => {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setIsAddModalOpen(true)}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm shadow-indigo-500/30"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm shadow-indigo-500/30"
               >
                 <Plus size={18} />
                 <span className="hidden sm:inline">手动录入</span>
@@ -974,7 +974,7 @@ const App: React.FC = () => {
         <div className="flex-1 overflow-hidden relative min-h-0">
 
           {activeView === 'dashboard' && (
-            <div className="h-full overflow-y-auto p-6">
+            <div className="h-full overflow-y-auto p-3 sm:p-6">
               <DashboardView
                 tasks={tasks}
                 trendingItems={trending}
@@ -986,7 +986,7 @@ const App: React.FC = () => {
           )}
 
           {activeView === 'monitoring' && (
-            <div className="h-full overflow-y-auto p-6">
+            <div className="h-full overflow-y-auto p-3 sm:p-6">
               <MonitoringView
                 tasks={tasks}
                 onAddTask={handleAddTask}
@@ -1001,7 +1001,7 @@ const App: React.FC = () => {
           </div>
 
           {activeView === 'grid' && (
-            <div className="h-full overflow-y-auto p-6">
+            <div className="h-full overflow-y-auto p-3 sm:p-6">
 
               {/* Collection Header (if selected) */}
               {currentCollectionId && (
@@ -1016,7 +1016,7 @@ const App: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     {/* CHAT WITH COLLECTION BUTTON */}
                     <button
                       onClick={() => handleChatWithCollection(currentCollectionId)}
@@ -1030,7 +1030,7 @@ const App: React.FC = () => {
 
                     {/* Batch Management Tools */}
                     {isSelectionMode ? (
-                      <div className="flex items-center gap-2 bg-[#1e3a5f]/30 rounded-lg p-1">
+                      <div className="flex flex-wrap items-center gap-2 bg-[#1e3a5f]/30 rounded-lg p-1">
                         <span className="text-xs font-semibold px-2 text-indigo-400">已选 {selectedCardIds.size} 条</span>
                         <button
                           onClick={handleRemoveSelectedFromCollection}
@@ -1090,9 +1090,9 @@ const App: React.FC = () => {
                   </div>
 
                   {/* Main View Batch Actions */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {isSelectionMode ? (
-                      <div className="flex items-center gap-2 bg-[#1e3a5f]/30 rounded-lg p-1">
+                      <div className="flex flex-wrap items-center gap-2 bg-[#1e3a5f]/30 rounded-lg p-1">
                         <span className="text-xs font-semibold px-2 text-indigo-400">已选 {selectedCardIds.size} 条</span>
                         <button
                           onClick={() => setIsAddToCollectionModalOpen(true)}
