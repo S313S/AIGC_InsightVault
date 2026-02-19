@@ -48,16 +48,46 @@ const normalizeImageUrls = (value) => {
 const buildImageInlineParts = async (imageUrls) => {
     const parts = [];
     let total = 0;
-    const selected = imageUrls.slice(0, MAX_INLINE_IMAGES);
-    for (const imageUrl of selected) {
+    const skipped = {
+        overMaxInlineImages: 0,
+        fetchFailed: 0,
+        badHttpStatus: 0,
+        nonImageMime: 0,
+        emptyBuffer: 0,
+        overSingleImageBytes: 0,
+        overTotalImageBytes: 0,
+    };
+
+    for (const imageUrl of imageUrls) {
+        if (parts.length >= MAX_INLINE_IMAGES) {
+            skipped.overMaxInlineImages += 1;
+            continue;
+        }
+
         try {
             const resp = await fetch(imageUrl);
-            if (!resp.ok) continue;
+            if (!resp.ok) {
+                skipped.badHttpStatus += 1;
+                continue;
+            }
             const mimeType = String(resp.headers.get('content-type') || '').split(';')[0].trim() || 'image/jpeg';
-            if (!mimeType.startsWith('image/')) continue;
+            if (!mimeType.startsWith('image/')) {
+                skipped.nonImageMime += 1;
+                continue;
+            }
             const buffer = Buffer.from(await resp.arrayBuffer());
-            if (!buffer.length || buffer.length > MAX_IMAGE_BYTES) continue;
-            if (total + buffer.length > MAX_TOTAL_IMAGE_BYTES) break;
+            if (!buffer.length) {
+                skipped.emptyBuffer += 1;
+                continue;
+            }
+            if (buffer.length > MAX_IMAGE_BYTES) {
+                skipped.overSingleImageBytes += 1;
+                continue;
+            }
+            if (total + buffer.length > MAX_TOTAL_IMAGE_BYTES) {
+                skipped.overTotalImageBytes += 1;
+                continue;
+            }
             total += buffer.length;
             parts.push({
                 inlineData: {
@@ -67,9 +97,18 @@ const buildImageInlineParts = async (imageUrls) => {
             });
         } catch {
             // Ignore single-image failure and continue with remaining images.
+            skipped.fetchFailed += 1;
         }
     }
-    return parts;
+    return {
+        parts,
+        stats: {
+            inputCount: imageUrls.length,
+            sentCount: parts.length,
+            totalBytes: total,
+            skipped,
+        },
+    };
 };
 
 export default async function handler(req, res) {
@@ -134,12 +173,14 @@ export default async function handler(req, res) {
       `;
 
             const normalizedImageUrls = normalizeImageUrls(imageUrls);
-            const inlineImageParts = await buildImageInlineParts(normalizedImageUrls);
+            const inlineImage = await buildImageInlineParts(normalizedImageUrls);
+            const inlineImageParts = inlineImage.parts;
             console.info('[analysis-image-debug]', {
                 requestId,
                 rawCount: Array.isArray(imageUrls) ? imageUrls.length : 0,
                 normalizedCount: normalizedImageUrls.length,
                 inlineCount: inlineImageParts.length,
+                inlineStats: inlineImage.stats,
                 maxInlineImages: MAX_INLINE_IMAGES,
                 maxImageBytes: MAX_IMAGE_BYTES,
                 maxTotalImageBytes: MAX_TOTAL_IMAGE_BYTES
@@ -175,6 +216,38 @@ export default async function handler(req, res) {
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: prompt,
+                config: { responseMimeType: "application/json" }
+            });
+
+            return res.status(200).json({ result: response.text });
+
+        } else if (mode === 'prompt_check') {
+            const prompt = `
+你是「提示词完整性判定 Agent」。
+任务：从给定候选列表中，筛选“完整、可复用的提示词原文”。
+
+严格返回 JSON，不要返回任何额外文本，结构如下：
+{
+  "completePrompts": ["完整提示词1", "完整提示词2"]
+}
+
+判定规则：
+1) 只保留完整提示词：应包含明确任务意图，通常还包含角色/风格/约束/步骤/参数等信息中的至少一种。
+2) 可以是图像/视频/代码/系统提示词，但必须是可直接复用的完整表达。
+3) 仅话题标签、关键词、短语、标题、占位符（如 #AI[话题]#、skills、agent）都不算完整提示词。
+4) 保留原文，不要改写。
+5) 若没有完整提示词，返回空数组。
+
+帖子原文：
+"${context || ''}"
+
+候选文本：
+${message}
+      `;
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
                 config: { responseMimeType: "application/json" }
             });
 

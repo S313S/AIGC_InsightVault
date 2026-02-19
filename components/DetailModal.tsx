@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { KnowledgeCard, Collection } from '../types';
 import { X, ExternalLink, Copy, Check, Sparkles, Heart, Bookmark, MessageCircle, Database, PenLine, FileText, Save, FolderPlus, FolderCheck, Trash2 } from './Icons';
+import { filterCompletePromptsLocal } from '../shared/promptTagging.js';
 
 interface DetailModalProps {
   card: KnowledgeCard | null;
@@ -54,6 +55,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
   const usageScenarios = card.aiAnalysis?.usageScenarios?.length ? card.aiAnalysis.usageScenarios : fallbackUsageScenarios;
   const coreKnowledge = card.aiAnalysis?.coreKnowledge?.length ? card.aiAnalysis.coreKnowledge : fallbackCoreKnowledge;
   const summaryText = (card.aiAnalysis?.summary || '').trim() || '当前摘要为空，建议点击“交给 AI 处理”重新生成。';
+  const completePrompts = filterCompletePromptsLocal(card.aiAnalysis?.extractedPrompts || []);
 
   const handleCopy = (text: string, index: number) => {
     navigator.clipboard.writeText(text);
@@ -265,7 +267,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
           </div>
 
           {/* Prompts Section */}
-          {card.aiAnalysis.extractedPrompts.length > 0 && (
+          {completePrompts.length > 0 && (
             <div className="mb-8">
               <div className="flex items-center gap-2 mb-4 pt-6 border-t border-[#1e3a5f]/40">
                 <div className="p-1.5 bg-indigo-500/20 rounded-md">
@@ -275,7 +277,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
               </div>
 
               <div className="space-y-4">
-                {card.aiAnalysis.extractedPrompts.map((prompt, idx) => (
+                {completePrompts.map((prompt, idx) => (
                   <div key={idx} className="relative group">
                     <pre className="bg-[#0a0f1a] text-gray-100 p-4 rounded-xl text-sm whitespace-pre-wrap font-mono leading-relaxed border border-[#1e3a5f]/50">
                       {prompt}

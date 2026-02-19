@@ -3,6 +3,7 @@ import { X, Loader2, Sparkles, Plus, ExternalLink } from './Icons';
 import { analyzeContentWithGemini, classifyContentWithGemini } from '../services/geminiService';
 import { fetchSocialContent, SocialMediaContent } from '../services/socialService';
 import { Platform, ContentType, KnowledgeCard, EngagementMetrics } from '../types';
+import { resolveContentTypeByPrompts } from '../shared/promptTagging.js';
 
 interface AddContentModalProps {
     onClose: () => void;
@@ -112,7 +113,7 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
             coverImage: fetchedData?.coverImage || 'https://picsum.photos/400/300?random=' + Date.now(),
             images: fetchedData?.images || [],
             metrics: fetchedData?.metrics || { likes: 0, bookmarks: 0, comments: 0 },
-            contentType: ContentType.ToolReview,
+            contentType: resolveContentTypeByPrompts(analysis?.extractedPrompts) as ContentType,
             rawContent: contentToAnalyze,
             aiAnalysis: analysis,
             tags,

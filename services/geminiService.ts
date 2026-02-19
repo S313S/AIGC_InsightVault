@@ -1,6 +1,7 @@
 // import { GoogleGenAI } from "@google/genai"; // SDK not needed in browser
 import { AIAnalysis, KnowledgeCard } from "../types";
 import { PROJECT_KB_CONTEXT } from "./projectKnowledge";
+import { filterCompletePromptsLocal, normalizePromptList } from "../shared/promptTagging.js";
 
 // Vite uses import.meta.env for environment variables
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
@@ -60,6 +61,36 @@ Allowed categories (must be exactly one of these strings):
 Return strict JSON only: {"category": "<one of the allowed values>"}
 
 Content: "${message}"
+    `.trim();
+
+    return {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { responseMimeType: 'application/json' }
+    };
+  }
+
+  if (mode === 'prompt_check') {
+    const prompt = `
+你是「提示词完整性判定 Agent」。
+任务：从给定候选列表中，筛选“完整、可复用的提示词原文”。
+
+严格返回 JSON，不要返回任何额外文本，结构如下：
+{
+  "completePrompts": ["完整提示词1", "完整提示词2"]
+}
+
+判定规则：
+1) 只保留完整提示词：应包含明确任务意图，通常还包含角色/风格/约束/步骤/参数等信息中的至少一种。
+2) 可以是图像/视频/代码/系统提示词，但必须是可直接复用的完整表达。
+3) 仅话题标签、关键词、短语、标题、占位符（如 #AI[话题]#、skills、agent）都不算完整提示词。
+4) 保留原文，不要改写。
+5) 若没有完整提示词，返回空数组。
+
+帖子原文：
+"${context || ''}"
+
+候选文本：
+${message}
     `.trim();
 
     return {
@@ -245,6 +276,34 @@ const parseAIResponse = (responseText: string, sourceContent: string): AIAnalysi
   }
 };
 
+const parsePromptCheckResponse = (responseText: string, fallbackCandidates: string[]): string[] => {
+  try {
+    const jsonMatch = responseText.match(/```json\n([\s\S]*?)\n```/) || responseText.match(/```\n([\s\S]*?)\n```/);
+    const candidate = (jsonMatch ? jsonMatch[1] : responseText).trim();
+    const parsed = JSON.parse(extractLikelyJson(candidate));
+    const complete = normalizePromptList(parsed?.completePrompts);
+    return complete.length > 0 ? complete : filterCompletePromptsLocal(fallbackCandidates);
+  } catch {
+    return filterCompletePromptsLocal(fallbackCandidates);
+  }
+};
+
+const filterCompletePromptsWithAgent = async (candidates: string[], sourceContent: string): Promise<string[]> => {
+  const normalized = normalizePromptList(candidates);
+  if (normalized.length === 0) return [];
+
+  try {
+    const responseText = await callProxyAPI({
+      mode: 'prompt_check',
+      message: JSON.stringify(normalized),
+      context: sourceContent
+    });
+    return parsePromptCheckResponse(String(responseText || ''), normalized);
+  } catch {
+    return filterCompletePromptsLocal(normalized);
+  }
+};
+
 const parseGeminiErrorInfo = (error: unknown): { isQuotaExceeded: boolean; retrySeconds?: number } => {
   const raw = error instanceof Error ? error.message : String(error || '');
   let statusCode: number | undefined;
@@ -297,7 +356,12 @@ export const analyzeContentWithGemini = async (
       imageUrls: (options?.imageUrls || []).filter(Boolean)
     });
 
-    return parseAIResponse(String(responseText || ''), content);
+    const parsed = parseAIResponse(String(responseText || ''), content);
+    const completePrompts = await filterCompletePromptsWithAgent(parsed.extractedPrompts, content);
+    return {
+      ...parsed,
+      extractedPrompts: completePrompts
+    };
 
   } catch (error) {
     console.error("Analysis Failed:", error);
