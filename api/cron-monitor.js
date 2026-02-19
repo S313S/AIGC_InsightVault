@@ -283,6 +283,19 @@ const getFallbackCoverPath = (seed) => {
 };
 
 const isFallbackCoverPath = (url) => String(url || '').includes(`${FALLBACK_COVER_BASE_PATH}/cover-`);
+const isTwitterPlaceholderImage = (url) => {
+  const value = String(url || '').trim();
+  if (!value) return true;
+  if (isFallbackCoverPath(value)) return false;
+
+  const lowered = value.toLowerCase();
+  return (
+    lowered.includes('abs.twimg.com') ||
+    lowered.includes('/sticky/default_profile_images/') ||
+    lowered.includes('default_profile') ||
+    lowered.includes('placeholder')
+  );
+};
 
 const getSupabaseClient = () => {
   const url = process.env.VITE_SUPABASE_URL;
@@ -356,7 +369,7 @@ const mapTwitterSearchResult = (tweet, userById, mediaByKey) => {
     .map(key => mediaByKey.get(key))
     .filter(m => m && (m.type === 'photo' || m.type === 'animated_gif' || m.type === 'video'))
     .map(m => m.url || m.preview_image_url)
-    .filter(Boolean);
+    .filter(url => Boolean(url) && !isTwitterPlaceholderImage(url));
 
   const sourceUrl = user.username
     ? `https://twitter.com/${user.username}/status/${tweet.id}`
@@ -1040,7 +1053,7 @@ export default async function handler(req, res) {
     let fallbackCoverCount = 0;
     for (const item of candidates) {
       if (item?.platform !== 'Twitter') continue;
-      if (!item.coverImage) {
+      if (!item.coverImage || isTwitterPlaceholderImage(item.coverImage)) {
         const seed = item.sourceUrl || item.noteId || `${item.author || ''}-${item.publishTime || ''}`;
         item.coverImage = getFallbackCoverPath(seed);
       }

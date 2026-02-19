@@ -312,7 +312,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         <div className="mt-3 flex justify-end">
           <button
             onClick={handleAddTrustedAccount}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-sm font-medium text-white transition-colors"
+            className="w-full sm:w-auto justify-center inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-sm font-medium text-white transition-colors"
           >
             <Plus size={14} /> 添加账号
           </button>
@@ -334,18 +334,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                   className="rounded-lg border border-[#1e3a5f]/40 bg-[#0d1526]/70 px-3 py-2 cursor-pointer hover:border-[#3b82f6]/40 transition-colors"
                 >
                   {!isEditing && (
-                    <div className="flex items-center gap-3">
-                      <div className="min-w-[150px] text-sm text-gray-100">@{account.handle}</div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                      <div className="text-sm text-gray-100 sm:min-w-[150px] break-all">@{account.handle}</div>
                       <span className={`text-xs px-2 py-1 rounded-full border ${CATEGORY_STYLES[(account.category as CategoryType) || 'vibe_coding']}`}>
                         {CATEGORY_LABEL[(account.category as CategoryType) || 'vibe_coding']}
                       </span>
-                      <div className="flex-1 text-xs text-gray-400 truncate">{account.notes || '无备注'}</div>
+                      <div className="flex-1 text-xs text-gray-400 break-words">{account.notes || '无备注'}</div>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDeleteTrustedAccount(account.id);
                         }}
-                        className="text-gray-500 hover:text-rose-300 transition-colors"
+                        className="self-end sm:self-auto text-gray-500 hover:text-rose-300 transition-colors"
                         title="删除"
                       >
                         <Trash2 size={14} />
@@ -424,7 +424,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   ) => (
     <div className="rounded-xl border border-[#1e3a5f]/50 bg-[#0a0f1a]/60 p-4">
       <h3 className="text-sm font-semibold text-gray-200 mb-3">{title}</h3>
-      <div className="flex gap-2 mb-3">
+      <div className="flex flex-col sm:flex-row gap-2 mb-3">
         <input
           value={keywordForm[type]}
           onChange={(e) => setKeywordForm(prev => ({ ...prev, [type]: e.target.value }))}
@@ -433,7 +433,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         />
         <button
           onClick={() => addKeyword(type)}
-          className="inline-flex items-center gap-1 px-2.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-xs text-white"
+          className="w-full sm:w-auto justify-center inline-flex items-center gap-1 px-2.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-xs text-white"
         >
           <Plus size={13} /> 添加
         </button>
@@ -561,11 +561,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   );
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-0 sm:p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
 
-      <div className="relative w-full max-w-6xl h-[84vh] max-h-[880px] rounded-2xl border border-[#1e3a5f]/50 bg-[#0a1628] shadow-2xl flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#1e3a5f]/40">
+      <div className="relative w-full h-[100dvh] sm:h-[84vh] sm:max-h-[880px] sm:max-w-6xl rounded-none sm:rounded-2xl border border-[#1e3a5f]/50 bg-[#0a1628] shadow-2xl flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-[#1e3a5f]/40">
           <div>
             <h2 className="text-lg font-semibold text-gray-100">监控设置</h2>
             <p className="text-xs text-gray-500 mt-0.5">Twitter Quality Filter</p>
@@ -587,28 +587,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         </div>
 
         <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
-          <div className="w-full lg:w-56 border-b lg:border-b-0 lg:border-r border-[#1e3a5f]/40 p-3 space-y-1">
+          <div className="w-full lg:w-56 border-b lg:border-b-0 lg:border-r border-[#1e3a5f]/40 p-2 sm:p-3 flex lg:block gap-1 overflow-x-auto">
             <button
               onClick={() => setActiveTab('trusted')}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'trusted' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
+              className={`whitespace-nowrap lg:w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'trusted' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
             >
               信任账号
             </button>
             <button
               onClick={() => setActiveTab('keywords')}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'keywords' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
+              className={`whitespace-nowrap lg:w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'keywords' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
             >
               质量关键词
             </button>
             <button
               onClick={() => setActiveTab('threshold')}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'threshold' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
+              className={`whitespace-nowrap lg:w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'threshold' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
             >
               互动阈值设置
             </button>
             <button
               onClick={() => setActiveTab('about')}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'about' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
+              className={`whitespace-nowrap lg:w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'about' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
             >
               关于
             </button>
@@ -627,7 +627,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
             )}
 
             {message && (
-              <div className="fixed bottom-6 right-6 text-xs px-3 py-2 rounded-lg bg-[#0d1526] border border-[#1e3a5f]/60 text-gray-200 shadow-xl">
+              <div className="fixed bottom-4 left-1/2 -translate-x-1/2 sm:left-auto sm:right-6 sm:translate-x-0 text-xs px-3 py-2 rounded-lg bg-[#0d1526] border border-[#1e3a5f]/60 text-gray-200 shadow-xl">
                 {message}
               </div>
             )}

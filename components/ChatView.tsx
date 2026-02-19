@@ -240,8 +240,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
       <div className="relative z-10 flex flex-col h-full min-h-0">
 
         {/* Header - Floating glass pill */}
-        <div className="flex justify-center pt-4 pb-2 shrink-0">
-          <div className="inline-flex items-center gap-3 px-4 py-2.5 rounded-full bg-white/[0.08] backdrop-blur-xl border border-white/10 shadow-lg">
+        <div className="flex justify-center pt-3 sm:pt-4 pb-2 px-3 sm:px-0 shrink-0">
+          <div className="w-full max-w-3xl sm:w-auto inline-flex flex-wrap sm:flex-nowrap items-center justify-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 rounded-2xl sm:rounded-full bg-white/[0.08] backdrop-blur-xl border border-white/10 shadow-lg">
             <div className="flex items-center gap-2">
               <div
                 className="w-10 h-10 rounded-full flex items-center justify-center"
@@ -259,7 +259,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
                 </p>
               </div>
             </div>
-            <div className="w-px h-6 bg-white/10" />
+            <div className="hidden sm:block w-px h-6 bg-white/10" />
             <div className="flex items-center gap-1.5">
               <div
                 className="w-2 h-2 rounded-full bg-emerald-400"
@@ -267,7 +267,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
               />
               <span className="text-xs text-emerald-300/80">在线</span>
             </div>
-            <div className="w-px h-6 bg-white/10" />
+            <div className="hidden sm:block w-px h-6 bg-white/10" />
             <button
               onClick={handleNewChat}
               className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white/5 hover:bg-white/12 border border-white/10 text-white/80 hover:text-white text-xs transition-colors"
@@ -279,8 +279,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
           </div>
         </div>
         {cards.length > 40 && (
-          <div className="flex justify-center pb-2 shrink-0">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/12 border border-amber-500/25 text-[11px] text-amber-300/85">
+          <div className="flex justify-center pb-2 px-3 sm:px-0 shrink-0">
+            <div className="w-full max-w-3xl sm:w-auto inline-flex items-center gap-2 px-3 py-1.5 rounded-2xl sm:rounded-full bg-amber-500/12 border border-amber-500/25 text-[11px] text-amber-300/85">
               <span>⏳</span>
               <span>当前数据量较大，AI 正在处理全量内容，响应可能稍慢</span>
             </div>
@@ -288,7 +288,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
         )}
 
         {/* Messages Area */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-5">
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4 space-y-5">
           {messages.map((msg) => (
             <div
               key={msg.id}
@@ -301,7 +301,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
               )}
 
               <div
-                className={`group relative max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${msg.role === 'user'
+                className={`group relative max-w-[88%] sm:max-w-[75%] rounded-2xl px-3 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed ${msg.role === 'user'
                   ? 'rounded-tr-md text-white'
                   : 'rounded-tl-md text-white/90'
                   }`}
@@ -320,7 +320,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
                 {msg.role === 'assistant' && msg.id !== 'welcome' && (
                   <button
                     onClick={() => handleCopyMessage(msg)}
-                    className="absolute -top-2 -right-2 h-7 px-2 rounded-lg border border-white/15 bg-[#131b35]/90 text-white/70 hover:text-white hover:bg-[#182248] transition-all opacity-0 group-hover:opacity-100"
+                    className="absolute -top-2 -right-2 h-7 px-2 rounded-lg border border-white/15 bg-[#131b35]/90 text-white/70 hover:text-white hover:bg-[#182248] transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                     title="复制回复"
                   >
                     <span className="flex items-center gap-1">
@@ -369,7 +369,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ cards, contextTitle }) => {
         </div>
 
         {/* Input Area - Floating glass bar */}
-        <div className="px-6 pb-6 pt-2 shrink-0">
+        <div className="px-3 sm:px-6 pb-3 sm:pb-6 pt-2 shrink-0">
           <div
             className="relative rounded-2xl p-1 flex items-center transition-all duration-300 focus-within:shadow-lg focus-within:shadow-violet-500/20"
             style={{
