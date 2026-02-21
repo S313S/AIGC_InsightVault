@@ -26,7 +26,7 @@ const XHS_RETRIES = 2;
 const TWITTER_REQUIRE_TERMS = ['Claude', 'GPT', 'LLM', 'OpenAI', 'Anthropic', 'Gemini'];
 const SOFT_TIMEOUT_GUARD_MS = 260000;
 const HIGH_ENGAGEMENT_QUALITY_BYPASS = 5000;
-const FALLBACK_COVER_POOL_SIZE = 100;
+const FALLBACK_COVER_POOL_SIZE = 10;
 const FALLBACK_COVER_BASE_PATH = '/fallback-covers';
 const QUALITY_FALLBACK_POSITIVE = [
   'tutorial', 'workflow', 'tips', 'how to', 'step by step', 'guide', 'setup', 'build',
@@ -265,6 +265,16 @@ const buildTrendingRow = (result, snapshotTag) => {
 const normalizeSourceUrl = (url) => {
   if (!url) return '';
   return url.split('?')[0].trim();
+};
+
+const isSnapshotTag = (tag) => typeof tag === 'string' && tag.startsWith('snapshot:');
+
+const stripSnapshotTags = (tags) => (Array.isArray(tags) ? tags : []).filter(tag => !isSnapshotTag(tag));
+
+const pickLatestSnapshotTag = (tags) => {
+  const snapshots = (Array.isArray(tags) ? tags : []).filter(isSnapshotTag);
+  if (snapshots.length === 0) return 'snapshot:legacy';
+  return snapshots.sort((a, b) => (a > b ? -1 : a < b ? 1 : 0))[0];
 };
 
 const hashSeed = (value) => {
@@ -683,9 +693,7 @@ export default async function handler(req, res) {
       let updatedExisting = 0;
       for (const row of trendRows || []) {
         const tags = Array.isArray(row.tags) ? row.tags : [];
-        const mergedTags = tags.includes(snapshotTag)
-          ? tags
-          : Array.from(new Set([...tags, snapshotTag]));
+        const mergedTags = Array.from(new Set([...stripSnapshotTags(tags), snapshotTag]));
         const { error: updateError } = await supabase
           .from('knowledge_cards')
           .update({ tags: mergedTags, is_trending: true })
@@ -709,7 +717,7 @@ export default async function handler(req, res) {
       const snapshotToIds = new Map();
       for (const row of refreshedRows || []) {
         const tags = Array.isArray(row.tags) ? row.tags : [];
-        const snap = tags.find(t => typeof t === 'string' && t.startsWith('snapshot:')) || 'snapshot:legacy';
+        const snap = pickLatestSnapshotTag(tags);
         if (!snapshotToIds.has(snap)) snapshotToIds.set(snap, []);
         snapshotToIds.get(snap).push(row.id);
       }
@@ -1143,9 +1151,12 @@ export default async function handler(req, res) {
         if (!candidate) continue;
         const updatedRow = buildTrendingRow(candidate, snapshotTag);
         const tags = Array.isArray(row.tags) ? row.tags : [];
-        const mergedTags = updatedRow.tags?.length
-          ? Array.from(new Set([...updatedRow.tags, ...tags]))
-          : tags;
+        const updatedRowTags = Array.isArray(updatedRow.tags) ? updatedRow.tags : [];
+        const mergedTags = Array.from(new Set([
+          ...stripSnapshotTags(updatedRowTags),
+          ...stripSnapshotTags(tags),
+          snapshotTag
+        ]));
         const { error: updateError } = await supabase
           .from('knowledge_cards')
           .update({
@@ -1185,7 +1196,7 @@ export default async function handler(req, res) {
     const snapshotToIds = new Map();
     for (const row of trendRows || []) {
       const tags = Array.isArray(row.tags) ? row.tags : [];
-      const snap = tags.find(t => typeof t === 'string' && t.startsWith('snapshot:')) || 'snapshot:legacy';
+      const snap = pickLatestSnapshotTag(tags);
       if (!snapshotToIds.has(snap)) snapshotToIds.set(snap, []);
       snapshotToIds.get(snap).push(row.id);
     }

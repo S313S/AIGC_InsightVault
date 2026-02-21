@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="Nature fallback 10" data-scene="aurora-tundra">
+
+  <defs>
+    <linearGradient id="sky-10" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#17253f"/>
+      <stop offset="55%" stop-color="#1f375f"/>
+      <stop offset="100%" stop-color="#204d6f"/>
+    </linearGradient>
+    <filter id="grain-10" x="0%" y="0%" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="370" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.045"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+<rect x="0" y="0" width="1200" height="675" fill="url(#sky-10)"/>
+
+      <path d="M-30 130 C230 40, 520 210, 860 130 C1040 90, 1150 150, 1230 120" stroke="#68ffd4" stroke-width="22" fill="none" opacity="0.25"/>
+      <path d="M-30 190 C240 110, 470 260, 860 185 C1030 155, 1150 205, 1230 180" stroke="#95ff89" stroke-width="18" fill="none" opacity="0.2"/>
+      <rect x="0" y="430" width="1200" height="245" fill="#1e2f36"/>
+      <path d="M0 500 L220 420 L380 500 L540 410 L730 500 L920 435 L1080 500 L1200 460 L1200 675 L0 675 Z" fill="#2f434a"/>
+      <circle cx="190" cy="115" r="3" fill="#ffffff"/><circle cx="260" cy="80" r="2" fill="#ffffff"/><circle cx="330" cy="150" r="2" fill="#ffffff"/>
+      <circle cx="910" cy="95" r="2" fill="#ffffff"/><circle cx="980" cy="140" r="3" fill="#ffffff"/>
+    
+<rect x="0" y="0" width="1200" height="675" filter="url(#grain-10)"/>
+</svg>

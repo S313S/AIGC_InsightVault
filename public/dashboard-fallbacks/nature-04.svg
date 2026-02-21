@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="Nature fallback 4" data-scene="sea-cliffs">
+
+  <defs>
+    <linearGradient id="sky-4" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#a9d8ff"/>
+      <stop offset="55%" stop-color="#6fb1e8"/>
+      <stop offset="100%" stop-color="#2f6ea3"/>
+    </linearGradient>
+    <filter id="grain-4" x="0%" y="0%" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="148" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.045"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+<rect x="0" y="0" width="1200" height="675" fill="url(#sky-4)"/>
+
+      <rect x="0" y="360" width="1200" height="315" fill="#4d95bf"/>
+      <path d="M0 430 L120 250 L270 290 L360 220 L520 270 L620 200 L780 260 L890 210 L1080 280 L1200 240 L1200 675 L0 675 Z" fill="#4e5f67"/>
+      <path d="M0 500 C210 470, 340 530, 560 500 C760 470, 980 540, 1200 510" stroke="#bfe8ff" stroke-width="8" fill="none" opacity="0.52"/>
+      <path d="M0 545 C190 515, 420 580, 690 540 C900 510, 1070 575, 1200 548" stroke="#d8f3ff" stroke-width="6" fill="none" opacity="0.42"/>
+    
+<rect x="0" y="0" width="1200" height="675" filter="url(#grain-4)"/>
+</svg>

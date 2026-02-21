@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="Nature fallback 6" data-scene="green-meadow">
+
+  <defs>
+    <linearGradient id="sky-6" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d6f3ff"/>
+      <stop offset="55%" stop-color="#9fd8ef"/>
+      <stop offset="100%" stop-color="#6fb3cd"/>
+    </linearGradient>
+    <filter id="grain-6" x="0%" y="0%" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="222" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.045"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+<rect x="0" y="0" width="1200" height="675" fill="url(#sky-6)"/>
+
+      <path d="M-20 410 C220 340, 420 470, 700 400 C900 350, 1080 440, 1220 390 L1220 675 L-20 675 Z" fill="#76b96b"/>
+      <path d="M-20 470 C260 410, 480 520, 760 455 C930 415, 1090 500, 1220 460 L1220 675 L-20 675 Z" fill="#5ca457"/>
+      <path d="M-20 535 C220 485, 500 580, 790 520 C980 480, 1120 555, 1220 528 L1220 675 L-20 675 Z" fill="#488d45"/>
+      <circle cx="160" cy="120" r="40" fill="#fff3b7" opacity="0.72"/>
+    
+<rect x="0" y="0" width="1200" height="675" filter="url(#grain-6)"/>
+</svg>

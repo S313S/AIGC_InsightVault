@@ -3,20 +3,18 @@ import assert from 'node:assert/strict';
 
 import { makeSvg } from './generate-fallback-covers.mjs';
 
-test('makeSvg creates text-free tech scene fallback', () => {
-  const svg = makeSvg(12);
+test('makeSvg creates text-free natural landscape fallback', () => {
+  const svg = makeSvg(7);
 
-  assert.match(svg, /data-scene="scene-/);
+  assert.match(svg, /data-scene="landscape-/);
   assert.match(svg, /id="scene-sparkles"/);
   assert.doesNotMatch(svg, /<text\b/i);
-  assert.doesNotMatch(svg, />X<\/text>/);
-  assert.doesNotMatch(svg, /Fallback Cover \/ 兜底封面/);
 });
 
-test('first 100 fallback covers are unique and use multiple scene templates', () => {
-  const svgs = Array.from({ length: 100 }, (_, i) => makeSvg(i + 1));
+test('first 10 fallback covers are unique and landscape-themed', () => {
+  const svgs = Array.from({ length: 10 }, (_, i) => makeSvg(i + 1));
   const unique = new Set(svgs);
-  assert.equal(unique.size, 100);
+  assert.equal(unique.size, 10);
 
   const sceneKinds = new Set(
     svgs.map((svg) => {
@@ -24,5 +22,5 @@ test('first 100 fallback covers are unique and use multiple scene templates', ()
       return m ? m[1] : '';
     })
   );
-  assert.ok(sceneKinds.size >= 10);
+  assert.ok(sceneKinds.size >= 6);
 });

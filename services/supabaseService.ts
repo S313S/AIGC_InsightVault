@@ -56,6 +56,14 @@ const normalizeSourceUrl = (url: string): string => {
 };
 
 const normalizeText = (value: string): string => (value || '').trim().toLowerCase();
+const isSnapshotTag = (tag: unknown): tag is string =>
+    typeof tag === 'string' && tag.startsWith('snapshot:');
+
+const pickLatestSnapshotTag = (tags: unknown[]): string => {
+    const snapshots = (Array.isArray(tags) ? tags : []).filter(isSnapshotTag);
+    if (snapshots.length === 0) return 'snapshot:legacy';
+    return [...snapshots].sort((a, b) => (a > b ? -1 : a < b ? 1 : 0))[0];
+};
 
 const buildCardDedupKey = (card: KnowledgeCard): string => {
     const normalizedUrl = normalizeSourceUrl(card.sourceUrl);
@@ -274,14 +282,14 @@ export const getTrendingCards = async (): Promise<KnowledgeCard[]> => {
 
     const cards = dedupeCards((data || []).map(dbToCard));
     const snapshotTags = cards
-        .map(c => c.tags?.find(t => typeof t === 'string' && t.startsWith('snapshot:')) || '')
+        .map(c => pickLatestSnapshotTag(c.tags || []))
         .filter(Boolean)
         .sort((a, b) => (a > b ? -1 : a < b ? 1 : 0));
 
     if (snapshotTags.length === 0) return cards;
 
     const latest = snapshotTags[0];
-    return cards.filter(c => c.tags?.includes(latest));
+    return cards.filter(c => pickLatestSnapshotTag(c.tags || []) === latest);
 };
 
 export const saveCard = async (card: KnowledgeCard, isTrending: boolean = false): Promise<boolean> => {

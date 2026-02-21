@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="Nature fallback 3" data-scene="desert-dunes">
+
+  <defs>
+    <linearGradient id="sky-3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffd6a6"/>
+      <stop offset="55%" stop-color="#f2aa6a"/>
+      <stop offset="100%" stop-color="#c4713f"/>
+    </linearGradient>
+    <filter id="grain-3" x="0%" y="0%" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="111" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.045"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+<rect x="0" y="0" width="1200" height="675" fill="url(#sky-3)"/>
+
+      <circle cx="980" cy="120" r="52" fill="#ffe7b8" opacity="0.72"/>
+      <path d="M-20 410 C150 355, 320 450, 490 400 C650 350, 860 450, 1220 390 L1220 675 L-20 675 Z" fill="#d8985d"/>
+      <path d="M-20 470 C180 400, 340 520, 560 460 C750 410, 930 520, 1220 445 L1220 675 L-20 675 Z" fill="#c98347"/>
+      <path d="M-20 540 C230 470, 400 590, 630 530 C860 480, 1010 600, 1220 535 L1220 675 L-20 675 Z" fill="#b46e37"/>
+    
+<rect x="0" y="0" width="1200" height="675" filter="url(#grain-3)"/>
+</svg>

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const TOTAL = 100;
+const TOTAL = 10;
 const WIDTH = 1200;
 const HEIGHT = 675;
 const OUT_DIR = path.resolve(process.cwd(), 'public', 'fallback-covers');
@@ -23,267 +23,170 @@ const rand = (rng, min, max) => min + (max - min) * rng();
 const randInt = (rng, min, max) => Math.floor(rand(rng, min, max + 1));
 const hsl = (h, s, l) => `hsl(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(l)}%)`;
 
-const sceneNodes = (rng, hueBase) => {
-  const points = Array.from({ length: randInt(rng, 5, 8) }, () => ({
-    x: randInt(rng, 640, 1080),
-    y: randInt(rng, 80, 330),
-    r: randInt(rng, 8, 18)
-  }));
+const sky = (hA, hB, hC, idx) => `
+  <defs>
+    <linearGradient id="sky-${idx}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${hsl(hA, 70, 74)}"/>
+      <stop offset="55%" stop-color="${hsl(hB, 64, 56)}"/>
+      <stop offset="100%" stop-color="${hsl(hC, 46, 34)}"/>
+    </linearGradient>
+    <filter id="grain-${idx}" x="0%" y="0%" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="${idx * 17}" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer><feFuncA type="table" tableValues="0 0.05"/></feComponentTransfer>
+    </filter>
+    <filter id="soft-${idx}" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+    <radialGradient id="vignette-${idx}" cx="50%" cy="45%" r="72%">
+      <stop offset="60%" stop-color="rgba(0,0,0,0)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0.42)"/>
+    </radialGradient>
+  </defs>`;
 
-  const lines = [];
-  for (let i = 1; i < points.length; i += 1) {
-    const parent = randInt(rng, 0, i - 1);
-    lines.push(`<line x1="${points[parent].x}" y1="${points[parent].y}" x2="${points[i].x}" y2="${points[i].y}" stroke="rgba(145,245,255,0.64)" stroke-width="${randInt(rng, 2, 4)}"/>`);
+const mountainRanges = (rng, hue, baseY) => {
+  const layers = [];
+  for (let l = 0; l < 3; l += 1) {
+    const y = baseY + l * 36;
+    let d = `M 0 ${y}`;
+    for (let x = 0; x <= WIDTH + 120; x += 120) {
+      const peak = y - randInt(rng, 30 + l * 10, 120 - l * 10);
+      d += ` L ${x} ${peak}`;
+    }
+    d += ` L ${WIDTH} ${HEIGHT} L 0 ${HEIGHT} Z`;
+    layers.push(`<path d="${d}" fill="${hsl(hue + l * 8, 28 + l * 6, 24 + l * 8)}" opacity="${(0.85 - l * 0.18).toFixed(2)}"/>`);
   }
-
-  const circles = points
-    .map((p, i) => `<circle cx="${p.x}" cy="${p.y}" r="${p.r}" fill="${hsl(hueBase + i * 9, 88, 72)}" opacity="0.86"/>`)
-    .join('');
-
-  return `<g id="scene-nodes">${lines.join('')}${circles}</g>`;
+  return layers.join('');
 };
 
-const sceneCircuit = (rng, hueBase) => {
-  const segments = Array.from({ length: randInt(rng, 16, 24) }, () => {
-    const x = randInt(rng, 80, 1120);
-    const y = randInt(rng, 70, 620);
-    const horizontal = rng() > 0.45;
-    const len = randInt(rng, 70, 220);
-    const x2 = horizontal ? Math.min(1140, x + len) : x;
-    const y2 = horizontal ? y : Math.min(640, y + len);
-    return `<line x1="${x}" y1="${y}" x2="${x2}" y2="${y2}" stroke="rgba(135,220,255,0.28)" stroke-width="${randInt(rng, 2, 6)}" stroke-linecap="round"/>`;
-  }).join('');
-
-  const chips = Array.from({ length: randInt(rng, 4, 7) }, (_, i) => {
-    const w = randInt(rng, 80, 200);
-    const h = randInt(rng, 50, 120);
-    const x = randInt(rng, 90, 1080 - w);
-    const y = randInt(rng, 80, 600 - h);
-    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="rgba(12,28,60,0.48)" stroke="${hsl(hueBase + i * 11, 90, 70)}" opacity="0.78"/>`;
-  }).join('');
-
-  return `<g id="scene-circuit">${segments}${chips}</g>`;
+const sceneAlpineLake = (rng, hue) => {
+  const baseY = randInt(rng, 300, 360);
+  return `
+    ${mountainRanges(rng, hue, baseY)}
+    <rect y="${baseY + 40}" width="${WIDTH}" height="${HEIGHT - baseY}" fill="rgba(20,70,110,0.45)"/>
+    <ellipse cx="${randInt(rng, 520, 700)}" cy="${baseY + 120}" rx="${randInt(rng, 260, 430)}" ry="${randInt(rng, 50, 90)}" fill="rgba(160,220,255,0.18)"/>
+  `;
 };
 
-const sceneDatacenter = (rng) => {
-  const racks = Array.from({ length: randInt(rng, 6, 9) }, (_, i) => {
-    const w = randInt(rng, 88, 130);
-    const h = randInt(rng, 300, 470);
-    const x = 70 + i * randInt(rng, 120, 165);
-    const y = HEIGHT - h - randInt(rng, 25, 50);
-    const leds = Array.from({ length: randInt(rng, 5, 11) }, () => {
-      const ly = randInt(rng, y + 30, y + h - 25);
-      const lx = randInt(rng, x + 18, x + w - 18);
-      const lw = randInt(rng, 16, 34);
-      return `<rect x="${lx}" y="${ly}" width="${lw}" height="6" rx="3" fill="rgba(102,245,220,0.8)"/>`;
-    }).join('');
-    return `<g><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="10" fill="rgba(10,20,42,0.58)" stroke="rgba(130,190,255,0.45)"/>${leds}</g>`;
+const sceneForestRiver = (rng, hue) => {
+  const trees = Array.from({ length: 28 }, () => {
+    const x = randInt(rng, 0, WIDTH);
+    const y = randInt(rng, 220, 520);
+    const h = randInt(rng, 70, 180);
+    return `<g><rect x="${x - 4}" y="${y}" width="8" height="${h}" fill="rgba(55,35,20,0.55)"/><circle cx="${x}" cy="${y}" r="${randInt(rng, 18, 42)}" fill="${hsl(hue + randInt(rng, -20, 20), 42, randInt(rng, 28, 44))}" opacity="0.85"/></g>`;
   }).join('');
-
-  return `<g id="scene-datacenter">${racks}</g>`;
+  const river = `<path d="M -40 ${randInt(rng, 460, 520)} C 260 ${randInt(rng, 420, 500)}, 460 ${randInt(rng, 520, 620)}, 1240 ${randInt(rng, 500, 620)} L 1240 700 L -40 700 Z" fill="rgba(135,205,240,0.42)"/>`;
+  return `${river}${trees}`;
 };
 
-const sceneCity = (rng, hueBase) => {
-  const buildings = Array.from({ length: randInt(rng, 11, 16) }, (_, i) => {
-    const w = randInt(rng, 40, 120);
-    const h = randInt(rng, 120, 360);
-    const x = randInt(rng, 20, WIDTH - 20 - w);
-    const y = HEIGHT - h;
-    const windows = Array.from({ length: randInt(rng, 4, 10) }, (_, idx) => {
-      const wy = y + 20 + idx * randInt(rng, 18, 28);
-      return `<rect x="${x + randInt(rng, 8, 16)}" y="${wy}" width="${w - randInt(rng, 16, 28)}" height="5" rx="2" fill="rgba(120,240,255,0.22)"/>`;
-    }).join('');
-    return `<g><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="rgba(8,18,38,0.58)" stroke="${hsl(hueBase + i * 5, 70, 52)}" opacity="0.72"/>${windows}</g>`;
+const sceneDesertDunes = (rng, hue) => {
+  const dunes = Array.from({ length: 5 }, (_, i) => {
+    const y = 350 + i * 55;
+    return `<path d="M -40 ${y} C 220 ${y - randInt(rng, 20, 70)}, 520 ${y + randInt(rng, 10, 70)}, 1240 ${y - randInt(rng, 20, 60)} L 1240 700 L -40 700 Z" fill="${hsl(hue + i * 4, 54, 56 - i * 6)}" opacity="0.9"/>`;
   }).join('');
-
-  return `<g id="scene-city">${buildings}</g>`;
+  return dunes;
 };
 
-const sceneWave = (rng) => {
-  const waves = Array.from({ length: randInt(rng, 4, 7) }, (_, i) => {
-    const y = randInt(rng, 150, 520);
-    const a = randInt(rng, 20, 70);
-    const p = randInt(rng, 200, 520);
-    const d = `M 0 ${y} C ${p * 0.25} ${y - a}, ${p * 0.75} ${y + a}, ${p} ${y} S ${p * 1.75} ${y - a}, ${p * 2} ${y}`;
-    return `<path d="${d}" transform="translate(${randInt(rng, -20, 220)},0) scale(${rand(rng, 1.2, 2.5)},1)" fill="none" stroke="rgba(132,236,255,${rand(rng, 0.18, 0.42).toFixed(2)})" stroke-width="${randInt(rng, 3, 7)}"/>`;
+const sceneCoastline = (rng, hue) => {
+  const cliffs = Array.from({ length: 6 }, (_, i) => {
+    const x = i * 220 + randInt(rng, -40, 40);
+    const w = randInt(rng, 180, 300);
+    const h = randInt(rng, 140, 300);
+    return `<rect x="${x}" y="${HEIGHT - h - 80}" width="${w}" height="${h}" rx="12" fill="${hsl(hue + i * 6, 24, 30)}" opacity="0.85"/>`;
   }).join('');
-
-  return `<g id="scene-wave">${waves}</g>`;
+  const sea = `<rect y="${randInt(rng, 360, 430)}" width="${WIDTH}" height="${HEIGHT}" fill="rgba(78,150,198,0.52)"/>`;
+  return `${sea}${cliffs}`;
 };
 
-const sceneCloudPipeline = (rng) => {
-  const clouds = Array.from({ length: randInt(rng, 3, 5) }, () => {
-    const x = randInt(rng, 160, 980);
-    const y = randInt(rng, 80, 260);
-    return `<g><circle cx="${x}" cy="${y}" r="${randInt(rng, 26, 38)}" fill="rgba(180,220,255,0.42)"/><circle cx="${x + randInt(rng, 25, 50)}" cy="${y + randInt(rng, -8, 8)}" r="${randInt(rng, 20, 34)}" fill="rgba(180,220,255,0.36)"/><rect x="${x - 22}" y="${y + 8}" width="${randInt(rng, 70, 110)}" height="22" rx="11" fill="rgba(170,220,255,0.3)"/></g>`;
-  }).join('');
-
-  const pipes = Array.from({ length: randInt(rng, 7, 12) }, () => {
-    const x = randInt(rng, 120, 1080);
-    const y = randInt(rng, 120, 560);
-    return `<path d="M ${x} ${y} h ${randInt(rng, 30, 140)} v ${randInt(rng, 20, 100)} h ${randInt(rng, -140, 140)}" fill="none" stroke="rgba(120,255,210,0.34)" stroke-width="${randInt(rng, 4, 8)}" stroke-linecap="round"/>`;
-  }).join('');
-
-  return `<g id="scene-cloud-pipeline">${clouds}${pipes}</g>`;
+const sceneWaterfall = (rng, hue) => {
+  const cliff = `<rect x="${randInt(rng, 420, 520)}" y="${randInt(rng, 150, 220)}" width="${randInt(rng, 180, 260)}" height="${randInt(rng, 350, 430)}" rx="14" fill="${hsl(hue, 20, 28)}"/>`;
+  const water = `<rect x="${randInt(rng, 470, 560)}" y="${randInt(rng, 140, 200)}" width="${randInt(rng, 80, 120)}" height="${randInt(rng, 380, 460)}" fill="rgba(190,235,255,0.6)" />`;
+  const pool = `<ellipse cx="${randInt(rng, 560, 680)}" cy="${randInt(rng, 560, 620)}" rx="${randInt(rng, 220, 320)}" ry="${randInt(rng, 50, 80)}" fill="rgba(125,200,240,0.5)"/>`;
+  return `${cliff}${water}${pool}`;
 };
 
-const sceneOrbits = (rng, hueBase) => {
-  const cx = randInt(rng, 520, 700);
-  const cy = randInt(rng, 250, 350);
-  const rings = Array.from({ length: 4 }, (_, i) => {
-    const rx = randInt(rng, 120 + i * 42, 160 + i * 52);
-    const ry = randInt(rng, 54 + i * 25, 90 + i * 30);
-    return `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="none" stroke="rgba(140,230,255,0.28)" stroke-width="2" transform="rotate(${randInt(rng, -30, 30)} ${cx} ${cy})"/>`;
+const sceneMeadow = (rng, hue) => {
+  const hills = Array.from({ length: 4 }, (_, i) => {
+    const y = 350 + i * 45;
+    return `<path d="M -20 ${y} C 260 ${y - randInt(rng, 40, 80)}, 640 ${y + randInt(rng, 20, 80)}, 1220 ${y - randInt(rng, 30, 70)} L 1220 700 L -20 700 Z" fill="${hsl(hue + i * 7, 40, 42 - i * 4)}"/>`;
   }).join('');
-
-  const satellites = Array.from({ length: randInt(rng, 7, 11) }, (_, i) => {
-    const angle = rand(rng, 0, Math.PI * 2);
-    const radius = rand(rng, 140, 290);
-    const x = Math.round(cx + Math.cos(angle) * radius);
-    const y = Math.round(cy + Math.sin(angle) * radius * 0.55);
-    return `<circle cx="${x}" cy="${y}" r="${randInt(rng, 6, 12)}" fill="${hsl(hueBase + i * 12, 88, 72)}" opacity="0.85"/>`;
-  }).join('');
-
-  return `<g id="scene-orbits">${rings}${satellites}</g>`;
+  return hills;
 };
 
-const sceneCodePanels = (rng) => {
-  const panels = Array.from({ length: randInt(rng, 5, 8) }, (_, i) => {
-    const w = randInt(rng, 180, 340);
-    const h = randInt(rng, 100, 190);
-    const x = randInt(rng, 30, WIDTH - w - 30);
-    const y = randInt(rng, 40, HEIGHT - h - 30);
-    const lines = Array.from({ length: randInt(rng, 3, 6) }, (_, j) => {
-      const lw = randInt(rng, Math.floor(w * 0.35), Math.floor(w * 0.85));
-      return `<rect x="${x + 20}" y="${y + 18 + j * 22}" width="${lw}" height="8" rx="4" fill="rgba(120,220,255,${(0.25 + j * 0.09).toFixed(2)})"/>`;
-    }).join('');
-    return `<g><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="14" fill="rgba(11,24,48,0.55)" stroke="rgba(120,190,255,0.45)"/>${lines}<circle cx="${x + w - 18}" cy="${y + 18}" r="4" fill="rgba(160,240,255,0.7)"/></g>`;
-  }).join('');
-
-  return `<g id="scene-code-panels">${panels}</g>`;
+const sceneCanyon = (rng, hue) => {
+  const left = `<path d="M 0 250 C 180 260, 210 440, 240 675 L 0 675 Z" fill="${hsl(hue + 8, 44, 36)}"/>`;
+  const right = `<path d="M 1200 220 C 1020 280, 980 470, 940 675 L 1200 675 Z" fill="${hsl(hue + 2, 42, 34)}"/>`;
+  const valley = `<path d="M 320 675 C 520 520, 760 520, 900 675 Z" fill="rgba(70,120,155,0.38)"/>`;
+  return `${left}${right}${valley}`;
 };
 
-const sceneDroneSwarm = (rng) => {
-  const drones = Array.from({ length: randInt(rng, 8, 14) }, () => {
-    const x = randInt(rng, 120, 1080);
-    const y = randInt(rng, 90, 360);
-    const s = rand(rng, 0.8, 1.4);
-    return `<g transform="translate(${x},${y}) scale(${s.toFixed(2)})"><rect x="-10" y="-5" width="20" height="10" rx="3" fill="rgba(180,240,255,0.58)"/><line x1="-20" y1="0" x2="20" y2="0" stroke="rgba(150,230,255,0.6)" stroke-width="2"/><line x1="0" y1="-16" x2="0" y2="16" stroke="rgba(150,230,255,0.6)" stroke-width="2"/></g>`;
-  }).join('');
-
-  return `<g id="scene-drone-swarm">${drones}</g>`;
+const sceneSnowfield = (rng, hue) => {
+  const mts = mountainRanges(rng, hue - 20, randInt(rng, 280, 340));
+  const snow = `<path d="M 0 430 C 260 380, 640 500, 1200 420 L 1200 700 L 0 700 Z" fill="rgba(225,238,248,0.8)"/>`;
+  return `${mts}${snow}`;
 };
 
-const sceneRobotArms = (rng) => {
-  const arms = Array.from({ length: randInt(rng, 3, 5) }, (_, i) => {
-    const baseX = randInt(rng, 120, 1000);
-    const baseY = randInt(rng, 380, 600);
-    const x2 = baseX + randInt(rng, -180, 180);
-    const y2 = baseY - randInt(rng, 110, 230);
-    const x3 = x2 + randInt(rng, -120, 120);
-    const y3 = y2 - randInt(rng, 60, 160);
-    return `<g><circle cx="${baseX}" cy="${baseY}" r="16" fill="rgba(120,215,255,0.75)"/><line x1="${baseX}" y1="${baseY}" x2="${x2}" y2="${y2}" stroke="rgba(145,235,255,0.62)" stroke-width="${randInt(rng, 8, 14)}" stroke-linecap="round"/><line x1="${x2}" y1="${y2}" x2="${x3}" y2="${y3}" stroke="rgba(120,255,220,0.6)" stroke-width="${randInt(rng, 6, 10)}" stroke-linecap="round"/><circle cx="${x2}" cy="${y2}" r="10" fill="rgba(150,245,255,0.8)"/><circle cx="${x3}" cy="${y3}" r="8" fill="rgba(120,255,220,0.86)"/></g>`;
-  }).join('');
-
-  return `<g id="scene-robot-arms">${arms}</g>`;
+const sceneVolcanic = (rng, hue) => {
+  const cone = `<path d="M ${randInt(rng, 460, 560)} 640 L ${randInt(rng, 620, 760)} 640 L ${randInt(rng, 620, 700)} ${randInt(rng, 240, 320)} Z" fill="${hsl(hue + 4, 36, 24)}"/>`;
+  const glow = `<circle cx="${randInt(rng, 640, 700)}" cy="${randInt(rng, 230, 290)}" r="${randInt(rng, 30, 60)}" fill="rgba(255,140,80,0.35)" />`;
+  return `${cone}${glow}`;
 };
 
-const SCENE_BUILDERS = [
-  sceneNodes,
-  sceneCircuit,
-  sceneDatacenter,
-  sceneCity,
-  sceneWave,
-  sceneCloudPipeline,
-  sceneOrbits,
-  sceneCodePanels,
-  sceneDroneSwarm,
-  sceneRobotArms
+const sceneAurora = (rng, hue) => {
+  const bands = Array.from({ length: 4 }, (_, i) => {
+    const y = 120 + i * 60;
+    return `<path d="M -30 ${y} C 240 ${y - randInt(rng, 30, 80)}, 760 ${y + randInt(rng, 20, 70)}, 1230 ${y - randInt(rng, 30, 70)}" fill="none" stroke="${hsl(hue + i * 12, 70, 68)}" stroke-width="${randInt(rng, 18, 30)}" opacity="0.22"/>`;
+  }).join('');
+  const land = `<rect y="${randInt(rng, 430, 500)}" width="${WIDTH}" height="${HEIGHT}" fill="rgba(20,40,50,0.65)"/>`;
+  return `${bands}${land}`;
+};
+
+const SCENES = [
+  sceneAlpineLake,
+  sceneForestRiver,
+  sceneDesertDunes,
+  sceneCoastline,
+  sceneWaterfall,
+  sceneMeadow,
+  sceneCanyon,
+  sceneSnowfield,
+  sceneVolcanic,
+  sceneAurora
 ];
 
 export const makeSvg = (index) => {
-  const rng = makeRng(index * 7919 + 17);
-  const hueA = (index * 41 + randInt(rng, 0, 40)) % 360;
-  const hueB = (hueA + randInt(rng, 35, 80)) % 360;
-  const hueC = (hueA + randInt(rng, 110, 190)) % 360;
-  const sceneIdx = (index - 1) % SCENE_BUILDERS.length;
-  const scene = SCENE_BUILDERS[sceneIdx](rng, hueA);
+  const rng = makeRng(index * 7907 + 19);
+  const hueA = (index * 23 + randInt(rng, 0, 30)) % 360;
+  const hueB = (hueA + randInt(rng, 20, 55)) % 360;
+  const hueC = (hueA + randInt(rng, 70, 130)) % 360;
+  const sceneIdx = (index - 1) % SCENES.length;
 
-  const sparkles = Array.from({ length: randInt(rng, 16, 28) }, () => {
+  const stars = Array.from({ length: randInt(rng, 18, 34) }, () => {
     const x = randInt(rng, 20, WIDTH - 20);
     const y = randInt(rng, 20, HEIGHT - 20);
-    const r = rand(rng, 1.1, 3.4).toFixed(2);
-    const a = rand(rng, 0.15, 0.45).toFixed(2);
-    return `<circle cx="${x}" cy="${y}" r="${r}" fill="rgba(180,240,255,${a})"/>`;
+    const r = rand(rng, 0.8, 2.8).toFixed(2);
+    const a = rand(rng, 0.15, 0.4).toFixed(2);
+    return `<circle cx="${x}" cy="${y}" r="${r}" fill="rgba(245,250,255,${a})"/>`;
   }).join('');
-
-  const glows = Array.from({ length: 3 }, (_, i) => {
-    const x = randInt(rng, 90, 1110);
-    const y = randInt(rng, 70, 610);
-    const r = randInt(rng, 90, 220);
-    return `<circle cx="${x}" cy="${y}" r="${r}" fill="${hsl(hueA + i * 26, 92, 62)}" opacity="${rand(rng, 0.08, 0.18).toFixed(2)}" filter="url(#blur-${index})"/>`;
-  }).join('');
-
-  const bokeh = Array.from({ length: randInt(rng, 6, 10) }, () => {
-    const x = randInt(rng, 40, WIDTH - 40);
-    const y = randInt(rng, 30, Math.floor(HEIGHT * 0.68));
-    const r = randInt(rng, 20, 70);
-    return `<circle cx="${x}" cy="${y}" r="${r}" fill="rgba(210,240,255,${rand(rng, 0.06, 0.16).toFixed(2)})" filter="url(#soft-${index})"/>`;
-  }).join('');
-
-  const horizon = randInt(rng, 360, 460);
-  const groundSkew = randInt(rng, -220, 220);
-  const perspectiveGround = `<polygon points="0,${HEIGHT} ${WIDTH},${HEIGHT} ${WIDTH + groundSkew},${horizon} ${-groundSkew},${horizon}" fill="rgba(8,16,28,0.35)"/>`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" aria-label="AIGC fallback cover ${index}" data-scene="scene-${sceneIdx + 1}">
-  <defs>
-    <linearGradient id="bg-${index}" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="${hsl(hueA, 82, 16)}"/>
-      <stop offset="52%" stop-color="${hsl(hueB, 84, 23)}"/>
-      <stop offset="100%" stop-color="${hsl(hueC, 78, 12)}"/>
-    </linearGradient>
-    <filter id="blur-${index}" x="-25%" y="-25%" width="150%" height="150%">
-      <feGaussianBlur stdDeviation="26"/>
-    </filter>
-    <filter id="soft-${index}" x="-25%" y="-25%" width="150%" height="150%">
-      <feGaussianBlur stdDeviation="10"/>
-    </filter>
-    <filter id="grain-${index}" x="0%" y="0%" width="100%" height="100%">
-      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="${index * 13}" stitchTiles="stitch"/>
-      <feColorMatrix type="saturate" values="0"/>
-      <feComponentTransfer>
-        <feFuncA type="table" tableValues="0 0.05"/>
-      </feComponentTransfer>
-    </filter>
-    <radialGradient id="vignette-${index}" cx="50%" cy="45%" r="70%">
-      <stop offset="60%" stop-color="rgba(0,0,0,0)"/>
-      <stop offset="100%" stop-color="rgba(0,0,0,0.45)"/>
-    </radialGradient>
-  </defs>
-
-  <rect width="${WIDTH}" height="${HEIGHT}" fill="url(#bg-${index})"/>
-  ${glows}
-  ${bokeh}
-  ${perspectiveGround}
-  ${scene}
-  <g id="scene-sparkles">${sparkles}</g>
-  <rect width="${WIDTH}" height="${HEIGHT}" fill="rgba(190,220,255,0.06)"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" aria-label="Fallback cover ${index}" data-scene="landscape-${sceneIdx + 1}">
+  ${sky(hueA, hueB, hueC, index)}
+  <rect width="${WIDTH}" height="${HEIGHT}" fill="url(#sky-${index})"/>
+  ${SCENES[sceneIdx](rng, hueA)}
+  <g id="scene-sparkles">${stars}</g>
   <rect width="${WIDTH}" height="${HEIGHT}" filter="url(#grain-${index})"/>
   <rect width="${WIDTH}" height="${HEIGHT}" fill="url(#vignette-${index})"/>
-  <rect x="20" y="20" width="1160" height="635" rx="32" fill="none" stroke="rgba(155,220,255,0.24)"/>
 </svg>`;
 };
 
 export const generateFallbackCovers = async () => {
   await fs.mkdir(OUT_DIR, { recursive: true });
-
   const writes = [];
   for (let i = 1; i <= TOTAL; i += 1) {
     const filePath = path.join(OUT_DIR, `cover-${pad(i)}.svg`);
     writes.push(fs.writeFile(filePath, makeSvg(i), 'utf8'));
   }
-
   await Promise.all(writes);
   console.log(`Generated ${TOTAL} fallback covers in ${OUT_DIR}`);
 };

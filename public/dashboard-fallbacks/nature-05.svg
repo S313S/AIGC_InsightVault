@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="Nature fallback 5" data-scene="waterfall-valley">
+
+  <defs>
+    <linearGradient id="sky-5" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#c2e7ff"/>
+      <stop offset="55%" stop-color="#83b8df"/>
+      <stop offset="100%" stop-color="#4a7499"/>
+    </linearGradient>
+    <filter id="grain-5" x="0%" y="0%" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="185" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.045"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+<rect x="0" y="0" width="1200" height="675" fill="url(#sky-5)"/>
+
+      <rect x="0" y="300" width="420" height="375" fill="#3f5c49"/>
+      <rect x="780" y="280" width="420" height="395" fill="#3b5845"/>
+      <rect x="520" y="160" width="160" height="395" fill="#8fd8f2" opacity="0.86"/>
+      <ellipse cx="600" cy="575" rx="250" ry="70" fill="#6eb7d9" opacity="0.66"/>
+      <path d="M0 520 C220 470, 400 540, 600 500 C820 460, 1020 540, 1200 490 L1200 675 L0 675 Z" fill="#2b4c3b"/>
+    
+<rect x="0" y="0" width="1200" height="675" filter="url(#grain-5)"/>
+</svg>

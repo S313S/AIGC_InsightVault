@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="Nature fallback 7" data-scene="canyon-ridge">
+
+  <defs>
+    <linearGradient id="sky-7" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffc8a2"/>
+      <stop offset="55%" stop-color="#e98d63"/>
+      <stop offset="100%" stop-color="#a7523e"/>
+    </linearGradient>
+    <filter id="grain-7" x="0%" y="0%" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="259" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.045"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+<rect x="0" y="0" width="1200" height="675" fill="url(#sky-7)"/>
+
+      <path d="M0 200 C150 230, 210 470, 260 675 L0 675 Z" fill="#8f4f3b"/>
+      <path d="M1200 180 C1040 240, 980 500, 930 675 L1200 675 Z" fill="#7e4333"/>
+      <path d="M240 675 C430 470, 760 500, 930 675 Z" fill="#5f8aa1" opacity="0.5"/>
+      <path d="M300 430 C460 390, 710 440, 860 410" stroke="#deb17b" stroke-width="8" fill="none" opacity="0.5"/>
+    
+<rect x="0" y="0" width="1200" height="675" filter="url(#grain-7)"/>
+</svg>

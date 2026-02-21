@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="Nature fallback 9" data-scene="volcanic-island">
+
+  <defs>
+    <linearGradient id="sky-9" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3d4765"/>
+      <stop offset="55%" stop-color="#2f324c"/>
+      <stop offset="100%" stop-color="#1f2233"/>
+    </linearGradient>
+    <filter id="grain-9" x="0%" y="0%" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="333" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.045"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+<rect x="0" y="0" width="1200" height="675" fill="url(#sky-9)"/>
+
+      <rect x="0" y="390" width="1200" height="285" fill="#355f78"/>
+      <path d="M420 620 L760 620 L620 260 Z" fill="#2b2b2f"/>
+      <ellipse cx="620" cy="245" rx="56" ry="28" fill="#e56b3f" opacity="0.72"/>
+      <path d="M600 250 C570 200, 580 150, 610 110 C640 70, 665 40, 650 5" stroke="#9ea0a9" stroke-width="10" fill="none" opacity="0.4"/>
+      <path d="M0 500 C210 470, 430 530, 680 500 C920 470, 1090 525, 1200 498" stroke="#8bc0d9" stroke-width="7" fill="none" opacity="0.36"/>
+    
+<rect x="0" y="0" width="1200" height="675" filter="url(#grain-9)"/>
+</svg>

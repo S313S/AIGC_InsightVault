@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="Nature fallback 2" data-scene="forest-river">
+
+  <defs>
+    <linearGradient id="sky-2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#a9d4c9"/>
+      <stop offset="55%" stop-color="#6ea08d"/>
+      <stop offset="100%" stop-color="#3a5f55"/>
+    </linearGradient>
+    <filter id="grain-2" x="0%" y="0%" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="74" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.045"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+<rect x="0" y="0" width="1200" height="675" fill="url(#sky-2)"/>
+
+      <rect x="0" y="340" width="1200" height="335" fill="#345343"/>
+      <path d="M-40 500 C210 430, 430 600, 720 520 C960 460, 1120 580, 1240 540 L1240 675 L-40 675 Z" fill="#6ca9cc" opacity="0.82"/>
+      <g fill="#224132" opacity="0.95">
+        <polygon points="70,360 110,250 150,360"/><polygon points="150,360 190,245 230,360"/><polygon points="260,360 300,255 340,360"/>
+        <polygon points="360,360 400,238 440,360"/><polygon points="470,360 510,250 550,360"/><polygon points="570,360 610,242 650,360"/>
+        <polygon points="690,360 730,248 770,360"/><polygon points="790,360 830,232 870,360"/><polygon points="900,360 940,250 980,360"/>
+        <polygon points="1000,360 1040,240 1080,360"/><polygon points="1085,360 1125,252 1165,360"/>
+      </g>
+    
+<rect x="0" y="0" width="1200" height="675" filter="url(#grain-2)"/>
+</svg>

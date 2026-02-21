@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="Nature fallback 8" data-scene="snow-mountains">
+
+  <defs>
+    <linearGradient id="sky-8" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e8f4ff"/>
+      <stop offset="55%" stop-color="#b0d0ef"/>
+      <stop offset="100%" stop-color="#7aa2c8"/>
+    </linearGradient>
+    <filter id="grain-8" x="0%" y="0%" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="296" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.045"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+<rect x="0" y="0" width="1200" height="675" fill="url(#sky-8)"/>
+
+      <path d="M0 360 L180 210 L320 360 L500 190 L670 360 L840 220 L1020 360 L1200 230 L1200 675 L0 675 Z" fill="#4c6b88"/>
+      <path d="M145 265 L180 210 L215 265" fill="#f3fbff"/><path d="M465 250 L500 190 L535 250" fill="#f3fbff"/>
+      <path d="M805 275 L840 220 L875 275" fill="#f3fbff"/><path d="M1165 285 L1200 230 L1235 285" fill="#f3fbff"/>
+      <path d="M0 470 C220 420, 520 540, 820 470 C980 430, 1110 500, 1200 480 L1200 675 L0 675 Z" fill="#d9edf8" opacity="0.88"/>
+    
+<rect x="0" y="0" width="1200" height="675" filter="url(#grain-8)"/>
+</svg>
