@@ -10,6 +10,7 @@ import {
     QualityKeyword,
     MonitorSettings
 } from '../types';
+import { normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
 
 // ============ 类型转换工具 ============
 
@@ -21,7 +22,7 @@ const dbToCard = (row: any): KnowledgeCard => ({
     platform: row.platform as Platform,
     author: row.author || '',
     date: row.date || '',
-    coverImage: row.cover_image || '',
+    coverImage: normalizeLegacyFallbackCover(row.cover_image || ''),
     metrics: row.metrics || { likes: 0, bookmarks: 0, comments: 0 },
     contentType: row.content_type as ContentType,
     rawContent: row.raw_content || '',
@@ -159,7 +160,7 @@ const cardToDb = (card: KnowledgeCard, isTrending: boolean = false, skipId: bool
         platform: card.platform,
         author: card.author,
         date: card.date,
-        cover_image: card.coverImage,
+        cover_image: normalizeLegacyFallbackCover(card.coverImage),
         metrics: card.metrics,
         content_type: card.contentType,
         raw_content: card.rawContent,

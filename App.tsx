@@ -13,6 +13,7 @@ import { isSupabaseConnected } from './services/supabaseClient';
 import * as db from './services/supabaseService';
 import { fetchSocialContent, searchSocial } from './services/socialService';
 import { analyzeContentWithGemini, classifyContentWithGemini } from './services/geminiService';
+import { isFallbackCoverUrl } from './shared/fallbackCovers.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 
@@ -423,7 +424,7 @@ const App: React.FC = () => {
       }
     };
 
-    const isFallbackPoolCover = (url?: string) => /\/fallback-covers\/cover-\d{3}\.svg$/i.test(String(url || '').trim());
+    const isFallbackPoolCover = (url?: string) => isFallbackCoverUrl(url || '');
 
     const enrichCoverImage = async (target: KnowledgeCard) => {
       if (target.coverImage && !isFallbackPoolCover(target.coverImage)) return target;

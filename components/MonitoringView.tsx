@@ -6,6 +6,7 @@ import { saveCard } from '../services/supabaseService';
 import { analyzeContentWithGemini, classifyContentWithGemini } from '../services/geminiService';
 import { searchSocial } from '../services/socialService';
 import { resolveContentTypeByPrompts } from '../shared/promptTagging.js';
+import { isFallbackCoverUrl } from '../shared/fallbackCovers.js';
 
 const CATEGORY_TAGS = ['Image Gen', 'Video Gen', 'Vibe Coding'];
 
@@ -104,8 +105,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
         const u = String(url || '').trim().toLowerCase();
         if (!u) return false;
         if (!/^https?:\/\//i.test(u)) return false;
-        if (u.includes('/fallback-covers/cover-')) return false;
-        if (/\/fallback-covers\/cover-\d{3}\.svg(\?|#|$)/i.test(u)) return false;
+        if (isFallbackCoverUrl(u)) return false;
         if (u.includes('dashscope') || u.includes('bailian')) return false;
         if (u.includes('aliyuncs.com') && (u.includes('dashscope') || u.includes('generated') || u.includes('aigc'))) return false;
         return true;

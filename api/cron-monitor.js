@@ -2,6 +2,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { resolveContentTypeByPrompts } from '../shared/promptTagging.js';
+import { fallbackCoverFromSeed, isFallbackCoverUrl, normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
 
 // Search keywords: high-volume terms covering all 3 categories (used for API searches)
 const DEFAULT_MONITOR_KEYWORDS = [
@@ -26,8 +27,6 @@ const XHS_RETRIES = 2;
 const TWITTER_REQUIRE_TERMS = ['Claude', 'GPT', 'LLM', 'OpenAI', 'Anthropic', 'Gemini'];
 const SOFT_TIMEOUT_GUARD_MS = 260000;
 const HIGH_ENGAGEMENT_QUALITY_BYPASS = 5000;
-const FALLBACK_COVER_POOL_SIZE = 10;
-const FALLBACK_COVER_BASE_PATH = '/fallback-covers';
 const QUALITY_FALLBACK_POSITIVE = [
   'tutorial', 'workflow', 'tips', 'how to', 'step by step', 'guide', 'setup', 'build',
   'prompt engineering', 'use case', 'demo', 'walkthrough', 'comparison', 'review',
@@ -245,7 +244,7 @@ const buildTrendingRow = (result, snapshotTag) => {
     platform: result.platform,
     author: result.author,
     date: result.publishTime || '',
-    cover_image: result.coverImage || (result.images && result.images[0]) || '',
+    cover_image: normalizeLegacyFallbackCover(result.coverImage || (result.images && result.images[0]) || ''),
     metrics: result.metrics || { likes: 0, bookmarks: 0, comments: 0 },
     content_type: resolveContentTypeByPrompts([]),
     raw_content: result.desc || '',
@@ -277,22 +276,8 @@ const pickLatestSnapshotTag = (tags) => {
   return snapshots.sort((a, b) => (a > b ? -1 : a < b ? 1 : 0))[0];
 };
 
-const hashSeed = (value) => {
-  const input = String(value || '');
-  let hash = 0;
-  for (let i = 0; i < input.length; i += 1) {
-    hash = ((hash << 5) - hash) + input.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-};
-
-const getFallbackCoverPath = (seed) => {
-  const index = (hashSeed(seed) % FALLBACK_COVER_POOL_SIZE) + 1;
-  return `${FALLBACK_COVER_BASE_PATH}/cover-${String(index).padStart(3, '0')}.svg`;
-};
-
-const isFallbackCoverPath = (url) => String(url || '').includes(`${FALLBACK_COVER_BASE_PATH}/cover-`);
+const getFallbackCoverPath = (seed) => fallbackCoverFromSeed(seed);
+const isFallbackCoverPath = (url) => isFallbackCoverUrl(url);
 const isTwitterPlaceholderImage = (url) => {
   const value = String(url || '').trim();
   if (!value) return true;
@@ -384,7 +369,9 @@ const mapTwitterSearchResult = (tweet, userById, mediaByKey) => {
   const sourceUrl = user.username
     ? `https://twitter.com/${user.username}/status/${tweet.id}`
     : `https://twitter.com/i/web/status/${tweet.id}`;
-  const coverImage = images[0] || getFallbackCoverPath(sourceUrl || tweet.id || user.username || '');
+  const coverImage = normalizeLegacyFallbackCover(
+    images[0] || getFallbackCoverPath(sourceUrl || tweet.id || user.username || '')
+  );
 
   return {
     noteId: tweet.id,
@@ -1061,6 +1048,7 @@ export default async function handler(req, res) {
     let fallbackCoverCount = 0;
     for (const item of candidates) {
       if (item?.platform !== 'Twitter') continue;
+      item.coverImage = normalizeLegacyFallbackCover(item.coverImage || '');
       if (!item.coverImage || isTwitterPlaceholderImage(item.coverImage)) {
         const seed = item.sourceUrl || item.noteId || `${item.author || ''}-${item.publishTime || ''}`;
         item.coverImage = getFallbackCoverPath(seed);

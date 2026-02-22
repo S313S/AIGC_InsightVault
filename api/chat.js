@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { isFallbackCoverUrl } from "../shared/fallbackCovers.js";
 
 const wantsMarkdownOutput = (text) => {
     if (typeof text !== 'string') return false;
@@ -30,8 +31,7 @@ const normalizeImageUrls = (value) => {
     const shouldSkip = (url) => {
         const u = String(url || '').trim().toLowerCase();
         if (!u) return true;
-        if (u.includes('/fallback-covers/cover-')) return true;
-        if (/\/fallback-covers\/cover-\d{3}\.svg(\?|#|$)/i.test(u)) return true;
+        if (isFallbackCoverUrl(u)) return true;
         if (u.includes('dashscope') || u.includes('bailian')) return true;
         if (u.includes('aliyuncs.com') && (u.includes('dashscope') || u.includes('generated') || u.includes('aigc'))) return true;
         return false;

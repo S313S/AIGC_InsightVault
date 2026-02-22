@@ -2,15 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { KnowledgeCard, TrackingTask, Platform, TaskStatus } from '../types';
 import { Flame, ArrowRight, Save, ExternalLink, Activity, LayoutGrid, Clock, Heart, TrendingUp, Bookmark, Sparkles } from './Icons';
 import { hasPromptEvidence } from '../shared/promptTagging.js';
-
-const GRADIENT_PAIRS = [
-    ['#0EA5E9', '#2563EB'],
-    ['#14B8A6', '#0891B2'],
-    ['#8B5CF6', '#4F46E5'],
-    ['#F97316', '#DC2626'],
-    ['#10B981', '#059669'],
-    ['#EC4899', '#DB2777'],
-];
+import { fallbackCoverFromSeed, isRenderableCoverUrl, normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
 
 interface DashboardViewProps {
     tasks: TrackingTask[];
@@ -37,41 +29,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         return base.trim();
     };
 
-    const hashText = (value: string) => {
-        let h = 2166136261;
-        for (let i = 0; i < value.length; i++) {
-            h ^= value.charCodeAt(i);
-            h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
-        }
-        return Math.abs(h >>> 0);
-    };
-
     const buildFallbackCover = (item: KnowledgeCard) => {
         const seed = `${item.id}|${item.sourceUrl}|${item.title}|${item.author}|${item.date}`;
-        const hashed = hashText(seed);
-        const [c1, c2] = GRADIENT_PAIRS[hashed % GRADIENT_PAIRS.length];
-        const label = item.platform === Platform.Twitter ? 'X' : 'AIGC';
-        const svg = `
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="${c1}" />
-      <stop offset="100%" stop-color="${c2}" />
-    </linearGradient>
-  </defs>
-  <rect width="1200" height="675" fill="url(#g)" />
-  <circle cx="${100 + (hashed % 980)}" cy="${80 + (hashed % 520)}" r="180" fill="#ffffff1A" />
-  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
-    fill="#FFFFFFCC" font-size="220" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-weight="700">${label}</text>
-</svg>`;
-        return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+        return fallbackCoverFromSeed(seed);
     };
 
     const safeCover = (item: KnowledgeCard) => {
-        const url = item.coverImage;
-        const value = String(url || '').trim();
+        const value = normalizeLegacyFallbackCover(item.coverImage);
         if (!value) return buildFallbackCover(item);
-        return /^https?:\/\//i.test(value) ? value : buildFallbackCover(item);
+        return isRenderableCoverUrl(value) ? value : buildFallbackCover(item);
     };
 
     const uniqueTrending = useMemo(() => {
