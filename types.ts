@@ -119,6 +119,23 @@ export interface MonitorSettings {
   splitKeywords: boolean;
 }
 
+export interface XhsTokenConfig {
+  noteId: string;
+  xsecToken: string;
+  xsecSource?: string;
+  updatedAt?: string;
+}
+
+export interface XhsMissingTokenItem {
+  id: string;
+  noteId: string;
+  title: string;
+  author: string;
+  date: string;
+  sourceUrl: string;
+  from: 'trending' | 'vault';
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';

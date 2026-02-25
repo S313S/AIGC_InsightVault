@@ -8,12 +8,19 @@ import { MonitoringView } from './components/MonitoringView';
 import { DashboardView } from './components/DashboardView';
 import { SettingsModal } from './components/SettingsModal';
 import { INITIAL_DATA, INITIAL_TASKS, TRENDING_DATA, INITIAL_COLLECTIONS } from './mockData';
-import { KnowledgeCard, FilterState, TrackingTask, Collection, ContentType, Platform, SocialSearchResult, TaskStatus } from './types';
+import { KnowledgeCard, FilterState, TrackingTask, Collection, ContentType, Platform, SocialSearchResult, TaskStatus, XhsMissingTokenItem, XhsTokenConfig } from './types';
 import { isSupabaseConnected } from './services/supabaseClient';
 import * as db from './services/supabaseService';
 import { fetchSocialContent, searchSocial } from './services/socialService';
 import { analyzeContentWithGemini, classifyContentWithGemini } from './services/geminiService';
 import { isFallbackCoverUrl } from './shared/fallbackCovers.js';
+import {
+  applyXiaohongshuTokenToUrl,
+  getXiaohongshuNoteId,
+  hasXiaohongshuXsecToken,
+  isXiaohongshuUrl,
+  normalizeXiaohongshuSourceUrl
+} from './shared/xiaohongshuUrls.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 
@@ -309,6 +316,107 @@ const App: React.FC = () => {
 
   const getCollectionAliasIds = (collectionId: string) => {
     return collectionAliasMap[collectionId] || [collectionId];
+  };
+
+  const xhsMissingTokenItems = useMemo<XhsMissingTokenItem[]>(() => {
+    const items: XhsMissingTokenItem[] = [];
+    const seenNoteIds = new Set<string>();
+
+    const collect = (card: KnowledgeCard, from: 'trending' | 'vault') => {
+      if (card.platform !== Platform.Xiaohongshu) return;
+      const normalized = normalizeXiaohongshuSourceUrl(card.sourceUrl) || card.sourceUrl;
+      if (!isXiaohongshuUrl(normalized)) return;
+      if (hasXiaohongshuXsecToken(normalized)) return;
+
+      const noteId = getXiaohongshuNoteId(normalized);
+      if (!noteId || seenNoteIds.has(noteId)) return;
+
+      seenNoteIds.add(noteId);
+      items.push({
+        id: `${from}:${card.id}`,
+        noteId,
+        title: card.title || '',
+        author: card.author || '',
+        date: card.date || '',
+        sourceUrl: normalized,
+        from
+      });
+    };
+
+    trending.forEach(card => collect(card, 'trending'));
+    cards.forEach(card => collect(card, 'vault'));
+    return items;
+  }, [cards, trending]);
+
+  const handleApplyXhsTokenConfig = async (config: XhsTokenConfig) => {
+    const noteId = String(config.noteId || '').trim();
+    const token = String(config.xsecToken || '').trim();
+    const source = String(config.xsecSource || 'pc_feed').trim() || 'pc_feed';
+    if (!noteId || !token) return;
+
+    const patchCard = (card: KnowledgeCard): KnowledgeCard => {
+      const normalized = normalizeXiaohongshuSourceUrl(card.sourceUrl) || card.sourceUrl;
+      if (!isXiaohongshuUrl(normalized)) return card;
+      if (getXiaohongshuNoteId(normalized) !== noteId) return card;
+      const nextUrl = applyXiaohongshuTokenToUrl(normalized, token, source);
+      if (!nextUrl || nextUrl === card.sourceUrl) return card;
+      return { ...card, sourceUrl: nextUrl };
+    };
+
+    const nextCards = cards.map(patchCard);
+    const changedCards = nextCards.filter((card, idx) => card.sourceUrl !== cards[idx].sourceUrl);
+    if (changedCards.length > 0) setCards(nextCards);
+
+    const nextTrending = trending.map(patchCard);
+    const changedTrending = nextTrending.filter((card, idx) => card.sourceUrl !== trending[idx].sourceUrl);
+    if (changedTrending.length > 0) setTrending(nextTrending);
+
+    if (selectedCard) {
+      const updatedSelected = patchCard(selectedCard);
+      if (updatedSelected.sourceUrl !== selectedCard.sourceUrl) setSelectedCard(updatedSelected);
+    }
+
+    if (isSupabaseConnected()) {
+      for (const card of changedCards) {
+        await db.updateCard(card);
+      }
+      for (const card of changedTrending) {
+        await db.saveCard(card, true);
+      }
+    }
+  };
+
+  const handleRepairTrendingSourceUrl = async (
+    card: KnowledgeCard
+  ): Promise<{ updated: boolean; message: string }> => {
+    const currentUrl = normalizeXiaohongshuSourceUrl(card.sourceUrl) || card.sourceUrl;
+    if (card.platform !== Platform.Xiaohongshu || !isXiaohongshuUrl(currentUrl)) {
+      return { updated: false, message: '仅支持小红书链接修复。' };
+    }
+
+    try {
+      const fetched = await fetchSocialContent(currentUrl);
+      const refreshedUrl = normalizeXiaohongshuSourceUrl(fetched?.sourceUrl || '');
+      if (!refreshedUrl || !isXiaohongshuUrl(refreshedUrl) || !hasXiaohongshuXsecToken(refreshedUrl)) {
+        return { updated: false, message: '⚠️ 暂未获取到有效 xsec_token，请到「设置 → XHS Token 配置」补全。' };
+      }
+      if (refreshedUrl === currentUrl) {
+        return { updated: false, message: '⚠️ 当前未拿到新的链接参数，请稍后再试。' };
+      }
+
+      const updatedCard = { ...card, sourceUrl: refreshedUrl };
+      setTrending(prev => prev.map(item => (item.id === card.id ? updatedCard : item)));
+      if (selectedCard?.id === card.id) {
+        setSelectedCard(updatedCard);
+      }
+      if (isSupabaseConnected()) {
+        await db.saveCard(updatedCard, true);
+      }
+
+      return { updated: true, message: '✅ 链接已更新，重新点击即可。' };
+    } catch (error: any) {
+      return { updated: false, message: `⚠️ 修复失败：${error?.message || '请稍后重试'}` };
+    }
   };
 
   // Check if a card belongs to a collection
@@ -982,6 +1090,7 @@ const App: React.FC = () => {
                 onNavigateToMonitoring={() => setActiveView('monitoring')}
                 onNavigateToVault={() => handleMainNavigation('grid')}
                 onSaveToVault={handleSaveTrendingToVault}
+                onRepairSourceUrl={handleRepairTrendingSourceUrl}
               />
             </div>
           )}
@@ -1173,7 +1282,11 @@ const App: React.FC = () => {
       )}
 
       {showSettings && (
-        <SettingsModal onClose={() => setShowSettings(false)} />
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          xhsMissingTokenItems={xhsMissingTokenItems}
+          onApplyXhsTokenConfig={handleApplyXhsTokenConfig}
+        />
       )}
 
       {/* Add To Collection Modal */}

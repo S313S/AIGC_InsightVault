@@ -1,25 +1,30 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, Plus, Trash2, X } from './Icons';
+import { Check, Copy, Plus, Trash2, X } from './Icons';
 import {
+  deleteXhsTokenConfig,
   deleteQualityKeyword,
   deleteTrustedAccount,
   getMonitorSettings,
   getQualityKeywords,
   getTrustedAccounts,
+  getXhsTokenConfigs,
   saveQualityKeyword,
   saveTrustedAccount,
   updateMonitorSetting,
-  updateTrustedAccount
+  updateTrustedAccount,
+  upsertXhsTokenConfig
 } from '../services/supabaseService';
 import { isSupabaseConnected } from '../services/supabaseClient';
-import { MonitorSettings, QualityKeyword, TrustedAccount } from '../types';
+import { MonitorSettings, QualityKeyword, TrustedAccount, XhsMissingTokenItem, XhsTokenConfig } from '../types';
 
-type Tab = 'trusted' | 'keywords' | 'threshold' | 'about';
+type Tab = 'trusted' | 'keywords' | 'threshold' | 'xhs_tokens' | 'about';
 type PlatformType = 'twitter' | 'xiaohongshu';
 type CategoryType = 'image_gen' | 'video_gen' | 'vibe_coding';
 
 interface SettingsModalProps {
   onClose: () => void;
+  xhsMissingTokenItems?: XhsMissingTokenItem[];
+  onApplyXhsTokenConfig?: (config: XhsTokenConfig) => Promise<void> | void;
 }
 
 const CATEGORY_LABEL: Record<CategoryType, string> = {
@@ -54,13 +59,18 @@ const DEFAULT_SETTINGS: MonitorSettings = { minEngagement: 500, trustedMinEngage
 
 const normalizeHandle = (handle: string) => handle.replace(/^@+/, '').trim();
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({
+  onClose,
+  xhsMissingTokenItems = [],
+  onApplyXhsTokenConfig
+}) => {
   const [activeTab, setActiveTab] = useState<Tab>('trusted');
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState('');
 
   const [trustedAccounts, setTrustedAccounts] = useState<TrustedAccount[]>([]);
   const [qualityKeywords, setQualityKeywords] = useState<QualityKeyword[]>([]);
+  const [xhsTokenConfigs, setXhsTokenConfigs] = useState<XhsTokenConfig[]>([]);
   const [monitorSettings, setMonitorSettings] = useState<MonitorSettings>(DEFAULT_SETTINGS);
 
   const [trustedForm, setTrustedForm] = useState<Omit<TrustedAccount, 'id' | 'createdAt'>>({
@@ -81,6 +91,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   const [thresholdInput, setThresholdInput] = useState(String(DEFAULT_SETTINGS.minEngagement));
   const [trustedThresholdInput, setTrustedThresholdInput] = useState(String(DEFAULT_SETTINGS.trustedMinEngagement));
   const [isSavingSplit, setIsSavingSplit] = useState(false);
+  const [xhsTokenForm, setXhsTokenForm] = useState({ noteId: '', xsecToken: '', xsecSource: 'pc_feed' });
 
   const positiveKeywords = useMemo(
     () => qualityKeywords.filter(k => k.type === 'positive'),
@@ -99,15 +110,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
 
   const loadSettings = async () => {
     setIsLoading(true);
-    const [accounts, keywords, settings] = await Promise.all([
+    const [accounts, keywords, settings, tokenConfigs] = await Promise.all([
       getTrustedAccounts(),
       getQualityKeywords(),
-      getMonitorSettings()
+      getMonitorSettings(),
+      getXhsTokenConfigs()
     ]);
 
     setTrustedAccounts(accounts);
     setQualityKeywords(keywords);
     setMonitorSettings(settings);
+    setXhsTokenConfigs(tokenConfigs);
     setThresholdInput(String(settings.minEngagement));
     setTrustedThresholdInput(String(settings.trustedMinEngagement));
 
@@ -269,6 +282,49 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     }
     setMonitorSettings(prev => ({ ...prev, splitKeywords: value }));
     flashMessage(`全量关键词搜索已${value ? '开启' : '关闭'}`);
+  };
+
+  const handleAddXhsTokenConfig = async () => {
+    const noteId = xhsTokenForm.noteId.trim();
+    const xsecToken = xhsTokenForm.xsecToken.trim();
+    const xsecSource = (xhsTokenForm.xsecSource || 'pc_feed').trim() || 'pc_feed';
+    if (!noteId || !xsecToken) {
+      flashMessage('请填写 noteId 和 xsec_token');
+      return;
+    }
+
+    const updated = await upsertXhsTokenConfig({ noteId, xsecToken, xsecSource });
+    if (!updated) {
+      flashMessage('保存 token 失败');
+      return;
+    }
+
+    setXhsTokenConfigs(updated);
+    setXhsTokenForm({ noteId: '', xsecToken: '', xsecSource: 'pc_feed' });
+    if (onApplyXhsTokenConfig) {
+      await onApplyXhsTokenConfig({ noteId, xsecToken, xsecSource });
+    }
+    flashMessage('XHS token 已保存并应用');
+  };
+
+  const handleDeleteXhsToken = async (noteId: string) => {
+    if (!window.confirm(`确定删除 noteId=${noteId} 的 token 配置吗？`)) return;
+    const updated = await deleteXhsTokenConfig(noteId);
+    if (!updated) {
+      flashMessage('删除 token 配置失败');
+      return;
+    }
+    setXhsTokenConfigs(updated);
+    flashMessage('已删除 token 配置');
+  };
+
+  const copyText = async (text: string, successText: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      flashMessage(successText);
+    } catch {
+      flashMessage('复制失败');
+    }
   };
 
   const renderTrustedTab = () => (
@@ -560,6 +616,98 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     </div>
   );
 
+  const renderXhsTokensTab = () => (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-[#1e3a5f]/50 bg-[#0a0f1a]/60 p-4">
+        <h3 className="text-sm font-semibold text-gray-200 mb-3">新增 XHS Token 配置</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <input
+            value={xhsTokenForm.noteId}
+            onChange={(e) => setXhsTokenForm(prev => ({ ...prev, noteId: e.target.value }))}
+            placeholder="noteId"
+            className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 outline-none focus:border-indigo-500"
+          />
+          <input
+            value={xhsTokenForm.xsecToken}
+            onChange={(e) => setXhsTokenForm(prev => ({ ...prev, xsecToken: e.target.value }))}
+            placeholder="xsec_token"
+            className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 outline-none focus:border-indigo-500"
+          />
+          <input
+            value={xhsTokenForm.xsecSource}
+            onChange={(e) => setXhsTokenForm(prev => ({ ...prev, xsecSource: e.target.value }))}
+            placeholder="xsec_source (default: pc_feed)"
+            className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 outline-none focus:border-indigo-500"
+          />
+        </div>
+        <div className="mt-3 flex justify-end">
+          <button
+            onClick={handleAddXhsTokenConfig}
+            className="w-full sm:w-auto justify-center inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-sm font-medium text-white transition-colors"
+          >
+            <Plus size={14} /> 保存 Token
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-amber-200">待补全 Token 列表</h3>
+          <span className="text-xs text-amber-300/90">共 {xhsMissingTokenItems.length} 条</span>
+        </div>
+        {xhsMissingTokenItems.length === 0 ? (
+          <p className="text-sm text-gray-400">当前没有缺少 xsec_token 的小红书链接。</p>
+        ) : (
+          <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
+            {xhsMissingTokenItems.map(item => (
+              <div key={item.id} className="rounded-lg border border-amber-500/30 bg-[#0d1526]/70 px-3 py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm text-gray-100 truncate">{item.title || '无标题'}</p>
+                    <p className="text-xs text-gray-400 truncate">@{item.author || 'unknown'} · {item.date || '未知时间'} · {item.from}</p>
+                    <p className="text-[11px] text-amber-300 mt-1 break-all">noteId: {item.noteId}</p>
+                  </div>
+                  <button
+                    onClick={() => copyText(item.noteId, 'noteId 已复制')}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded border border-[#1e3a5f]/60 text-xs text-gray-300 hover:bg-white/5"
+                  >
+                    <Copy size={12} /> 复制
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-[#1e3a5f]/50 bg-[#0a0f1a]/60 p-4">
+        <h3 className="text-sm font-semibold text-gray-200 mb-3">Token 配置列表</h3>
+        {xhsTokenConfigs.length === 0 ? (
+          <p className="text-sm text-gray-500">尚未配置 token</p>
+        ) : (
+          <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
+            {xhsTokenConfigs.map(item => (
+              <div key={item.noteId} className="rounded-lg border border-[#1e3a5f]/40 bg-[#0d1526]/70 px-3 py-2 flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-indigo-300 break-all">noteId: {item.noteId}</p>
+                  <p className="text-xs text-gray-300 mt-1 break-all">xsec_token: {item.xsecToken}</p>
+                  <p className="text-[11px] text-gray-500 mt-1">xsec_source: {item.xsecSource || 'pc_feed'}</p>
+                </div>
+                <button
+                  onClick={() => handleDeleteXhsToken(item.noteId)}
+                  className="text-gray-500 hover:text-rose-300 transition-colors"
+                  title="删除"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-0 sm:p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
@@ -607,6 +755,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
               互动阈值设置
             </button>
             <button
+              onClick={() => setActiveTab('xhs_tokens')}
+              className={`whitespace-nowrap lg:w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'xhs_tokens' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
+            >
+              XHS Token 配置
+            </button>
+            <button
               onClick={() => setActiveTab('about')}
               className={`whitespace-nowrap lg:w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'about' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
             >
@@ -622,6 +776,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                 {activeTab === 'trusted' && renderTrustedTab()}
                 {activeTab === 'keywords' && renderKeywordsTab()}
                 {activeTab === 'threshold' && renderThresholdTab()}
+                {activeTab === 'xhs_tokens' && renderXhsTokensTab()}
                 {activeTab === 'about' && renderAboutTab()}
               </>
             )}

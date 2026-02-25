@@ -3,6 +3,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { resolveContentTypeByPrompts } from '../shared/promptTagging.js';
 import { fallbackCoverFromSeed, isFallbackCoverUrl, normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
+import { buildXiaohongshuWebUrl } from '../shared/xiaohongshuUrls.js';
 
 // Search keywords: high-volume terms covering all 3 categories (used for API searches)
 const DEFAULT_MONITOR_KEYWORDS = [
@@ -353,7 +354,7 @@ const mapSearchResult = (note) => {
     publishTime: publishTimeTag?.text || '',
     xsecToken: note.xsec_token || '',
     platform: 'Xiaohongshu',
-    sourceUrl: `https://www.xiaohongshu.com/discovery/item/${note.id}?xsec_token=${encodeURIComponent(note.xsec_token || '')}`,
+    sourceUrl: buildXiaohongshuWebUrl(note.id, note.xsec_token || '', 'pc_feed'),
   };
 };
 

@@ -2,6 +2,11 @@
 // Environment Variables:
 // - XHS: JUSTONEAPI_TOKEN and/or TIKHUB_API_TOKEN
 // - X: X_API_BEARER_TOKEN
+import {
+    buildXiaohongshuWebUrl,
+    hasXiaohongshuXsecToken,
+    normalizeXiaohongshuSourceUrl
+} from '../shared/xiaohongshuUrls.js';
 
 export default async function handler(req, res) {
     // CORS headers
@@ -448,6 +453,28 @@ async function mapToKnowledgeCard(data, platform) {
             'cmtNum', 'commentNum', 'comments_count', 'commentCount', 'comment_count'
         ]);
 
+        const sourceCandidates = [
+            data.noteLink,
+            data.share_info?.link,
+            data.mini_program_info?.webpage_url,
+            data.qq_mini_program_info?.webpage_url
+        ]
+            .map(v => String(v || '').trim())
+            .filter(Boolean)
+            .map(normalizeXiaohongshuSourceUrl);
+
+        let sourceUrl = sourceCandidates[0] || '';
+        const withToken = sourceCandidates.find(hasXiaohongshuXsecToken);
+        if (withToken) sourceUrl = withToken;
+
+        if (!sourceUrl) {
+            sourceUrl = buildXiaohongshuWebUrl(
+                noteId,
+                data.xsec_token || data.xsecToken || '',
+                data.xsec_source || data.xsecSource || 'pc_feed'
+            );
+        }
+
         return {
             platform: 'Xiaohongshu',
             title: data.title || data.share_info?.title || '',
@@ -462,7 +489,7 @@ async function mapToKnowledgeCard(data, platform) {
                 comments,
             },
             tags,
-            sourceUrl: data.noteLink || data.share_info?.link || data.mini_program_info?.webpage_url || data.qq_mini_program_info?.webpage_url || `https://www.xiaohongshu.com/explore/${noteId}`,
+            sourceUrl,
         };
     }
 

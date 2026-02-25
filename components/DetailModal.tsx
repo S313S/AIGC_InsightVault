@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { KnowledgeCard, Collection } from '../types';
-import { X, ExternalLink, Copy, Check, Sparkles, Heart, Bookmark, MessageCircle, Database, PenLine, FileText, Save, FolderPlus, FolderCheck, Trash2 } from './Icons';
+import { X, ExternalLink, Copy, Check, Sparkles, Heart, Bookmark, MessageCircle, Database, PenLine, FileText, Save, FolderPlus, FolderCheck, Trash2, Loader2 } from './Icons';
 import { filterCompletePromptsLocal } from '../shared/promptTagging.js';
+import { fetchSocialContent } from '../services/socialService';
+import { getXiaohongshuNoteId, hasXiaohongshuXsecToken, isXiaohongshuUrl, normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
 
 interface DetailModalProps {
   card: KnowledgeCard | null;
@@ -23,6 +25,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [noteContent, setNoteContent] = useState('');
   const [isCollectionMenuOpen, setIsCollectionMenuOpen] = useState(false);
+  const [isRepairingSourceUrl, setIsRepairingSourceUrl] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,6 +59,10 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
   const coreKnowledge = card.aiAnalysis?.coreKnowledge?.length ? card.aiAnalysis.coreKnowledge : fallbackCoreKnowledge;
   const summaryText = (card.aiAnalysis?.summary || '').trim() || '当前摘要为空，建议点击“交给 AI 处理”重新生成。';
   const completePrompts = filterCompletePromptsLocal(card.aiAnalysis?.extractedPrompts || []);
+  const sourceUrl = normalizeXiaohongshuSourceUrl(card.sourceUrl) || card.sourceUrl;
+  const isXiaohongshuCard = isXiaohongshuUrl(sourceUrl);
+  const xhsNoteId = getXiaohongshuNoteId(sourceUrl);
+  const isMissingXsecToken = isXiaohongshuCard && !hasXiaohongshuXsecToken(sourceUrl);
 
   const handleCopy = (text: string, index: number) => {
     navigator.clipboard.writeText(text);
@@ -85,6 +92,32 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
     if (window.confirm('确定要删除这张卡片吗？此操作不可撤销。')) {
       onDelete(card.id);
       onClose(); // Close modal after delete
+    }
+  };
+
+  const handleRepairSourceUrl = async () => {
+    if (!isXiaohongshuCard || !xhsNoteId || isRepairingSourceUrl) return;
+
+    setIsRepairingSourceUrl(true);
+    try {
+      const fetched = await fetchSocialContent(sourceUrl);
+      const refreshedUrl = normalizeXiaohongshuSourceUrl(fetched?.sourceUrl || '');
+      if (!refreshedUrl || !isXiaohongshuUrl(refreshedUrl) || !hasXiaohongshuXsecToken(refreshedUrl)) {
+        window.alert('⚠️ 暂未获取到有效 xsec_token。请到「设置 → XHS Token 配置」手动补全。');
+        return;
+      }
+
+      if (refreshedUrl === sourceUrl) {
+        window.alert('⚠️ 当前未拿到新的链接参数。请稍后再试，或到「设置 → XHS Token 配置」手动补全。');
+        return;
+      }
+
+      onUpdate({ ...card, sourceUrl: refreshedUrl });
+      window.alert('✅ 链接已更新，重新点击“查看原帖”即可。');
+    } catch (error: any) {
+      window.alert(`⚠️ 修复失败：${error?.message || '请稍后重试'}`);
+    } finally {
+      setIsRepairingSourceUrl(false);
     }
   };
 
@@ -211,14 +244,43 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
             </div>
 
             <a
-              href={card.sourceUrl}
+              href={sourceUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
+              onClick={(e) => {
+                if (!isMissingXsecToken) return;
+                e.preventDefault();
+                window.alert('该小红书链接缺少 xsec_token，可能会 404。可先点下方“🔄 修复链接（noteId）”，不行再到设置补全。');
+              }}
+              className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                isMissingXsecToken
+                  ? 'bg-amber-600/80 hover:bg-amber-600 text-white'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+              }`}
             >
               <ExternalLink size={16} />
-              查看原帖
+              {isMissingXsecToken ? '缺少 xsec_token（先去设置补全）' : '查看原帖'}
             </a>
+            {isMissingXsecToken && (
+              <p className="text-xs text-amber-300 mt-2">
+                提示：该条小红书链接可能无法直接打开。建议先点击“🔄 修复链接（noteId）”。
+              </p>
+            )}
+            {isXiaohongshuCard && (
+              <button
+                onClick={handleRepairSourceUrl}
+                disabled={isRepairingSourceUrl || !xhsNoteId}
+                className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-sm font-medium transition-colors border ${
+                  isRepairingSourceUrl || !xhsNoteId
+                    ? 'border-gray-600/60 bg-gray-700/40 text-gray-400 cursor-not-allowed'
+                    : 'border-indigo-500/50 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20'
+                }`}
+                title={xhsNoteId ? `noteId: ${xhsNoteId}` : '无法提取 noteId'}
+              >
+                {isRepairingSourceUrl ? <Loader2 size={16} className="animate-spin" /> : <span>🔄</span>}
+                {isRepairingSourceUrl ? '修复中...' : '修复链接（noteId）'}
+              </button>
+            )}
 
             {/* Raw Content Preview (Collapsed usually, showing snippet here) */}
             <div className="mt-6 pt-6 border-t border-[#1e3a5f]/40">

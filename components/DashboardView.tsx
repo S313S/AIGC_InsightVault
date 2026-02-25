@@ -3,6 +3,7 @@ import { KnowledgeCard, TrackingTask, Platform, TaskStatus } from '../types';
 import { Flame, ArrowRight, Save, ExternalLink, Activity, LayoutGrid, Clock, Heart, TrendingUp, Bookmark, Sparkles } from './Icons';
 import { hasPromptEvidence } from '../shared/promptTagging.js';
 import { fallbackCoverFromSeed, isRenderableCoverUrl, normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
+import { hasXiaohongshuXsecToken, isXiaohongshuUrl, normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
 
 interface DashboardViewProps {
     tasks: TrackingTask[];
@@ -10,6 +11,7 @@ interface DashboardViewProps {
     onNavigateToMonitoring: () => void;
     onNavigateToVault: () => void;
     onSaveToVault: (card: KnowledgeCard) => void;
+    onRepairSourceUrl: (card: KnowledgeCard) => Promise<{ updated: boolean; message: string }>;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -17,11 +19,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     trendingItems,
     onNavigateToMonitoring,
     onNavigateToVault,
-    onSaveToVault
+    onSaveToVault,
+    onRepairSourceUrl
 }) => {
 
     const totalItemsFound = trendingItems.length;
     const [showAllTrending, setShowAllTrending] = useState(false);
+    const [repairingCardId, setRepairingCardId] = useState<string | null>(null);
 
     const normalizeSourceUrl = (url: string) => {
         if (!url) return '';
@@ -99,9 +103,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         );
     };
 
+    const openSourceUrl = (url: string) => {
+        const safeUrl = normalizeXiaohongshuSourceUrl(url) || url;
+        if (!safeUrl) return;
+        if (isXiaohongshuUrl(safeUrl) && !hasXiaohongshuXsecToken(safeUrl)) {
+            window.alert('该小红书链接缺少 xsec_token，可能会 404。请到「设置 → XHS Token 配置」补全后再打开。');
+            return;
+        }
+        window.open(safeUrl, '_blank');
+    };
+
+    const isXhsMissingToken = (url: string) =>
+        (() => {
+            const normalized = normalizeXiaohongshuSourceUrl(url) || url;
+            return isXiaohongshuUrl(normalized) && !hasXiaohongshuXsecToken(normalized);
+        })();
+
+    const handleRepairClick = async (e: React.MouseEvent, item: KnowledgeCard) => {
+        e.stopPropagation();
+        if (item.platform !== Platform.Xiaohongshu || repairingCardId === item.id) return;
+        setRepairingCardId(item.id);
+        try {
+            const result = await onRepairSourceUrl(item);
+            window.alert(result.message);
+        } finally {
+            setRepairingCardId(null);
+        }
+    };
+
     const RankingItem = ({ item, rank }: { item: KnowledgeCard, rank: number }) => (
         <div
-            onClick={() => window.open(item.sourceUrl, '_blank')}
+            onClick={() => openSourceUrl(item.sourceUrl)}
             className="flex items-center gap-4 p-3 hover:bg-white/5 rounded-xl transition-colors group cursor-pointer border-b border-[#1e3a5f]/30 last:border-0"
         >
             {/* Rank Number */}
@@ -142,12 +174,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             {/* Hot Metric */}
-            <div className="flex-shrink-0 flex flex-col items-end">
+            <div className="flex-shrink-0 flex flex-col items-end gap-1">
                 <div className="flex items-center gap-1 text-red-400 font-bold text-sm">
                     <Flame size={12} fill="currentColor" />
                     {formatLikes(item.metrics.likes)}
                 </div>
                 <span className="text-[10px] text-gray-500">热度</span>
+                {item.platform === Platform.Xiaohongshu && (
+                    <button
+                        onClick={(e) => handleRepairClick(e, item)}
+                        disabled={repairingCardId === item.id}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                            repairingCardId === item.id
+                                ? 'border-gray-600 text-gray-500 cursor-not-allowed'
+                                : 'border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/20'
+                        }`}
+                        title="打不开时点击修复链接"
+                    >
+                        {repairingCardId === item.id ? '修复中...' : '🔄 修复'}
+                    </button>
+                )}
             </div>
         </div>
     );
@@ -224,7 +270,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         {hotPicks.map((item) => (
                             <div
                                 key={item.id}
-                                onClick={() => window.open(item.sourceUrl, '_blank')}
+                                onClick={() => openSourceUrl(item.sourceUrl)}
                                 className="bg-[#0d1526]/60 backdrop-blur-md rounded-xl border border-[#1e3a5f]/40 shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 hover:-translate-y-1 transition-all duration-300 flex flex-col overflow-hidden group cursor-pointer"
                             >
                                 {/* Cover Image Area */}
@@ -254,6 +300,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                         <PlatformBadge platform={item.platform} />
                                         <span className="text-xs text-gray-500">{item.date}</span>
                                     </div>
+                                    {isXhsMissingToken(item.sourceUrl) && (
+                                        <div className="mb-2 inline-flex text-[10px] px-2 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-300">
+                                            缺少 xsec_token
+                                        </div>
+                                    )}
 
                                     <h4 className="text-base font-bold text-gray-100 mb-2 leading-snug line-clamp-2 group-hover:text-indigo-400 transition-colors">
                                         {item.title}
@@ -288,6 +339,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                             <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider truncate max-w-[80px]">
                                                 {item.author}
                                             </span>
+                                            {item.platform === Platform.Xiaohongshu && (
+                                                <button
+                                                    onClick={(e) => handleRepairClick(e, item)}
+                                                    disabled={repairingCardId === item.id}
+                                                    className={`text-[10px] px-2 py-1 rounded border ${
+                                                        repairingCardId === item.id
+                                                            ? 'border-gray-600 text-gray-500 cursor-not-allowed'
+                                                            : 'border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/20'
+                                                    }`}
+                                                    title="打不开时点击修复链接"
+                                                >
+                                                    {repairingCardId === item.id ? '修复中...' : '🔄 修复'}
+                                                </button>
+                                            )}
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -389,7 +454,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                 {uniqueTrending.map(item => (
                                     <div
                                         key={item.id}
-                                        onClick={() => window.open(item.sourceUrl, '_blank')}
+                                        onClick={() => openSourceUrl(item.sourceUrl)}
                                         className="bg-[#0d1526]/60 backdrop-blur-md rounded-xl border border-[#1e3a5f]/40 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex flex-col overflow-hidden group cursor-pointer"
                                     >
                                         <div className="h-40 relative bg-[#1e3a5f]/30 overflow-hidden">
@@ -409,12 +474,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                                 <PlatformBadge platform={item.platform} />
                                                 <span className="text-xs text-gray-500">{item.date}</span>
                                             </div>
+                                            {isXhsMissingToken(item.sourceUrl) && (
+                                                <div className="mb-2 inline-flex text-[10px] px-2 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-300">
+                                                    缺少 xsec_token
+                                                </div>
+                                            )}
                                             <h4 className="text-base font-bold text-gray-100 mb-2 leading-snug line-clamp-2 group-hover:text-indigo-400 transition-colors">
                                                 {item.title}
                                             </h4>
                                             <p className="text-sm text-gray-400 line-clamp-2 mb-3 flex-1">
                                                 {item.rawContent}
                                             </p>
+                                            {item.platform === Platform.Xiaohongshu && (
+                                                <div className="pt-2 border-t border-[#1e3a5f]/40 flex justify-end">
+                                                    <button
+                                                        onClick={(e) => handleRepairClick(e, item)}
+                                                        disabled={repairingCardId === item.id}
+                                                        className={`text-[10px] px-2 py-1 rounded border ${
+                                                            repairingCardId === item.id
+                                                                ? 'border-gray-600 text-gray-500 cursor-not-allowed'
+                                                                : 'border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/20'
+                                                        }`}
+                                                        title="打不开时点击修复链接"
+                                                    >
+                                                        {repairingCardId === item.id ? '修复中...' : '🔄 修复链接（noteId）'}
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 ))}

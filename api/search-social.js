@@ -1,5 +1,6 @@
 // Vercel serverless function for searching social media content
 // Path: /api/search-social
+import { buildXiaohongshuWebUrl } from '../shared/xiaohongshuUrls.js';
 
 const API_BASE = 'https://api.justoneapi.com';
 const API_BASE_TIKHUB = 'https://api.tikhub.io';
@@ -417,8 +418,7 @@ function mapSearchResult(note) {
         publishTime: publishTimeTag?.text || '',
         xsecToken: note.xsec_token || '',
         platform: 'Xiaohongshu',
-        // 使用discovery链接，配合xsec_token参数
-        sourceUrl: `https://www.xiaohongshu.com/discovery/item/${note.id}?xsec_token=${encodeURIComponent(note.xsec_token || '')}`,
+        sourceUrl: buildXiaohongshuWebUrl(note.id, note.xsec_token || '', 'pc_feed'),
     };
 }
 

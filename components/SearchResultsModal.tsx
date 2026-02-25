@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Check, ExternalLink, Loader2, Heart, Bookmark, MessageCircle } from './Icons';
 import { SocialSearchResult } from '../types';
+import { hasXiaohongshuXsecToken, isXiaohongshuUrl, normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
 
 interface SearchResultsModalProps {
     results: SocialSearchResult[];
@@ -91,7 +92,10 @@ export const SearchResultsModal: React.FC<SearchResultsModalProps> = ({
                         </div>
                     ) : (
                         <div className="space-y-3">
-                            {results.map(result => (
+                            {results.map(result => {
+                                const sourceUrl = normalizeXiaohongshuSourceUrl(result.sourceUrl) || result.sourceUrl;
+                                const isMissingXsecToken = isXiaohongshuUrl(sourceUrl) && !hasXiaohongshuXsecToken(sourceUrl);
+                                return (
                                 <div
                                     key={result.noteId}
                                     onClick={() => toggleSelect(result.noteId)}
@@ -121,6 +125,11 @@ export const SearchResultsModal: React.FC<SearchResultsModalProps> = ({
                                                 <span className="truncate max-w-full">@{result.author}</span>
                                                 <span>{result.publishTime}</span>
                                             </div>
+                                            {isMissingXsecToken && (
+                                                <div className="mt-2 inline-flex text-[10px] px-2 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-300">
+                                                    缺少 xsec_token（请到设置补全）
+                                                </div>
+                                            )}
                                             <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-gray-500">
                                                 <span className="flex items-center gap-1">
                                                     <Heart size={12} /> {result.metrics.likes}
@@ -143,17 +152,23 @@ export const SearchResultsModal: React.FC<SearchResultsModalProps> = ({
                                     {/* External Link */}
                                     <div className="flex justify-end sm:justify-start">
                                         <a
-                                            href={result.sourceUrl}
+                                            href={sourceUrl}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            onClick={e => e.stopPropagation()}
+                                            onClick={e => {
+                                                e.stopPropagation();
+                                                if (!isMissingXsecToken) return;
+                                                e.preventDefault();
+                                                window.alert('该小红书链接缺少 xsec_token，可能会 404。请到「设置 → XHS Token 配置」补全。');
+                                            }}
                                             className="p-2 hover:bg-white/5 rounded-lg flex-shrink-0"
                                         >
                                             <ExternalLink size={16} className="text-gray-500" />
                                         </a>
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>

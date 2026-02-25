@@ -8,9 +8,11 @@ import {
     TaskStatus,
     TrustedAccount,
     QualityKeyword,
-    MonitorSettings
+    MonitorSettings,
+    XhsTokenConfig
 } from '../types';
 import { normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
+import { normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
 
 // ============ 类型转换工具 ============
 
@@ -46,6 +48,8 @@ const uniqStrings = (arr: (string | null | undefined)[]): string[] =>
 const normalizeSourceUrl = (url: string): string => {
     const raw = (url || '').trim();
     if (!raw || raw === '#') return '';
+    const normalizedXhs = normalizeXiaohongshuSourceUrl(raw);
+    if (normalizedXhs) return normalizedXhs;
     try {
         const u = new URL(raw);
         u.search = '';
@@ -785,6 +789,75 @@ export const updateMonitorSetting = async (key: string, value: string): Promise<
     }
 
     return true;
+};
+
+const XHS_TOKEN_SETTINGS_KEY = 'xhs_token_configs';
+
+const parseXhsTokenConfigs = (raw: string | null | undefined): XhsTokenConfig[] => {
+    if (!raw) return [];
+    try {
+        const value = JSON.parse(raw);
+        const list = Array.isArray(value) ? value : [];
+        return list
+            .map((item) => ({
+                noteId: String(item?.noteId || '').trim(),
+                xsecToken: String(item?.xsecToken || '').trim(),
+                xsecSource: String(item?.xsecSource || 'pc_feed').trim() || 'pc_feed',
+                updatedAt: item?.updatedAt ? String(item.updatedAt) : undefined,
+            }))
+            .filter((item) => Boolean(item.noteId) && Boolean(item.xsecToken));
+    } catch {
+        return [];
+    }
+};
+
+export const getXhsTokenConfigs = async (): Promise<XhsTokenConfig[]> => {
+    if (!isSupabaseConnected() || !supabase) return [];
+
+    const { data, error } = await supabase
+        .from('monitor_settings')
+        .select('value')
+        .eq('key', XHS_TOKEN_SETTINGS_KEY)
+        .maybeSingle();
+
+    if (error) {
+        console.error('Error fetching xhs token configs:', error);
+        return [];
+    }
+
+    return parseXhsTokenConfigs(data?.value);
+};
+
+export const upsertXhsTokenConfig = async (config: XhsTokenConfig): Promise<XhsTokenConfig[] | null> => {
+    const next: XhsTokenConfig = {
+        noteId: String(config.noteId || '').trim(),
+        xsecToken: String(config.xsecToken || '').trim(),
+        xsecSource: String(config.xsecSource || 'pc_feed').trim() || 'pc_feed',
+        updatedAt: new Date().toISOString(),
+    };
+    if (!next.noteId || !next.xsecToken) return null;
+
+    const existing = await getXhsTokenConfigs();
+    const map = new Map(existing.map(item => [item.noteId, item]));
+    map.set(next.noteId, next);
+    const payload = JSON.stringify(Array.from(map.values()).sort((a, b) => a.noteId.localeCompare(b.noteId)));
+
+    const ok = await updateMonitorSetting(XHS_TOKEN_SETTINGS_KEY, payload);
+    if (!ok) return null;
+    return Array.from(map.values()).sort((a, b) => a.noteId.localeCompare(b.noteId));
+};
+
+export const deleteXhsTokenConfig = async (noteId: string): Promise<XhsTokenConfig[] | null> => {
+    const id = String(noteId || '').trim();
+    if (!id) return null;
+
+    const existing = await getXhsTokenConfigs();
+    const filtered = existing.filter(item => item.noteId !== id);
+    const payload = JSON.stringify(filtered.sort((a, b) => a.noteId.localeCompare(b.noteId)));
+
+    const ok = await updateMonitorSetting(XHS_TOKEN_SETTINGS_KEY, payload);
+    if (!ok) return null;
+    return filtered;
 };
 
 // ============ 初始化数据（首次运行时导入 mock 数据）============
