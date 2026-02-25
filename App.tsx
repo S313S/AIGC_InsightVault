@@ -21,6 +21,7 @@ import {
   isXiaohongshuUrl,
   normalizeXiaohongshuSourceUrl
 } from './shared/xiaohongshuUrls.js';
+import { removeAliasIdsFromCollections } from './shared/collectionAliases.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 
@@ -754,14 +755,19 @@ const App: React.FC = () => {
 
   const handleRemoveSelectedFromCollection = async () => {
     if (!currentCollectionId || selectedCardIds.size === 0) return;
+    const aliasIds = getCollectionAliasIds(currentCollectionId);
 
     if (window.confirm(`确定从当前收藏夹移除 ${selectedCardIds.size} 条内容吗？`)) {
       const updatedCards: KnowledgeCard[] = [];
       setCards(prevCards => prevCards.map(card => {
         if (selectedCardIds.has(card.id)) {
+          const nextCollections = removeAliasIdsFromCollections(card.collections || [], aliasIds);
+          if (nextCollections.length === (card.collections || []).length) {
+            return card;
+          }
           const updated = {
             ...card,
-            collections: card.collections?.filter(cid => cid !== currentCollectionId)
+            collections: nextCollections
           };
           updatedCards.push(updated);
           return updated;
