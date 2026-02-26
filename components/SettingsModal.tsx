@@ -75,6 +75,17 @@ const DEFAULT_TRACE_CONFIG = {
 };
 
 const normalizeHandle = (handle: string) => handle.replace(/^@+/, '').trim();
+const summarizeFailureReasonZh = (message: string) => {
+  const msg = String(message || '').trim();
+  if (!msg) return '执行失败（未返回具体错误）';
+  const lower = msg.toLowerCase();
+  if (lower.includes('failed to fetch')) return '网络请求失败（前端未拿到接口响应）';
+  if (lower.includes('unauthorized') || lower.includes('401')) return '鉴权失败（token/secret 无效）';
+  if (lower.includes('forbidden') || lower.includes('403')) return '请求被拒绝（权限或额度受限）';
+  if (lower.includes('token invalid') || lower.includes('unactivate')) return '令牌无效或未激活';
+  if (lower.includes('timeout')) return '请求超时';
+  return `执行失败：${msg}`;
+};
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
@@ -395,9 +406,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     params.set(key, String(Math.floor(n)));
   };
 
+  const appendLocalFailedCronLog = (requestUrl: string, errorMessage: string) => {
+    const localLog: CronRunLog = {
+      id: `local-failed-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      triggerSource: 'manual',
+      requestMethod: 'GET',
+      requestUrl,
+      queryParams: {},
+      effectiveParams: {},
+      keywordExecution: {},
+      apiCallTrace: [],
+      apiCallsSummary: {},
+      funnel: {},
+      platformFunnel: {},
+      platformStats: [],
+      platformTotals: {},
+      platformErrors: [{ platform: 'system', error: errorMessage }],
+      resultSummary: {},
+      runtimeMs: 0,
+      runtimeGuardTriggered: false,
+      success: false,
+      errorMessage
+    };
+
+    setCronRunLogs(prev => [localLog, ...prev].slice(0, 30));
+  };
+
   const handleRunCronNow = async () => {
     setIsRunningCron(true);
     setCronRunSummary('');
+    let requestUrl = '/api/cron-monitor';
     try {
       const params = new URLSearchParams();
       appendNumberParam(params, 'days', traceConfig.xhsDays);
@@ -420,8 +459,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         params.set('token', traceConfig.token.trim());
       }
 
-      const url = `/api/cron-monitor?${params.toString()}`;
-      const resp = await fetch(url, { method: 'GET' });
+      requestUrl = `/api/cron-monitor?${params.toString()}`;
+      const resp = await fetch(requestUrl, { method: 'GET' });
       const payload = await resp.json().catch(() => ({}));
       if (!resp.ok) {
         throw new Error(payload?.error || `请求失败 (${resp.status})`);
@@ -437,6 +476,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const msg = err?.message || '执行失败';
       setCronRunSummary(`执行失败：${msg}`);
       flashMessage(msg);
+      appendLocalFailedCronLog(requestUrl, msg);
     } finally {
       setIsRunningCron(false);
     }
@@ -899,6 +939,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               const updatedExisting = Number(log.resultSummary?.updatedExisting || 0);
               const candidates = Number(log.resultSummary?.candidates || 0);
               const tasksRun = Number(log.resultSummary?.tasksRun || 0);
+              const platformErrorMessages = (Array.isArray(log.platformErrors) ? log.platformErrors : [])
+                .map((item: any) => {
+                  const platform = String(item?.platform || '').trim();
+                  const error = String(item?.error || '').trim();
+                  if (!platform && !error) return '';
+                  return platform ? `${platform}: ${error}` : error;
+                })
+                .filter(Boolean);
+              const failureMessage = [
+                String(log.errorMessage || '').trim(),
+                ...platformErrorMessages
+              ].filter(Boolean).join('；');
+              const failureSummaryZh = summarizeFailureReasonZh(
+                failureMessage || String(log.errorMessage || '').trim()
+              );
+              const failureRawDetail = {
+                errorMessage: log.errorMessage || null,
+                platformErrors: Array.isArray(log.platformErrors) ? log.platformErrors : [],
+                requestMethod: log.requestMethod || 'GET',
+                requestUrl: log.requestUrl || '',
+                queryParams: log.queryParams || {}
+              };
               return (
                 <div key={log.id} className="rounded-lg border border-[#1e3a5f]/40 bg-[#0d1526]/70 px-3 py-2">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -912,6 +974,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <div className="mt-1 text-xs text-gray-400">
                     {twitterMode}；小红书实际关键词 {xhsTasks} 个；共请求 API {apiCalls} 次，其中有结果 {withResults} 次；总耗时约 {runtimeSeconds} 秒
                   </div>
+                  {!log.success && failureMessage && (
+                    <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="text-xs text-rose-300">
+                        失败概括：{failureSummaryZh}
+                      </div>
+                      <details className="text-xs">
+                        <summary className="cursor-pointer text-rose-300 hover:text-rose-200">查看明细（原始日志）</summary>
+                        <pre className="mt-1 rounded-md border border-rose-500/30 bg-[#120a12]/80 p-2 text-[11px] text-rose-100 overflow-auto max-h-40">{JSON.stringify(failureRawDetail, null, 2)}</pre>
+                      </details>
+                    </div>
+                  )}
                   <div className="mt-1 text-xs text-gray-300 leading-6">
                     <div>「1」用到的关键词：{usedKeywords.length > 0 ? usedKeywords.join('、') : '未记录关键词'}</div>
                     <div>「2」传到小红书 API：{xhsTransmitText}</div>
