@@ -768,7 +768,7 @@ export const deleteQualityKeyword = async (id: string): Promise<boolean> => {
 };
 
 export const getMonitorSettings = async (): Promise<MonitorSettings> => {
-    const defaults: MonitorSettings = { minEngagement: 500, trustedMinEngagement: 1000, splitKeywords: false };
+    const defaults: MonitorSettings = { minEngagement: 500, trustedMinEngagement: 1000, splitKeywords: false, autoUpdateEnabled: false };
     if (!isSupabaseConnected() || !supabase) return defaults;
 
     const { data, error } = await supabase
@@ -784,12 +784,14 @@ export const getMonitorSettings = async (): Promise<MonitorSettings> => {
     const minValue = Number(map.get('min_engagement'));
     const trustedMinValue = Number(map.get('trusted_min_engagement'));
     const splitRaw = String(map.get('split_keywords') || map.get('twitter_split_keywords') || '').toLowerCase();
+    const autoUpdateRaw = String(map.get('auto_update_enabled') || '').toLowerCase();
     return {
         minEngagement: Number.isFinite(minValue) && minValue >= 0 ? minValue : defaults.minEngagement,
         trustedMinEngagement: Number.isFinite(trustedMinValue) && trustedMinValue >= 0
             ? trustedMinValue
             : defaults.trustedMinEngagement,
-        splitKeywords: splitRaw === '1' || splitRaw === 'true'
+        splitKeywords: splitRaw === '1' || splitRaw === 'true',
+        autoUpdateEnabled: autoUpdateRaw === '1' || autoUpdateRaw === 'true'
     };
 };
 

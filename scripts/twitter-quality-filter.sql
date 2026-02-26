@@ -45,6 +45,12 @@ on conflict (key) do update
 set value = excluded.value,
     updated_at = now();
 
+insert into monitor_settings (key, value)
+values ('auto_update_enabled', 'false')
+on conflict (key) do update
+set value = excluded.value,
+    updated_at = now();
+
 insert into quality_keywords (keyword, type)
 values
   ('tutorial', 'positive'),

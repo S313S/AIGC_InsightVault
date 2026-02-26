@@ -889,7 +889,7 @@ export default async function handler(req, res) {
     const { data: settingRows, error: settingsError } = await supabase
       .from('monitor_settings')
       .select('key, value')
-      .in('key', ['min_engagement', 'trusted_min_engagement', 'split_keywords', 'twitter_split_keywords']);
+      .in('key', ['min_engagement', 'trusted_min_engagement', 'split_keywords', 'twitter_split_keywords', 'auto_update_enabled']);
     if (settingsError) {
       console.warn('[cron-monitor] failed to read monitor_settings:', settingsError.message || settingsError);
     }
@@ -897,6 +897,8 @@ export default async function handler(req, res) {
     const dbMinRaw = Number(settingsMap.get('min_engagement'));
     const dbTrustedMinRaw = Number(settingsMap.get('trusted_min_engagement'));
     const dbSplitRaw = String(settingsMap.get('split_keywords') || settingsMap.get('twitter_split_keywords') || '').toLowerCase();
+    const dbAutoUpdateRaw = String(settingsMap.get('auto_update_enabled') || '').toLowerCase();
+    const autoUpdateEnabled = dbAutoUpdateRaw === '1' || dbAutoUpdateRaw === 'true';
     if (!(Number.isFinite(overrideMin) && overrideMin >= 0)) {
       effectiveMinInteraction = Number.isFinite(dbMinRaw) && dbMinRaw >= 0
         ? dbMinRaw
@@ -909,6 +911,47 @@ export default async function handler(req, res) {
     }
     if (!hasOverrideSplit) {
       effectiveSplit = dbSplitRaw === '1' || dbSplitRaw === 'true';
+    }
+
+    if (triggerSource === 'vercel_cron' && !autoUpdateEnabled) {
+      effectivePayload = {
+        auto_update_enabled: autoUpdateEnabled,
+        split: effectiveSplit
+      };
+      resultSummary = {
+        inserted: 0,
+        updatedExisting: 0,
+        updatedTasks: 0,
+        candidates: 0,
+        tasksRun: 0,
+        skipped: true,
+        skipReason: 'auto_update_disabled'
+      };
+      await persistCronRunLog(supabase, {
+        trigger_source: triggerSource,
+        request_method: req.method,
+        request_url: requestUrl.toString(),
+        query_params: requestQuery,
+        effective_params: effectivePayload,
+        keyword_execution: {},
+        api_call_trace: [],
+        api_calls_summary: summarizeApiCalls([]),
+        funnel,
+        platform_funnel: platformFunnel,
+        platform_stats: [],
+        platform_totals: platformTotals,
+        platform_errors: [],
+        result_summary: resultSummary,
+        runtime_ms: Date.now() - runStartedAt,
+        runtime_guard_triggered: false,
+        success: true,
+        error_message: null
+      });
+      return res.status(200).json({
+        skipped: true,
+        reason: 'auto_update_disabled',
+        message: 'Auto update is disabled by monitor_settings.auto_update_enabled=false'
+      });
     }
 
     const defaultXhsTimeoutMs = effectiveSplit ? 8000 : DEFAULT_TIMEOUT_MS;
@@ -1014,6 +1057,8 @@ export default async function handler(req, res) {
       qualityPositiveCount: effectivePositiveKeywords.length,
       qualityBlacklistCount: effectiveBlacklistKeywords.length,
       trustedHandles: trustedHandles.length
+      ,
+      auto_update_enabled: autoUpdateEnabled
     };
 
     const allResults = [];

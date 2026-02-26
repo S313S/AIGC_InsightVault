@@ -121,6 +121,7 @@ export interface MonitorSettings {
   minEngagement: number;
   trustedMinEngagement: number;
   splitKeywords: boolean;
+  autoUpdateEnabled: boolean;
 }
 
 export interface CronRunLog {
