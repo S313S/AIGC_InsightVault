@@ -840,21 +840,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </label>
           <label className="space-y-1">
             <span className="text-[11px] text-gray-400">split（分词）</span>
-            <select
-              value={traceConfig.split ? '1' : '0'}
-              onChange={(e) => setTraceConfig(prev => ({ ...prev, split: e.target.value === '1' }))}
-              className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100"
-            >
-              <option value="1">1（按关键词分别查）</option>
-              <option value="0">0（关键词合并查询）</option>
-            </select>
-          </label>
-          <div className="group relative">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-amber-400/70 text-[11px] font-bold text-amber-300">!</span>
-            <div className="pointer-events-none absolute left-1/2 top-6 z-20 hidden w-80 -translate-x-1/2 rounded-lg border border-[#1e3a5f]/80 bg-[#0a1628] p-3 text-xs text-gray-300 shadow-xl group-hover:block">
-              split=1 时，小红书固定跑 17 个关键词，xhs_tasks 不生效
+            <div className="flex items-center gap-2">
+              <select
+                value={traceConfig.split ? '1' : '0'}
+                onChange={(e) => setTraceConfig(prev => ({ ...prev, split: e.target.value === '1' }))}
+                className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100"
+              >
+                <option value="1">1（按关键词分别查）</option>
+                <option value="0">0（关键词合并查询）</option>
+              </select>
+              <div className="group relative shrink-0">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-amber-400/70 text-[11px] font-bold text-amber-300">!</span>
+                <div className="pointer-events-none absolute left-1/2 top-9 z-20 hidden w-80 -translate-x-1/2 rounded-lg border border-[#1e3a5f]/80 bg-[#0a1628] p-3 text-xs text-gray-300 shadow-xl group-hover:block">
+                  split=1 时，小红书固定跑 17 个关键词，xhs_tasks 不生效
+                </div>
+              </div>
             </div>
-          </div>
+          </label>
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
