@@ -747,18 +747,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
           <p className="text-xs text-gray-500 mt-1">建议在效果稳定前关闭，避免自动消耗 API 费用</p>
-          <button
-            type="button"
-            disabled={isSavingAutoUpdate}
-            onClick={() => handleToggleAutoUpdate(!monitorSettings.autoUpdateEnabled)}
-            className={`inline-flex items-center px-3 py-1.5 rounded-md border text-xs font-semibold transition-colors ${
-              monitorSettings.autoUpdateEnabled
-                ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300'
-                : 'border-amber-500/40 bg-amber-500/10 text-amber-300'
-            } ${isSavingAutoUpdate ? 'opacity-60 cursor-not-allowed' : 'hover:border-indigo-400/70'}`}
-          >
-            {monitorSettings.autoUpdateEnabled ? 'ON' : 'OFF'}
-          </button>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -816,23 +804,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </label>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setTraceConfig(prev => ({ ...prev, parallel: !prev.parallel }))}
-            className={`inline-flex items-center px-3 py-1.5 rounded-md border text-xs font-semibold transition-colors ${traceConfig.parallel ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300' : 'border-gray-600/70 bg-gray-800/60 text-gray-300'}`}
-          >
-            parallel={traceConfig.parallel ? '1' : '0'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setTraceConfig(prev => ({ ...prev, split: !prev.split }))}
-            className={`inline-flex items-center px-3 py-1.5 rounded-md border text-xs font-semibold transition-colors ${traceConfig.split ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300' : 'border-gray-600/70 bg-gray-800/60 text-gray-300'}`}
-          >
-            split={traceConfig.split ? '1' : '0'}
-          </button>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
+          <label className="space-y-1">
+            <span className="text-[11px] text-gray-400">parallel（并发）</span>
+            <select
+              value={traceConfig.parallel ? '1' : '0'}
+              onChange={(e) => setTraceConfig(prev => ({ ...prev, parallel: e.target.value === '1' }))}
+              className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100"
+            >
+              <option value="1">1（并发执行）</option>
+              <option value="0">0（顺序执行）</option>
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] text-gray-400">split（分词）</span>
+            <select
+              value={traceConfig.split ? '1' : '0'}
+              onChange={(e) => setTraceConfig(prev => ({ ...prev, split: e.target.value === '1' }))}
+              className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100"
+            >
+              <option value="1">1（按关键词分别查）</option>
+              <option value="0">0（关键词合并查询）</option>
+            </select>
+          </label>
           <div className="group relative">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-400/70 text-[11px] font-bold text-amber-300">!</span>
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-amber-400/70 text-[11px] font-bold text-amber-300">!</span>
             <div className="pointer-events-none absolute left-1/2 top-6 z-20 hidden w-80 -translate-x-1/2 rounded-lg border border-[#1e3a5f]/80 bg-[#0a1628] p-3 text-xs text-gray-300 shadow-xl group-hover:block">
               split=1 时，XHS 固定跑全量 17 个关键词，`xhs_tasks` 参数会被忽略。
             </div>
@@ -846,6 +842,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-sm font-medium text-white disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isRunningCron ? '执行中...' : '启动热点抓取'}
+          </button>
+          <button
+            type="button"
+            disabled={isSavingAutoUpdate}
+            onClick={() => handleToggleAutoUpdate(!monitorSettings.autoUpdateEnabled)}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-sm font-medium text-white disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {isSavingAutoUpdate
+              ? '保存中...'
+              : `自动更新：${monitorSettings.autoUpdateEnabled ? 'ON' : 'OFF'}`}
           </button>
           {cronRunSummary && <p className="text-xs text-gray-300">{cronRunSummary}</p>}
         </div>
