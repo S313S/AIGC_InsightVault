@@ -708,37 +708,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </button>
       </div>
 
-      <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
-        <div className="flex items-center gap-2">
-          <p className="text-sm text-gray-300 font-medium">自动更新（定时任务）</p>
-          <div className="group relative">
-            <button
-              type="button"
-              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-amber-400/60 text-[10px] font-bold text-amber-300 hover:bg-amber-400/15 focus:outline-none focus:ring-2 focus:ring-amber-400/40"
-              aria-label="自动更新说明"
-            >
-              i
-            </button>
-            <div className="pointer-events-none absolute left-1/2 top-6 z-20 hidden w-80 -translate-x-1/2 rounded-lg border border-[#1e3a5f]/80 bg-[#0a1628] p-3 text-xs text-gray-300 shadow-xl group-hover:block group-focus-within:block">
-              关闭后将阻止 Vercel 定时自动抓取；你仍可在「热点追踪明细」里手动启动抓取。
-            </div>
-          </div>
-        </div>
-        <p className="text-xs text-gray-500 mt-1">建议在效果稳定前关闭，避免自动消耗 API 费用</p>
-        <button
-          type="button"
-          disabled={isSavingAutoUpdate}
-          onClick={() => handleToggleAutoUpdate(!monitorSettings.autoUpdateEnabled)}
-          className={`inline-flex items-center px-3 py-1.5 rounded-md border text-xs font-semibold transition-colors ${
-            monitorSettings.autoUpdateEnabled
-              ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300'
-              : 'border-amber-500/40 bg-amber-500/10 text-amber-300'
-          } ${isSavingAutoUpdate ? 'opacity-60 cursor-not-allowed' : 'hover:border-indigo-400/70'}`}
-        >
-          {monitorSettings.autoUpdateEnabled ? 'ON' : 'OFF'}
-        </button>
-      </div>
-
       <div className="pt-1">
         <button
           onClick={saveThreshold}
@@ -759,6 +728,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div>
           <h3 className="text-sm font-semibold text-gray-200">热点抓取启动</h3>
           <p className="text-xs text-gray-500 mt-1">可视化配置并直接触发 `/api/cron-monitor`，无需手写长 URL。</p>
+        </div>
+
+        <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-gray-300 font-medium">自动更新（定时任务）</p>
+            <div className="group relative">
+              <button
+                type="button"
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-amber-400/60 text-[10px] font-bold text-amber-300 hover:bg-amber-400/15 focus:outline-none focus:ring-2 focus:ring-amber-400/40"
+                aria-label="自动更新说明"
+              >
+                i
+              </button>
+              <div className="pointer-events-none absolute left-1/2 top-6 z-20 hidden w-80 -translate-x-1/2 rounded-lg border border-[#1e3a5f]/80 bg-[#0a1628] p-3 text-xs text-gray-300 shadow-xl group-hover:block group-focus-within:block">
+                关闭后将阻止 Vercel 定时自动抓取；你仍可在此页面手动启动抓取。
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">建议在效果稳定前关闭，避免自动消耗 API 费用</p>
+          <button
+            type="button"
+            disabled={isSavingAutoUpdate}
+            onClick={() => handleToggleAutoUpdate(!monitorSettings.autoUpdateEnabled)}
+            className={`inline-flex items-center px-3 py-1.5 rounded-md border text-xs font-semibold transition-colors ${
+              monitorSettings.autoUpdateEnabled
+                ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300'
+                : 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+            } ${isSavingAutoUpdate ? 'opacity-60 cursor-not-allowed' : 'hover:border-indigo-400/70'}`}
+          >
+            {monitorSettings.autoUpdateEnabled ? 'ON' : 'OFF'}
+          </button>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
