@@ -4,7 +4,7 @@ import { Play, Clock, Check, Plus, Trash2, Calendar, Activity, Loader2, Search }
 import { SearchResultsModal } from './SearchResultsModal';
 import { saveCard } from '../services/supabaseService';
 import { analyzeContentWithGemini, classifyContentWithGemini } from '../services/geminiService';
-import { searchSocial } from '../services/socialService';
+import { fetchSocialContent, searchSocial } from '../services/socialService';
 import { resolveContentTypeByPrompts } from '../shared/promptTagging.js';
 import { isFallbackCoverUrl } from '../shared/fallbackCovers.js';
 import { pickSemanticCover } from '../shared/semanticCovers.js';
@@ -424,7 +424,20 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                     seed: result.sourceUrl || result.noteId || preferredTitle,
                     categoryHint: category
                 });
-                const preferredCoverImage = result.coverImage || result.images?.[0] || semanticCover.coverImage;
+                let preferredCoverImage = result.coverImage || result.images?.[0] || '';
+                if ((!preferredCoverImage || isFallbackCoverUrl(preferredCoverImage)) && result.sourceUrl) {
+                    try {
+                        const fetched = await fetchSocialContent(result.sourceUrl);
+                        if (fetched?.coverImage) {
+                            preferredCoverImage = fetched.coverImage;
+                        }
+                    } catch (coverErr) {
+                        console.warn('Fetch cover during save failed:', coverErr);
+                    }
+                }
+                if (!preferredCoverImage || isFallbackCoverUrl(preferredCoverImage)) {
+                    preferredCoverImage = semanticCover.coverImage;
+                }
 
                 // Map search result to KnowledgeCard
                 const card: KnowledgeCard = {

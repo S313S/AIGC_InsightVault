@@ -377,7 +377,7 @@ const mapTwitterSearchResult = (tweet, userById, mediaByKey) => {
     text: tweet.text || '',
     seed: sourceUrl || tweet.id || user.username || ''
   });
-  const coverImage = normalizeLegacyFallbackCover(images[0] || semanticCover.coverImage);
+  const coverImage = normalizeLegacyFallbackCover(images[0] || '');
   const hashtags = extractHashtagsFromText(tweet.text || '');
   const tags = Array.from(new Set([semanticCover.category, ...hashtags].filter(Boolean)));
 
@@ -401,7 +401,7 @@ const mapTwitterSearchResult = (tweet, userById, mediaByKey) => {
     xsecToken: '',
     platform: 'Twitter',
     sourceUrl,
-    coverImageSource: images[0] ? 'media' : semanticCover.coverImageSource,
+    coverImageSource: images[0] ? 'media' : 'none',
     tags,
   };
 };
@@ -419,6 +419,42 @@ const fetchJson = async (url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) => {
 };
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const generateCoverImage = async (postText) => {
+  const apiKey = process.env.DASHSCOPE_API_KEY;
+  const appId = process.env.DASHSCOPE_APP_ID;
+  if (!apiKey || !appId) return '';
+
+  const endpoint = `https://dashscope.aliyuncs.com/api/v1/apps/${appId}/completion`;
+  const truncatedText = postText.length > 500 ? postText.substring(0, 500) + '...' : postText;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      input: { prompt: truncatedText },
+      parameters: {},
+      debug: {}
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.code) {
+    throw new Error(data.message || `Bailian API error: ${response.status}`);
+  }
+  const output = data.output;
+  if (output?.images && output.images.length > 0) {
+    return output.images[0].url || output.images[0];
+  }
+  if (output?.text) {
+    const imgMatch = output.text.match(/!\[.*?\]\((https?:\/\/[^\)]+)\)/);
+    if (imgMatch) return imgMatch[1];
+    const urlMatch = output.text.match(/(https?:\/\/[^\s\)]+\.(png|jpg|jpeg|webp|gif))/i);
+    if (urlMatch) return urlMatch[1];
+  }
+  return '';
+};
 
 const toTikhubSortType = (sort) => {
   const s = String(sort || '').trim();
@@ -1330,11 +1366,23 @@ export default async function handler(req, res) {
       item.coverImage = normalizeLegacyFallbackCover(item.coverImage || '');
       if (!item.coverImage || isTwitterPlaceholderImage(item.coverImage)) {
         const seed = item.sourceUrl || item.noteId || `${item.author || ''}-${item.publishTime || ''}`;
-        const semanticCover = pickSemanticCover({
-          text: `${item.title || ''}\n${item.desc || ''}`,
-          seed
-        });
-        item.coverImage = semanticCover.coverImage;
+        try {
+          const generated = await generateCoverImage(`${item.title || ''}\n${item.desc || ''}`);
+          if (generated) {
+            item.coverImage = generated;
+            item.coverImageSource = 'generated_bailian';
+          }
+        } catch (coverErr) {
+          console.warn('[cron-monitor] Bailian cover generation failed:', coverErr?.message || coverErr);
+        }
+        if (!item.coverImage || isTwitterPlaceholderImage(item.coverImage)) {
+          const semanticCover = pickSemanticCover({
+            text: `${item.title || ''}\n${item.desc || ''}`,
+            seed
+          });
+          item.coverImage = semanticCover.coverImage;
+          item.coverImageSource = semanticCover.coverImageSource;
+        }
       }
       if (isFallbackCoverPath(item.coverImage)) {
         fallbackCoverCount += 1;

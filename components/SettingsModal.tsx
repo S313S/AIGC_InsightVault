@@ -717,22 +717,58 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <input value={traceConfig.days} onChange={(e) => setTraceConfig(prev => ({ ...prev, days: e.target.value }))} placeholder="days" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
-          <input value={traceConfig.twitterDays} onChange={(e) => setTraceConfig(prev => ({ ...prev, twitterDays: e.target.value }))} placeholder="twitter_days" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
-          <input value={traceConfig.min} onChange={(e) => setTraceConfig(prev => ({ ...prev, min: e.target.value }))} placeholder="min" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
-          <input value={traceConfig.trustedMin} onChange={(e) => setTraceConfig(prev => ({ ...prev, trustedMin: e.target.value }))} placeholder="trusted_min" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
-          <input value={traceConfig.limit} onChange={(e) => setTraceConfig(prev => ({ ...prev, limit: e.target.value }))} placeholder="limit" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
-          <input value={traceConfig.tasks} onChange={(e) => setTraceConfig(prev => ({ ...prev, tasks: e.target.value }))} placeholder="tasks" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
-          <input value={traceConfig.xhsTasks} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsTasks: e.target.value }))} placeholder="xhs_tasks" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
-          <input value={traceConfig.xhsTimeout} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsTimeout: e.target.value }))} placeholder="xhs_timeout" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
-          <input value={traceConfig.xhsRetries} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsRetries: e.target.value }))} placeholder="xhs_retries" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
-          <input value={traceConfig.xhsDelay} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsDelay: e.target.value }))} placeholder="xhs_delay" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
-          <select value={traceConfig.platform} onChange={(e) => setTraceConfig(prev => ({ ...prev, platform: e.target.value as 'all' | 'twitter' | 'xiaohongshu' }))} className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100">
-            <option value="all">platform=all</option>
-            <option value="twitter">platform=twitter</option>
-            <option value="xiaohongshu">platform=xhs</option>
-          </select>
-          <input value={traceConfig.token} onChange={(e) => setTraceConfig(prev => ({ ...prev, token: e.target.value }))} placeholder="token（可选）" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          <label className="space-y-1">
+            <span className="text-[11px] text-gray-400">days</span>
+            <input value={traceConfig.days} onChange={(e) => setTraceConfig(prev => ({ ...prev, days: e.target.value }))} placeholder="7" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] text-gray-400">twitter_days</span>
+            <input value={traceConfig.twitterDays} onChange={(e) => setTraceConfig(prev => ({ ...prev, twitterDays: e.target.value }))} placeholder="7" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] text-gray-400">min</span>
+            <input value={traceConfig.min} onChange={(e) => setTraceConfig(prev => ({ ...prev, min: e.target.value }))} placeholder="500" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] text-gray-400">trusted_min</span>
+            <input value={traceConfig.trustedMin} onChange={(e) => setTraceConfig(prev => ({ ...prev, trustedMin: e.target.value }))} placeholder="1000" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] text-gray-400">limit</span>
+            <input value={traceConfig.limit} onChange={(e) => setTraceConfig(prev => ({ ...prev, limit: e.target.value }))} placeholder="30" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] text-gray-400">tasks</span>
+            <input value={traceConfig.tasks} onChange={(e) => setTraceConfig(prev => ({ ...prev, tasks: e.target.value }))} placeholder="8" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] text-gray-400">xhs_tasks</span>
+            <input value={traceConfig.xhsTasks} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsTasks: e.target.value }))} placeholder="3" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] text-gray-400">xhs_timeout</span>
+            <input value={traceConfig.xhsTimeout} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsTimeout: e.target.value }))} placeholder="15000" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] text-gray-400">xhs_retries</span>
+            <input value={traceConfig.xhsRetries} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsRetries: e.target.value }))} placeholder="2" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] text-gray-400">xhs_delay</span>
+            <input value={traceConfig.xhsDelay} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsDelay: e.target.value }))} placeholder="1200" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] text-gray-400">platform</span>
+            <select value={traceConfig.platform} onChange={(e) => setTraceConfig(prev => ({ ...prev, platform: e.target.value as 'all' | 'twitter' | 'xiaohongshu' }))} className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100">
+              <option value="all">platform=all</option>
+              <option value="twitter">platform=twitter</option>
+              <option value="xiaohongshu">platform=xhs</option>
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] text-gray-400">token（可选）</span>
+            <input value={traceConfig.token} onChange={(e) => setTraceConfig(prev => ({ ...prev, token: e.target.value }))} placeholder="cron secret token" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          </label>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -767,6 +803,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {isRunningCron ? '执行中...' : '启动热点抓取'}
           </button>
           {cronRunSummary && <p className="text-xs text-gray-300">{cronRunSummary}</p>}
+        </div>
+
+        <div className="rounded-lg border border-[#1e3a5f]/40 bg-[#0d1526]/30 p-3 text-[11px] text-gray-400 leading-relaxed">
+          <p><span className="text-gray-200 font-medium">days / twitter_days</span>：发布时间窗口（天）。</p>
+          <p><span className="text-gray-200 font-medium">min / trusted_min</span>：普通账号与信任账号最低互动阈值。</p>
+          <p><span className="text-gray-200 font-medium">limit</span>：单次 API 调用返回上限。</p>
+          <p><span className="text-gray-200 font-medium">tasks / xhs_tasks</span>：Twitter 与 XHS 关键词任务量（split=1 时 xhs_tasks 忽略）。</p>
+          <p><span className="text-gray-200 font-medium">xhs_timeout / xhs_retries / xhs_delay</span>：XHS 超时、重试次数、调用间隔（毫秒）。</p>
+          <p><span className="text-gray-200 font-medium">parallel / split / platform</span>：并发、分词模式、平台范围。</p>
         </div>
       </div>
 

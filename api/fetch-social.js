@@ -510,8 +510,23 @@ async function mapToKnowledgeCard(data, platform) {
             text: data.text || '',
             seed: sourceUrl || data.id
         });
-        const coverImage = images[0] || semanticCover.coverImage;
-        const coverImageSource = images[0] ? 'media' : semanticCover.coverImageSource;
+        let coverImage = images[0] || '';
+        let coverImageSource = images[0] ? 'media' : 'none';
+        if (!coverImage) {
+            try {
+                const generated = await generateCoverImage(data.text || '');
+                if (generated) {
+                    coverImage = generated;
+                    coverImageSource = 'generated_bailian';
+                }
+            } catch (err) {
+                console.warn('Failed to generate cover image via Bailian:', err?.message || err);
+            }
+        }
+        if (!coverImage) {
+            coverImage = semanticCover.coverImage;
+            coverImageSource = semanticCover.coverImageSource;
+        }
         const hashtags = extractHashtagsFromText(data.text || '');
         const tags = Array.from(new Set([semanticCover.category, ...hashtags].filter(Boolean)));
 
@@ -534,4 +549,43 @@ async function mapToKnowledgeCard(data, platform) {
     }
 
     return { error: 'Unknown platform' };
+}
+
+async function generateCoverImage(postText) {
+    const apiKey = process.env.DASHSCOPE_API_KEY;
+    const appId = process.env.DASHSCOPE_APP_ID;
+    if (!apiKey || !appId) return '';
+
+    const endpoint = `https://dashscope.aliyuncs.com/api/v1/apps/${appId}/completion`;
+    const truncatedText = postText.length > 500 ? postText.substring(0, 500) + '...' : postText;
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            input: {
+                prompt: truncatedText
+            },
+            parameters: {},
+            debug: {}
+        }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.code) {
+        throw new Error(data.message || `Bailian API error: ${response.status}`);
+    }
+
+    const output = data.output;
+    if (output?.images && output.images.length > 0) {
+        return output.images[0].url || output.images[0];
+    }
+    if (output?.text) {
+        const imgMatch = output.text.match(/!\[.*?\]\((https?:\/\/[^\)]+)\)/);
+        if (imgMatch) return imgMatch[1];
+        const urlMatch = output.text.match(/(https?:\/\/[^\s\)]+\.(png|jpg|jpeg|webp|gif))/i);
+        if (urlMatch) return urlMatch[1];
+    }
+    return '';
 }
