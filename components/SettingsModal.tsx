@@ -718,47 +718,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <label className="space-y-1">
-            <span className="text-[11px] text-gray-400">days</span>
+            <span className="text-[11px] text-gray-400">days（日期）</span>
             <input value={traceConfig.days} onChange={(e) => setTraceConfig(prev => ({ ...prev, days: e.target.value }))} placeholder="7" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
           </label>
           <label className="space-y-1">
-            <span className="text-[11px] text-gray-400">twitter_days</span>
+            <span className="text-[11px] text-gray-400">twitter_days（推特日期）</span>
             <input value={traceConfig.twitterDays} onChange={(e) => setTraceConfig(prev => ({ ...prev, twitterDays: e.target.value }))} placeholder="7" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
           </label>
           <label className="space-y-1">
-            <span className="text-[11px] text-gray-400">min</span>
+            <span className="text-[11px] text-gray-400">min（最低互动）</span>
             <input value={traceConfig.min} onChange={(e) => setTraceConfig(prev => ({ ...prev, min: e.target.value }))} placeholder="500" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
           </label>
           <label className="space-y-1">
-            <span className="text-[11px] text-gray-400">trusted_min</span>
+            <span className="text-[11px] text-gray-400">trusted_min（信任最低互动）</span>
             <input value={traceConfig.trustedMin} onChange={(e) => setTraceConfig(prev => ({ ...prev, trustedMin: e.target.value }))} placeholder="1000" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
           </label>
           <label className="space-y-1">
-            <span className="text-[11px] text-gray-400">limit</span>
+            <span className="text-[11px] text-gray-400">limit（每次返回条数）</span>
             <input value={traceConfig.limit} onChange={(e) => setTraceConfig(prev => ({ ...prev, limit: e.target.value }))} placeholder="30" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
           </label>
           <label className="space-y-1">
-            <span className="text-[11px] text-gray-400">tasks</span>
+            <span className="text-[11px] text-gray-400">tasks（关键词任务数）</span>
             <input value={traceConfig.tasks} onChange={(e) => setTraceConfig(prev => ({ ...prev, tasks: e.target.value }))} placeholder="8" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
           </label>
           <label className="space-y-1">
-            <span className="text-[11px] text-gray-400">xhs_tasks</span>
+            <span className="text-[11px] text-gray-400">xhs_tasks（小红书任务数）</span>
             <input value={traceConfig.xhsTasks} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsTasks: e.target.value }))} placeholder="3" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
           </label>
           <label className="space-y-1">
-            <span className="text-[11px] text-gray-400">xhs_timeout</span>
+            <span className="text-[11px] text-gray-400">xhs_timeout（超时ms）</span>
             <input value={traceConfig.xhsTimeout} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsTimeout: e.target.value }))} placeholder="15000" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
           </label>
           <label className="space-y-1">
-            <span className="text-[11px] text-gray-400">xhs_retries</span>
+            <span className="text-[11px] text-gray-400">xhs_retries（重试次数）</span>
             <input value={traceConfig.xhsRetries} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsRetries: e.target.value }))} placeholder="2" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
           </label>
           <label className="space-y-1">
-            <span className="text-[11px] text-gray-400">xhs_delay</span>
+            <span className="text-[11px] text-gray-400">xhs_delay（间隔ms）</span>
             <input value={traceConfig.xhsDelay} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsDelay: e.target.value }))} placeholder="1200" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
           </label>
           <label className="space-y-1">
-            <span className="text-[11px] text-gray-400">platform</span>
+            <span className="text-[11px] text-gray-400">platform（平台）</span>
             <select value={traceConfig.platform} onChange={(e) => setTraceConfig(prev => ({ ...prev, platform: e.target.value as 'all' | 'twitter' | 'xiaohongshu' }))} className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100">
               <option value="all">platform=all</option>
               <option value="twitter">platform=twitter</option>
@@ -803,15 +803,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {isRunningCron ? '执行中...' : '启动热点抓取'}
           </button>
           {cronRunSummary && <p className="text-xs text-gray-300">{cronRunSummary}</p>}
-        </div>
-
-        <div className="rounded-lg border border-[#1e3a5f]/40 bg-[#0d1526]/30 p-3 text-[11px] text-gray-400 leading-relaxed">
-          <p><span className="text-gray-200 font-medium">days / twitter_days</span>：发布时间窗口（天）。</p>
-          <p><span className="text-gray-200 font-medium">min / trusted_min</span>：普通账号与信任账号最低互动阈值。</p>
-          <p><span className="text-gray-200 font-medium">limit</span>：单次 API 调用返回上限。</p>
-          <p><span className="text-gray-200 font-medium">tasks / xhs_tasks</span>：Twitter 与 XHS 关键词任务量（split=1 时 xhs_tasks 忽略）。</p>
-          <p><span className="text-gray-200 font-medium">xhs_timeout / xhs_retries / xhs_delay</span>：XHS 超时、重试次数、调用间隔（毫秒）。</p>
-          <p><span className="text-gray-200 font-medium">parallel / split / platform</span>：并发、分词模式、平台范围。</p>
         </div>
       </div>
 
