@@ -58,7 +58,7 @@ const BLACKLIST_SEED = [
 
 const DEFAULT_SETTINGS: MonitorSettings = { minEngagement: 500, trustedMinEngagement: 1000, splitKeywords: false, autoUpdateEnabled: false };
 const DEFAULT_TRACE_CONFIG = {
-  days: '7',
+  xhsDays: '7',
   twitterDays: '7',
   min: '500',
   trustedMin: '1000',
@@ -400,7 +400,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setCronRunSummary('');
     try {
       const params = new URLSearchParams();
-      appendNumberParam(params, 'days', traceConfig.days);
+      appendNumberParam(params, 'days', traceConfig.xhsDays);
+      appendNumberParam(params, 'xhs_days', traceConfig.xhsDays);
       appendNumberParam(params, 'twitter_days', traceConfig.twitterDays);
       appendNumberParam(params, 'min', traceConfig.min, { allowZero: true });
       appendNumberParam(params, 'trusted_min', traceConfig.trustedMin, { allowZero: true });
@@ -732,8 +733,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <label className="space-y-1">
-            <span className="text-[11px] text-gray-400">days（日期）</span>
-            <input value={traceConfig.days} onChange={(e) => setTraceConfig(prev => ({ ...prev, days: e.target.value }))} placeholder="7" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+            <span className="text-[11px] text-gray-400">xhs_days（小红书日期）</span>
+            <input value={traceConfig.xhsDays} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsDays: e.target.value }))} placeholder="7" className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
           </label>
           <label className="space-y-1">
             <span className="text-[11px] text-gray-400">twitter_days（推特日期）</span>
