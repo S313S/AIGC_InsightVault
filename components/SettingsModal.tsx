@@ -730,25 +730,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <p className="text-xs text-gray-500 mt-1">可视化配置并直接触发 `/api/cron-monitor`，无需手写长 URL。</p>
         </div>
 
-        <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
-          <div className="flex items-center gap-2">
-            <p className="text-sm text-gray-300 font-medium">自动更新（定时任务）</p>
-            <div className="group relative">
-              <button
-                type="button"
-                className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-amber-400/60 text-[10px] font-bold text-amber-300 hover:bg-amber-400/15 focus:outline-none focus:ring-2 focus:ring-amber-400/40"
-                aria-label="自动更新说明"
-              >
-                i
-              </button>
-              <div className="pointer-events-none absolute left-1/2 top-6 z-20 hidden w-80 -translate-x-1/2 rounded-lg border border-[#1e3a5f]/80 bg-[#0a1628] p-3 text-xs text-gray-300 shadow-xl group-hover:block group-focus-within:block">
-                关闭后将阻止 Vercel 定时自动抓取；你仍可在此页面手动启动抓取。
-              </div>
-            </div>
-          </div>
-          <p className="text-xs text-gray-500 mt-1">建议在效果稳定前关闭，避免自动消耗 API 费用</p>
-        </div>
-
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <label className="space-y-1">
             <span className="text-[11px] text-gray-400">days（日期）</span>
@@ -827,12 +808,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <option value="0">0（关键词合并查询）</option>
             </select>
           </label>
-          <div className="group relative">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-amber-400/70 text-[11px] font-bold text-amber-300">!</span>
-            <div className="pointer-events-none absolute left-1/2 top-6 z-20 hidden w-80 -translate-x-1/2 rounded-lg border border-[#1e3a5f]/80 bg-[#0a1628] p-3 text-xs text-gray-300 shadow-xl group-hover:block">
-              split=1 时，XHS 固定跑全量 17 个关键词，`xhs_tasks` 参数会被忽略。
-            </div>
-          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -875,7 +850,48 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               const apiCalls = Number(log.apiCallsSummary?.totalCalls || 0);
               const withResults = Number(log.apiCallsSummary?.callsWithResults || 0);
               const xhsTasks = Number(log.keywordExecution?.xiaohongshu?.effectiveTasks || 0);
-              const twitterMode = String(log.keywordExecution?.twitter?.mode || '-');
+              const twitterModeRaw = String(log.keywordExecution?.twitter?.mode || '-');
+              const twitterKeywords = Array.isArray(log.keywordExecution?.twitter?.keywords)
+                ? log.keywordExecution.twitter.keywords.filter(Boolean).map((k: any) => String(k))
+                : [];
+              const xhsKeywords = Array.isArray(log.keywordExecution?.xiaohongshu?.keywords)
+                ? log.keywordExecution.xiaohongshu.keywords.filter(Boolean).map((k: any) => String(k))
+                : [];
+              const usedKeywords = twitterKeywords.length > 0 ? twitterKeywords : xhsKeywords;
+              const xhsTransmitText = xhsKeywords.length > 0
+                ? `${xhsKeywords.map(k => `${k} 单独传入`).join('，')}`
+                : '本次未调用小红书 API';
+              const twitterTransmitText = twitterModeRaw === 'single_or_query'
+                ? `${twitterKeywords.join(' OR ')}（一次请求合并查询）`
+                : twitterModeRaw === 'per_keyword_api_calls'
+                  ? `${twitterKeywords.map(k => `${k} 单独传入`).join('，')}`
+                  : 'Twitter 传参方式未知';
+              const twitterMode =
+                twitterModeRaw === 'single_or_query'
+                  ? 'Twitter 关键词合并查询（OR）'
+                  : twitterModeRaw === 'per_keyword_api_calls'
+                    ? 'Twitter 关键词逐个查询'
+                    : 'Twitter 查询方式未知';
+              const runtimeSeconds = Number.isFinite(Number(log.runtimeMs))
+                ? Math.max(1, Math.round(Number(log.runtimeMs) / 1000))
+                : 0;
+              const days = Number(log.effectiveParams?.days || 0);
+              const limit = Number(log.effectiveParams?.limit || 0);
+              const minInteraction = Number(log.effectiveParams?.minInteraction || 0);
+              const trustedMinInteraction = Number(log.effectiveParams?.trustedMinInteraction || 0);
+              const tasks = Number(log.effectiveParams?.tasks || 0);
+              const parallelMode = log.effectiveParams?.parallel ? '并发执行' : '顺序执行';
+              const splitMode = log.effectiveParams?.split ? '按关键词分别查询' : '关键词合并查询';
+
+              const twitterCalls = Number(log.apiCallsSummary?.byPlatform?.twitter?.calls || 0);
+              const xhsCalls = Number(log.apiCallsSummary?.byPlatform?.xiaohongshu?.calls || 0);
+              const twitterResults = Number(log.apiCallsSummary?.byPlatform?.twitter?.results || 0);
+              const xhsResults = Number(log.apiCallsSummary?.byPlatform?.xiaohongshu?.results || 0);
+
+              const inserted = Number(log.resultSummary?.inserted || 0);
+              const updatedExisting = Number(log.resultSummary?.updatedExisting || 0);
+              const candidates = Number(log.resultSummary?.candidates || 0);
+              const tasksRun = Number(log.resultSummary?.tasksRun || 0);
               return (
                 <div key={log.id} className="rounded-lg border border-[#1e3a5f]/40 bg-[#0d1526]/70 px-3 py-2">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -887,15 +903,59 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                   </div>
                   <div className="mt-1 text-xs text-gray-400">
-                    关键词模式：Twitter={twitterMode}，XHS关键词={xhsTasks}；API调用={apiCalls}，有结果={withResults}；耗时={log.runtimeMs}ms
+                    {twitterMode}；小红书实际关键词 {xhsTasks} 个；共请求 API {apiCalls} 次，其中有结果 {withResults} 次；总耗时约 {runtimeSeconds} 秒
+                  </div>
+                  <div className="mt-1 text-xs text-gray-300 leading-6">
+                    <div>「1」用到的关键词：{usedKeywords.length > 0 ? usedKeywords.join('、') : '未记录关键词'}</div>
+                    <div>「2」传到小红书 API：{xhsTransmitText}</div>
+                    <div>传到推特 API：{twitterTransmitText}</div>
                   </div>
                   <details className="mt-2">
                     <summary className="text-xs text-indigo-300 cursor-pointer">查看明细</summary>
                     <div className="mt-2 grid grid-cols-1 lg:grid-cols-2 gap-2 text-[11px] text-gray-300">
-                      <pre className="rounded-md border border-[#1e3a5f]/40 bg-[#0a1628]/70 p-2 overflow-auto max-h-48">{JSON.stringify(log.effectiveParams, null, 2)}</pre>
-                      <pre className="rounded-md border border-[#1e3a5f]/40 bg-[#0a1628]/70 p-2 overflow-auto max-h-48">{JSON.stringify(log.keywordExecution, null, 2)}</pre>
-                      <pre className="rounded-md border border-[#1e3a5f]/40 bg-[#0a1628]/70 p-2 overflow-auto max-h-48">{JSON.stringify(log.apiCallsSummary, null, 2)}</pre>
-                      <pre className="rounded-md border border-[#1e3a5f]/40 bg-[#0a1628]/70 p-2 overflow-auto max-h-48">{JSON.stringify(log.resultSummary, null, 2)}</pre>
+                      <div className="rounded-md border border-[#1e3a5f]/40 bg-[#0a1628]/70 p-2 space-y-1">
+                        <p className="text-xs font-semibold text-gray-200">① 本次参数（effectiveParams）</p>
+                        <p className="text-[11px] text-gray-400">
+                          概括：回看 {days} 天，单次最多取 {limit} 条，互动门槛普通账号 {minInteraction} / 信任账号 {trustedMinInteraction}，关键词任务 {tasks}，执行方式为「{parallelMode} + {splitMode}」。
+                        </p>
+                        <p className="text-[11px] text-gray-500">
+                          字段：days=回看天数；limit=每次返回上限；min/trustedMinInteraction=互动门槛；tasks=关键词任务数；parallel/split=执行方式。
+                        </p>
+                        <pre className="rounded-md border border-[#1e3a5f]/30 bg-[#091223]/80 p-2 overflow-auto max-h-40">{JSON.stringify(log.effectiveParams, null, 2)}</pre>
+                      </div>
+
+                      <div className="rounded-md border border-[#1e3a5f]/40 bg-[#0a1628]/70 p-2 space-y-1">
+                        <p className="text-xs font-semibold text-gray-200">② 关键词执行（keywordExecution）</p>
+                        <p className="text-[11px] text-gray-400">
+                          概括：Twitter 使用「{twitterMode}」，关键词 {twitterKeywords.length} 个；小红书实际跑了 {xhsTasks} 个关键词。
+                        </p>
+                        <p className="text-[11px] text-gray-500">
+                          字段：twitter.mode=推特传参方式；twitter.keywords=推特关键词；xiaohongshu.keywords=小红书关键词；effectiveTasks=小红书实际执行关键词数。
+                        </p>
+                        <pre className="rounded-md border border-[#1e3a5f]/30 bg-[#091223]/80 p-2 overflow-auto max-h-40">{JSON.stringify(log.keywordExecution, null, 2)}</pre>
+                      </div>
+
+                      <div className="rounded-md border border-[#1e3a5f]/40 bg-[#0a1628]/70 p-2 space-y-1">
+                        <p className="text-xs font-semibold text-gray-200">③ API 调用汇总（apiCallsSummary）</p>
+                        <p className="text-[11px] text-gray-400">
+                          概括：本次共请求 {apiCalls} 次（Twitter {twitterCalls} 次 / 小红书 {xhsCalls} 次）；拿到结果 {withResults} 次；返回条数 Twitter {twitterResults} 条 / 小红书 {xhsResults} 条。
+                        </p>
+                        <p className="text-[11px] text-gray-500">
+                          字段：totalCalls=总请求数；callsWithResults=有结果的请求数；byPlatform=按平台拆分的调用次数与结果条数。
+                        </p>
+                        <pre className="rounded-md border border-[#1e3a5f]/30 bg-[#091223]/80 p-2 overflow-auto max-h-40">{JSON.stringify(log.apiCallsSummary, null, 2)}</pre>
+                      </div>
+
+                      <div className="rounded-md border border-[#1e3a5f]/40 bg-[#0a1628]/70 p-2 space-y-1">
+                        <p className="text-xs font-semibold text-gray-200">④ 入库结果（resultSummary）</p>
+                        <p className="text-[11px] text-gray-400">
+                          概括：执行了 {tasksRun} 个任务，筛出候选 {candidates} 条；最终新插入 {inserted} 条，更新已有 {updatedExisting} 条。
+                        </p>
+                        <p className="text-[11px] text-gray-500">
+                          字段：tasksRun=实际执行任务数；candidates=通过筛选候选数；inserted=新增条数；updatedExisting=更新已有条数。
+                        </p>
+                        <pre className="rounded-md border border-[#1e3a5f]/30 bg-[#091223]/80 p-2 overflow-auto max-h-40">{JSON.stringify(log.resultSummary, null, 2)}</pre>
+                      </div>
                     </div>
                   </details>
                 </div>
