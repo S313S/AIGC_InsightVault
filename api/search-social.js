@@ -1,6 +1,7 @@
 // Vercel serverless function for searching social media content
 // Path: /api/search-social
 import { buildXiaohongshuWebUrl } from '../shared/xiaohongshuUrls.js';
+import { extractHashtagsFromText, pickSemanticCover } from '../shared/semanticCovers.js';
 
 const API_BASE = 'https://api.justoneapi.com';
 const API_BASE_TIKHUB = 'https://api.tikhub.io';
@@ -431,7 +432,14 @@ function mapTwitterSearchResult(tweet, userById, mediaByKey) {
         .map(m => m.url || m.preview_image_url)
         .filter(Boolean);
 
-    const coverImage = images[0] || '';
+    const sourceUrl = user.username ? `https://twitter.com/${user.username}/status/${tweet.id}` : `https://twitter.com/i/web/status/${tweet.id}`;
+    const semanticCover = pickSemanticCover({
+        text: tweet.text || '',
+        seed: sourceUrl || tweet.id
+    });
+    const coverImage = images[0] || semanticCover.coverImage;
+    const hashtags = extractHashtagsFromText(tweet.text || '');
+    const tags = Array.from(new Set([semanticCover.category, ...hashtags].filter(Boolean)));
 
     return {
         noteId: tweet.id,
@@ -440,6 +448,7 @@ function mapTwitterSearchResult(tweet, userById, mediaByKey) {
         author: user.username || user.name || '',
         authorAvatar: user.profile_image_url || '',
         coverImage,
+        coverImageSource: images[0] ? 'media' : semanticCover.coverImageSource,
         images,
         metrics: {
             likes: tweet.public_metrics?.like_count || 0,
@@ -450,6 +459,7 @@ function mapTwitterSearchResult(tweet, userById, mediaByKey) {
         publishTime: tweet.created_at || '',
         xsecToken: '',
         platform: 'Twitter',
-        sourceUrl: user.username ? `https://twitter.com/${user.username}/status/${tweet.id}` : `https://twitter.com/i/web/status/${tweet.id}`,
+        sourceUrl,
+        tags,
     };
 }

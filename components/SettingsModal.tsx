@@ -5,6 +5,7 @@ import {
   deleteQualityKeyword,
   deleteTrustedAccount,
   getMonitorSettings,
+  getCronRunLogs,
   getQualityKeywords,
   getTrustedAccounts,
   getXhsTokenConfigs,
@@ -15,9 +16,9 @@ import {
   upsertXhsTokenConfig
 } from '../services/supabaseService';
 import { isSupabaseConnected } from '../services/supabaseClient';
-import { MonitorSettings, QualityKeyword, TrustedAccount, XhsMissingTokenItem, XhsTokenConfig } from '../types';
+import { CronRunLog, MonitorSettings, QualityKeyword, TrustedAccount, XhsMissingTokenItem, XhsTokenConfig } from '../types';
 
-type Tab = 'trusted' | 'keywords' | 'threshold' | 'xhs_tokens' | 'about';
+type Tab = 'trusted' | 'keywords' | 'threshold' | 'trace' | 'xhs_tokens' | 'about';
 type PlatformType = 'twitter' | 'xiaohongshu';
 type CategoryType = 'image_gen' | 'video_gen' | 'vibe_coding';
 
@@ -56,6 +57,22 @@ const BLACKLIST_SEED = [
 ];
 
 const DEFAULT_SETTINGS: MonitorSettings = { minEngagement: 500, trustedMinEngagement: 1000, splitKeywords: false };
+const DEFAULT_TRACE_CONFIG = {
+  days: '7',
+  twitterDays: '7',
+  min: '500',
+  trustedMin: '1000',
+  limit: '30',
+  tasks: '8',
+  xhsTasks: '3',
+  xhsTimeout: '15000',
+  xhsRetries: '2',
+  xhsDelay: '1200',
+  parallel: true,
+  split: true,
+  platform: 'all' as 'all' | 'twitter' | 'xiaohongshu',
+  token: ''
+};
 
 const normalizeHandle = (handle: string) => handle.replace(/^@+/, '').trim();
 
@@ -92,6 +109,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [trustedThresholdInput, setTrustedThresholdInput] = useState(String(DEFAULT_SETTINGS.trustedMinEngagement));
   const [isSavingSplit, setIsSavingSplit] = useState(false);
   const [xhsTokenForm, setXhsTokenForm] = useState({ noteId: '', xsecToken: '', xsecSource: 'pc_feed' });
+  const [cronRunLogs, setCronRunLogs] = useState<CronRunLog[]>([]);
+  const [isLoadingCronLogs, setIsLoadingCronLogs] = useState(false);
+  const [isRunningCron, setIsRunningCron] = useState(false);
+  const [cronRunSummary, setCronRunSummary] = useState('');
+  const [traceConfig, setTraceConfig] = useState(DEFAULT_TRACE_CONFIG);
 
   const positiveKeywords = useMemo(
     () => qualityKeywords.filter(k => k.type === 'positive'),
@@ -110,19 +132,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const loadSettings = async () => {
     setIsLoading(true);
-    const [accounts, keywords, settings, tokenConfigs] = await Promise.all([
+    setIsLoadingCronLogs(true);
+    const [accounts, keywords, settings, tokenConfigs, logs] = await Promise.all([
       getTrustedAccounts(),
       getQualityKeywords(),
       getMonitorSettings(),
-      getXhsTokenConfigs()
+      getXhsTokenConfigs(),
+      getCronRunLogs(30)
     ]);
 
     setTrustedAccounts(accounts);
     setQualityKeywords(keywords);
     setMonitorSettings(settings);
     setXhsTokenConfigs(tokenConfigs);
+    setCronRunLogs(logs);
     setThresholdInput(String(settings.minEngagement));
     setTrustedThresholdInput(String(settings.trustedMinEngagement));
+    setTraceConfig(prev => ({
+      ...prev,
+      min: String(settings.minEngagement),
+      trustedMin: String(settings.trustedMinEngagement),
+      split: settings.splitKeywords
+    }));
 
     if (isSupabaseConnected()) {
       const existingSet = new Set(
@@ -146,6 +177,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
 
     setIsLoading(false);
+    setIsLoadingCronLogs(false);
   };
 
   useEffect(() => {
@@ -269,6 +301,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       trustedMinEngagement: Math.floor(trustedMinEngagement),
       splitKeywords: monitorSettings.splitKeywords
     });
+    setTraceConfig(prev => ({
+      ...prev,
+      min: String(Math.floor(minEngagement)),
+      trustedMin: String(Math.floor(trustedMinEngagement))
+    }));
     flashMessage('阈值已保存');
   };
 
@@ -281,6 +318,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       return;
     }
     setMonitorSettings(prev => ({ ...prev, splitKeywords: value }));
+    setTraceConfig(prev => ({ ...prev, split: value }));
     flashMessage(`全量关键词搜索已${value ? '开启' : '关闭'}`);
   };
 
@@ -324,6 +362,68 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       flashMessage(successText);
     } catch {
       flashMessage('复制失败');
+    }
+  };
+
+  const refreshCronRunLogs = async () => {
+    setIsLoadingCronLogs(true);
+    const logs = await getCronRunLogs(30);
+    setCronRunLogs(logs);
+    setIsLoadingCronLogs(false);
+  };
+
+  const appendNumberParam = (params: URLSearchParams, key: string, raw: string, opts?: { allowZero?: boolean }) => {
+    const n = Number(raw);
+    const allowZero = Boolean(opts?.allowZero);
+    if (!Number.isFinite(n)) return;
+    if (!allowZero && n <= 0) return;
+    if (allowZero && n < 0) return;
+    params.set(key, String(Math.floor(n)));
+  };
+
+  const handleRunCronNow = async () => {
+    setIsRunningCron(true);
+    setCronRunSummary('');
+    try {
+      const params = new URLSearchParams();
+      appendNumberParam(params, 'days', traceConfig.days);
+      appendNumberParam(params, 'twitter_days', traceConfig.twitterDays);
+      appendNumberParam(params, 'min', traceConfig.min, { allowZero: true });
+      appendNumberParam(params, 'trusted_min', traceConfig.trustedMin, { allowZero: true });
+      appendNumberParam(params, 'limit', traceConfig.limit);
+      appendNumberParam(params, 'tasks', traceConfig.tasks);
+      appendNumberParam(params, 'xhs_tasks', traceConfig.xhsTasks);
+      appendNumberParam(params, 'xhs_timeout', traceConfig.xhsTimeout);
+      appendNumberParam(params, 'xhs_retries', traceConfig.xhsRetries, { allowZero: true });
+      appendNumberParam(params, 'xhs_delay', traceConfig.xhsDelay, { allowZero: true });
+      params.set('parallel', traceConfig.parallel ? '1' : '0');
+      params.set('split', traceConfig.split ? '1' : '0');
+      if (traceConfig.platform !== 'all') {
+        params.set('platform', traceConfig.platform === 'xiaohongshu' ? 'xhs' : 'twitter');
+      }
+      if (traceConfig.token.trim()) {
+        params.set('token', traceConfig.token.trim());
+      }
+
+      const url = `/api/cron-monitor?${params.toString()}`;
+      const resp = await fetch(url, { method: 'GET' });
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(payload?.error || `请求失败 (${resp.status})`);
+      }
+      const inserted = Number(payload?.inserted || 0);
+      const candidates = Number(payload?.candidates || 0);
+      const runtimeMs = Number(payload?.runtimeMs || 0);
+      const errors = Array.isArray(payload?.platformErrors) ? payload.platformErrors.length : 0;
+      setCronRunSummary(`完成：候选 ${candidates}，新增 ${inserted}，耗时 ${runtimeMs}ms，错误 ${errors}`);
+      flashMessage('热点抓取执行完成');
+      await refreshCronRunLogs();
+    } catch (err: any) {
+      const msg = err?.message || '执行失败';
+      setCronRunSummary(`执行失败：${msg}`);
+      flashMessage(msg);
+    } finally {
+      setIsRunningCron(false);
     }
   };
 
@@ -608,6 +708,118 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     </div>
   );
 
+  const renderTraceTab = () => (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-[#1e3a5f]/50 bg-[#0a0f1a]/60 p-4 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-200">热点抓取启动</h3>
+          <p className="text-xs text-gray-500 mt-1">可视化配置并直接触发 `/api/cron-monitor`，无需手写长 URL。</p>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <input value={traceConfig.days} onChange={(e) => setTraceConfig(prev => ({ ...prev, days: e.target.value }))} placeholder="days" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          <input value={traceConfig.twitterDays} onChange={(e) => setTraceConfig(prev => ({ ...prev, twitterDays: e.target.value }))} placeholder="twitter_days" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          <input value={traceConfig.min} onChange={(e) => setTraceConfig(prev => ({ ...prev, min: e.target.value }))} placeholder="min" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          <input value={traceConfig.trustedMin} onChange={(e) => setTraceConfig(prev => ({ ...prev, trustedMin: e.target.value }))} placeholder="trusted_min" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          <input value={traceConfig.limit} onChange={(e) => setTraceConfig(prev => ({ ...prev, limit: e.target.value }))} placeholder="limit" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          <input value={traceConfig.tasks} onChange={(e) => setTraceConfig(prev => ({ ...prev, tasks: e.target.value }))} placeholder="tasks" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          <input value={traceConfig.xhsTasks} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsTasks: e.target.value }))} placeholder="xhs_tasks" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          <input value={traceConfig.xhsTimeout} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsTimeout: e.target.value }))} placeholder="xhs_timeout" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          <input value={traceConfig.xhsRetries} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsRetries: e.target.value }))} placeholder="xhs_retries" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          <input value={traceConfig.xhsDelay} onChange={(e) => setTraceConfig(prev => ({ ...prev, xhsDelay: e.target.value }))} placeholder="xhs_delay" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+          <select value={traceConfig.platform} onChange={(e) => setTraceConfig(prev => ({ ...prev, platform: e.target.value as 'all' | 'twitter' | 'xiaohongshu' }))} className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100">
+            <option value="all">platform=all</option>
+            <option value="twitter">platform=twitter</option>
+            <option value="xiaohongshu">platform=xhs</option>
+          </select>
+          <input value={traceConfig.token} onChange={(e) => setTraceConfig(prev => ({ ...prev, token: e.target.value }))} placeholder="token（可选）" className="bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100" />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setTraceConfig(prev => ({ ...prev, parallel: !prev.parallel }))}
+            className={`inline-flex items-center px-3 py-1.5 rounded-md border text-xs font-semibold transition-colors ${traceConfig.parallel ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300' : 'border-gray-600/70 bg-gray-800/60 text-gray-300'}`}
+          >
+            parallel={traceConfig.parallel ? '1' : '0'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setTraceConfig(prev => ({ ...prev, split: !prev.split }))}
+            className={`inline-flex items-center px-3 py-1.5 rounded-md border text-xs font-semibold transition-colors ${traceConfig.split ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300' : 'border-gray-600/70 bg-gray-800/60 text-gray-300'}`}
+          >
+            split={traceConfig.split ? '1' : '0'}
+          </button>
+          <div className="group relative">
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-400/70 text-[11px] font-bold text-amber-300">!</span>
+            <div className="pointer-events-none absolute left-1/2 top-6 z-20 hidden w-80 -translate-x-1/2 rounded-lg border border-[#1e3a5f]/80 bg-[#0a1628] p-3 text-xs text-gray-300 shadow-xl group-hover:block">
+              split=1 时，XHS 固定跑全量 17 个关键词，`xhs_tasks` 参数会被忽略。
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <button
+            onClick={handleRunCronNow}
+            disabled={isRunningCron}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-sm font-medium text-white disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {isRunningCron ? '执行中...' : '启动热点抓取'}
+          </button>
+          {cronRunSummary && <p className="text-xs text-gray-300">{cronRunSummary}</p>}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-[#1e3a5f]/50 bg-[#0a0f1a]/60 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-200">运行审计日志（最近 30 次）</h3>
+          <button onClick={refreshCronRunLogs} className="px-2.5 py-1.5 rounded-md border border-[#1e3a5f]/60 text-xs text-gray-300 hover:bg-white/5">
+            刷新
+          </button>
+        </div>
+
+        {isLoadingCronLogs ? (
+          <p className="text-sm text-gray-500">加载日志中...</p>
+        ) : cronRunLogs.length === 0 ? (
+          <p className="text-sm text-gray-500">暂无运行日志（请先执行一次热点抓取）。</p>
+        ) : (
+          <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+            {cronRunLogs.map(log => {
+              const apiCalls = Number(log.apiCallsSummary?.totalCalls || 0);
+              const withResults = Number(log.apiCallsSummary?.callsWithResults || 0);
+              const xhsTasks = Number(log.keywordExecution?.xiaohongshu?.effectiveTasks || 0);
+              const twitterMode = String(log.keywordExecution?.twitter?.mode || '-');
+              return (
+                <div key={log.id} className="rounded-lg border border-[#1e3a5f]/40 bg-[#0d1526]/70 px-3 py-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div className="text-xs text-gray-300">
+                      {log.createdAt ? new Date(log.createdAt).toLocaleString() : '未知时间'} · {log.triggerSource}
+                    </div>
+                    <div className={`text-[11px] px-2 py-0.5 rounded-full border ${log.success ? 'border-emerald-500/50 text-emerald-300 bg-emerald-500/10' : 'border-rose-500/50 text-rose-300 bg-rose-500/10'}`}>
+                      {log.success ? 'SUCCESS' : 'FAILED'}
+                    </div>
+                  </div>
+                  <div className="mt-1 text-xs text-gray-400">
+                    关键词模式：Twitter={twitterMode}，XHS关键词={xhsTasks}；API调用={apiCalls}，有结果={withResults}；耗时={log.runtimeMs}ms
+                  </div>
+                  <details className="mt-2">
+                    <summary className="text-xs text-indigo-300 cursor-pointer">查看明细</summary>
+                    <div className="mt-2 grid grid-cols-1 lg:grid-cols-2 gap-2 text-[11px] text-gray-300">
+                      <pre className="rounded-md border border-[#1e3a5f]/40 bg-[#0a1628]/70 p-2 overflow-auto max-h-48">{JSON.stringify(log.effectiveParams, null, 2)}</pre>
+                      <pre className="rounded-md border border-[#1e3a5f]/40 bg-[#0a1628]/70 p-2 overflow-auto max-h-48">{JSON.stringify(log.keywordExecution, null, 2)}</pre>
+                      <pre className="rounded-md border border-[#1e3a5f]/40 bg-[#0a1628]/70 p-2 overflow-auto max-h-48">{JSON.stringify(log.apiCallsSummary, null, 2)}</pre>
+                      <pre className="rounded-md border border-[#1e3a5f]/40 bg-[#0a1628]/70 p-2 overflow-auto max-h-48">{JSON.stringify(log.resultSummary, null, 2)}</pre>
+                    </div>
+                  </details>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   const renderAboutTab = () => (
     <div className="rounded-xl border border-[#1e3a5f]/50 bg-[#0a0f1a]/60 p-5 space-y-2 text-sm text-gray-300">
       <p>Twitter 内容质量过滤配置中心</p>
@@ -755,6 +967,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               互动阈值设置
             </button>
             <button
+              onClick={() => setActiveTab('trace')}
+              className={`whitespace-nowrap lg:w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'trace' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
+            >
+              热点追踪明细
+            </button>
+            <button
               onClick={() => setActiveTab('xhs_tokens')}
               className={`whitespace-nowrap lg:w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'xhs_tokens' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
             >
@@ -776,6 +994,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {activeTab === 'trusted' && renderTrustedTab()}
                 {activeTab === 'keywords' && renderKeywordsTab()}
                 {activeTab === 'threshold' && renderThresholdTab()}
+                {activeTab === 'trace' && renderTraceTab()}
                 {activeTab === 'xhs_tokens' && renderXhsTokensTab()}
                 {activeTab === 'about' && renderAboutTab()}
               </>

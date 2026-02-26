@@ -29,6 +29,8 @@ export interface AIAnalysis {
   usageScenarios: string[];
   coreKnowledge: string[];
   extractedPrompts: string[];
+  suggestedTitle?: string;
+  toolTags?: string[];
 }
 
 export interface KnowledgeCard {
@@ -95,6 +97,8 @@ export interface SocialSearchResult {
   xsecToken?: string;
   sourceUrl: string;
   platform: Platform;
+  coverImageSource?: string;
+  tags?: string[];
 }
 
 export interface TrustedAccount {
@@ -117,6 +121,29 @@ export interface MonitorSettings {
   minEngagement: number;
   trustedMinEngagement: number;
   splitKeywords: boolean;
+}
+
+export interface CronRunLog {
+  id: string;
+  createdAt?: string;
+  triggerSource: string;
+  requestMethod: string;
+  requestUrl: string;
+  queryParams: Record<string, any>;
+  effectiveParams: Record<string, any>;
+  keywordExecution: Record<string, any>;
+  apiCallTrace: any[];
+  apiCallsSummary: Record<string, any>;
+  funnel: Record<string, any>;
+  platformFunnel: Record<string, any>;
+  platformStats: any[];
+  platformTotals: Record<string, any>;
+  platformErrors: any[];
+  resultSummary: Record<string, any>;
+  runtimeMs: number;
+  runtimeGuardTriggered: boolean;
+  success: boolean;
+  errorMessage?: string | null;
 }
 
 export interface XhsTokenConfig {

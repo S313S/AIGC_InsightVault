@@ -2,8 +2,9 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { resolveContentTypeByPrompts } from '../shared/promptTagging.js';
-import { fallbackCoverFromSeed, isFallbackCoverUrl, normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
+import { isFallbackCoverUrl, normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
 import { buildXiaohongshuWebUrl } from '../shared/xiaohongshuUrls.js';
+import { extractHashtagsFromText, pickSemanticCover } from '../shared/semanticCovers.js';
 
 // Search keywords: high-volume terms covering all 3 categories (used for API searches)
 const DEFAULT_MONITOR_KEYWORDS = [
@@ -235,8 +236,11 @@ const buildTrendingRow = (result, snapshotTag) => {
     ? (baseText.length > 160 ? baseText.slice(0, 160) + '...' : baseText)
     : '暂无摘要';
   const extractedTags = (result.desc || '').match(/#[^\s#]+/g)?.map(t => t.slice(1)) || [];
+  const sourceTags = Array.isArray(result.tags) ? result.tags.filter(Boolean) : [];
   const category = inferCategoryTag(baseText);
-  const tags = category ? Array.from(new Set([category, ...extractedTags])) : extractedTags;
+  const tags = category
+    ? Array.from(new Set([category, ...sourceTags, ...extractedTags]))
+    : Array.from(new Set([...sourceTags, ...extractedTags]));
   const tagsWithSnapshot = snapshotTag ? Array.from(new Set([...tags, snapshotTag])) : tags;
 
   return {
@@ -277,7 +281,6 @@ const pickLatestSnapshotTag = (tags) => {
   return snapshots.sort((a, b) => (a > b ? -1 : a < b ? 1 : 0))[0];
 };
 
-const getFallbackCoverPath = (seed) => fallbackCoverFromSeed(seed);
 const isFallbackCoverPath = (url) => isFallbackCoverUrl(url);
 const isTwitterPlaceholderImage = (url) => {
   const value = String(url || '').trim();
@@ -370,9 +373,13 @@ const mapTwitterSearchResult = (tweet, userById, mediaByKey) => {
   const sourceUrl = user.username
     ? `https://twitter.com/${user.username}/status/${tweet.id}`
     : `https://twitter.com/i/web/status/${tweet.id}`;
-  const coverImage = normalizeLegacyFallbackCover(
-    images[0] || getFallbackCoverPath(sourceUrl || tweet.id || user.username || '')
-  );
+  const semanticCover = pickSemanticCover({
+    text: tweet.text || '',
+    seed: sourceUrl || tweet.id || user.username || ''
+  });
+  const coverImage = normalizeLegacyFallbackCover(images[0] || semanticCover.coverImage);
+  const hashtags = extractHashtagsFromText(tweet.text || '');
+  const tags = Array.from(new Set([semanticCover.category, ...hashtags].filter(Boolean)));
 
   return {
     noteId: tweet.id,
@@ -394,6 +401,8 @@ const mapTwitterSearchResult = (tweet, userById, mediaByKey) => {
     xsecToken: '',
     platform: 'Twitter',
     sourceUrl,
+    coverImageSource: images[0] ? 'media' : semanticCover.coverImageSource,
+    tags,
   };
 };
 
@@ -532,7 +541,13 @@ const searchXiaohongshuViaTikhub = async (keyword, page, sort, noteType, noteTim
 };
 
 const searchXiaohongshu = async (keyword, page, sort, noteType, noteTime, options) => {
-  const { justOneToken, tikhubToken, limit, timeoutMs = DEFAULT_TIMEOUT_MS } = options || {};
+  const {
+    justOneToken,
+    tikhubToken,
+    limit,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    returnMeta = false
+  } = options || {};
   const preferredProvider = String(process.env.XHS_SEARCH_PROVIDER || 'auto').toLowerCase();
   const providers = [];
   if (preferredProvider === 'tikhub') {
@@ -550,10 +565,12 @@ const searchXiaohongshu = async (keyword, page, sort, noteType, noteTime, option
   for (const provider of providers) {
     try {
       if (provider === 'justone') {
-        return await searchXiaohongshuViaJustOne(keyword, page, sort, noteType, noteTime, justOneToken, limit, timeoutMs);
+        const results = await searchXiaohongshuViaJustOne(keyword, page, sort, noteType, noteTime, justOneToken, limit, timeoutMs);
+        return returnMeta ? { results, provider } : results;
       }
       if (provider === 'tikhub') {
-        return await searchXiaohongshuViaTikhub(keyword, page, sort, noteType, noteTime, tikhubToken, limit, timeoutMs);
+        const results = await searchXiaohongshuViaTikhub(keyword, page, sort, noteType, noteTime, tikhubToken, limit, timeoutMs);
+        return returnMeta ? { results, provider } : results;
       }
     } catch (err) {
       lastErr = err;
@@ -607,6 +624,59 @@ const searchTwitter = async (keywordsOrKeyword, limit, bearerToken, queryOpts) =
   return searchTwitterByQuery(query, limit, bearerToken, 'relevancy');
 };
 
+const detectTriggerSource = (req) => {
+  const vercelCron = String(req.headers?.['x-vercel-cron'] || '').toLowerCase();
+  if (vercelCron === '1' || vercelCron === 'true') return 'vercel_cron';
+  const ua = String(req.headers?.['user-agent'] || '').toLowerCase();
+  if (ua.includes('vercel')) return 'vercel_cron';
+  return 'manual';
+};
+
+const summarizeApiCalls = (trace) => {
+  const rows = Array.isArray(trace) ? trace : [];
+  const byPlatform = {};
+  const byProvider = {};
+  let callsWithResults = 0;
+
+  for (const row of rows) {
+    const platform = String(row?.platform || 'unknown');
+    const provider = String(row?.provider || 'unknown');
+    const resultCount = Number(row?.resultCount || 0);
+    if (resultCount > 0) callsWithResults += 1;
+
+    if (!byPlatform[platform]) byPlatform[platform] = { calls: 0, callsWithResults: 0, results: 0 };
+    byPlatform[platform].calls += 1;
+    byPlatform[platform].results += resultCount;
+    if (resultCount > 0) byPlatform[platform].callsWithResults += 1;
+
+    if (!byProvider[provider]) byProvider[provider] = { calls: 0, callsWithResults: 0, results: 0 };
+    byProvider[provider].calls += 1;
+    byProvider[provider].results += resultCount;
+    if (resultCount > 0) byProvider[provider].callsWithResults += 1;
+  }
+
+  return {
+    totalCalls: rows.length,
+    callsWithResults,
+    callsWithoutResults: rows.length - callsWithResults,
+    byPlatform,
+    byProvider
+  };
+};
+
+const persistCronRunLog = async (supabase, payload) => {
+  try {
+    const { error } = await supabase
+      .from('cron_run_logs')
+      .insert(payload);
+    if (error) {
+      console.warn('[cron-monitor] failed to write cron_run_logs:', error.message || error);
+    }
+  } catch (err) {
+    console.warn('[cron-monitor] failed to write cron_run_logs:', err?.message || err);
+  }
+};
+
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -615,6 +685,39 @@ export default async function handler(req, res) {
   const host = req.headers?.host || 'localhost';
   const requestUrl = new URL(req.url || '/', `https://${host}`);
   const getQueryParam = (key) => requestUrl.searchParams.get(key);
+  const requestQuery = Object.fromEntries(requestUrl.searchParams.entries());
+  const triggerSource = detectTriggerSource(req);
+  const runStartedAt = Date.now();
+  const apiCallTrace = [];
+  let runtimeGuardTriggered = false;
+  let platformStats = [];
+  let platformErrors = [];
+  let platformTotals = {
+    twitter: { fetched: 0, output: 0 },
+    xiaohongshu: { fetched: 0, output: 0 }
+  };
+  let funnel = {
+    fetched: 0,
+    afterMinInteraction: 0,
+    afterRecent: 0,
+    afterAI: 0,
+    afterQuality: 0,
+    candidates: 0
+  };
+  let platformFunnel = {
+    twitter: { fetched: 0, afterMinInteraction: 0, afterRecent: 0, afterAI: 0, afterQuality: 0 },
+    xiaohongshu: { fetched: 0, afterMinInteraction: 0, afterRecent: 0, afterAI: 0, afterQuality: 0 }
+  };
+  let keywordExecution = {};
+  let effectivePayload = {};
+  let fallbackCoverCount = 0;
+  let resultSummary = {
+    inserted: 0,
+    updatedExisting: 0,
+    updatedTasks: 0,
+    candidates: 0,
+    tasksRun: 0
+  };
 
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret) {
@@ -630,7 +733,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    const runStartedAt = Date.now();
     const isNearTimeout = () => (Date.now() - runStartedAt) >= SOFT_TIMEOUT_GUARD_MS;
 
     const overrideDays = Number(getQueryParam('days'));
@@ -643,6 +745,10 @@ export default async function handler(req, res) {
     const overrideSplit = String(getQueryParam('split') || '').toLowerCase();
     const hasOverrideSplit = overrideSplit !== '';
     const overridePlatform = String(getQueryParam('platform') || '').toLowerCase();
+    const overrideXhsTasks = Number(getQueryParam('xhs_tasks'));
+    const overrideXhsTimeoutMs = Number(getQueryParam('xhs_timeout'));
+    const overrideXhsRetries = Number(getQueryParam('xhs_retries'));
+    const overrideXhsDelayMs = Number(getQueryParam('xhs_delay'));
     const rebuildRaw = String(getQueryParam('rebuild') || '').toLowerCase();
     const rebuildOnly = rebuildRaw === '1' || rebuildRaw === 'true';
 
@@ -654,6 +760,9 @@ export default async function handler(req, res) {
       : DEFAULT_TRUSTED_MIN_INTERACTION;
     const effectiveLimit = Number.isFinite(overrideLimit) && overrideLimit > 0 ? overrideLimit : DEFAULT_LIMIT;
     const effectiveMaxTasks = Number.isFinite(overrideTasks) && overrideTasks > 0 ? overrideTasks : MAX_TASKS_PER_RUN;
+    const requestedXhsTasks = Number.isFinite(overrideXhsTasks) && overrideXhsTasks > 0
+      ? Math.floor(overrideXhsTasks)
+      : effectiveMaxTasks;
     const parallel = overrideParallel === '1' || overrideParallel === 'true';
     let effectiveSplit = overrideSplit === '1' || overrideSplit === 'true';
     const effectivePlatforms = overridePlatform === 'twitter'
@@ -766,6 +875,22 @@ export default async function handler(req, res) {
       effectiveSplit = dbSplitRaw === '1' || dbSplitRaw === 'true';
     }
 
+    const defaultXhsTimeoutMs = effectiveSplit ? 8000 : DEFAULT_TIMEOUT_MS;
+    const defaultXhsRetries = effectiveSplit ? 1 : XHS_RETRIES;
+    const defaultXhsDelayMs = effectiveSplit ? 250 : XHS_DELAY_MS;
+    const effectiveXhsTimeoutMs = Number.isFinite(overrideXhsTimeoutMs) && overrideXhsTimeoutMs >= 1000
+      ? Math.floor(overrideXhsTimeoutMs)
+      : defaultXhsTimeoutMs;
+    const effectiveXhsRetries = Number.isFinite(overrideXhsRetries) && overrideXhsRetries >= 0
+      ? Math.floor(overrideXhsRetries)
+      : defaultXhsRetries;
+    const effectiveXhsDelayMs = Number.isFinite(overrideXhsDelayMs) && overrideXhsDelayMs >= 0
+      ? Math.floor(overrideXhsDelayMs)
+      : defaultXhsDelayMs;
+    const effectiveXhsTasks = effectiveSplit
+      ? DEFAULT_MONITOR_KEYWORDS.length
+      : Math.min(DEFAULT_MONITOR_KEYWORDS.length, Math.max(1, requestedXhsTasks));
+
     const { data: keywordRows, error: keywordError } = await supabase
       .from('quality_keywords')
       .select('keyword, type');
@@ -795,31 +920,79 @@ export default async function handler(req, res) {
       .filter(Boolean);
     const trustedHandleSet = new Set(trustedHandles);
 
-    // Fixed keyword-pool mode: always run against DEFAULT_MONITOR_KEYWORDS
-    const keywordJobs = DEFAULT_MONITOR_KEYWORDS.map(keyword => ({
-      keyword,
-      platforms: effectivePlatforms
-    }));
-    const tasksToRun = effectiveSplit ? keywordJobs : keywordJobs.slice(0, effectiveMaxTasks);
+    const shouldRunXhs = effectivePlatforms.includes('xiaohongshu');
+    const xhsKeywordPool = shouldRunXhs ? DEFAULT_MONITOR_KEYWORDS.slice(0, effectiveXhsTasks) : [];
+    const keywordJobs = shouldRunXhs
+      ? xhsKeywordPool.map(keyword => ({
+        keyword,
+        platforms: effectivePlatforms
+      }))
+      : [{
+        keyword: DEFAULT_MONITOR_KEYWORDS[0],
+        platforms: effectivePlatforms
+      }];
+    const tasksToRun = keywordJobs;
     const twitterKeywordPool = DEFAULT_MONITOR_KEYWORDS.slice(0, effectiveMaxTasks);
     const twitterSplitKeywordPool = [...DEFAULT_MONITOR_KEYWORDS];
     const twitterQueryOpts = {
       requireTerms: TWITTER_REQUIRE_TERMS
     };
+    keywordExecution = {
+      split: effectiveSplit,
+      twitter: {
+        mode: effectiveSplit ? 'per_keyword_api_calls' : 'single_or_query',
+        keywords: effectiveSplit ? twitterSplitKeywordPool : twitterKeywordPool,
+        keywordCount: effectiveSplit ? twitterSplitKeywordPool.length : twitterKeywordPool.length,
+        queryOperator: effectiveSplit ? 'single keyword per call' : 'OR',
+        requireTerms: TWITTER_REQUIRE_TERMS
+      },
+      xiaohongshu: {
+        mode: 'per_keyword_api_calls',
+        keywords: xhsKeywordPool,
+        keywordCount: xhsKeywordPool.length,
+        configuredTasks: requestedXhsTasks,
+        effectiveTasks: xhsKeywordPool.length,
+        splitNote: !shouldRunXhs
+          ? 'platform=twitter 时不执行 XHS 调用'
+          : effectiveSplit
+          ? 'split=1 时固定全量 17 个关键词，xhs_tasks 参数被忽略'
+          : 'split=0 时按 xhs_tasks 生效'
+      }
+    };
+    effectivePayload = {
+      days: effectiveRecentDays,
+      twitter_days: effectiveTwitterDays,
+      minInteraction: effectiveMinInteraction,
+      trustedMinInteraction: effectiveTrustedMinInteraction,
+      qualityBypassInteraction: HIGH_ENGAGEMENT_QUALITY_BYPASS,
+      limit: effectiveLimit,
+      tasks: effectiveMaxTasks,
+      xhs_tasks: xhsKeywordPool.length,
+      xhs_timeout: effectiveXhsTimeoutMs,
+      xhs_retries: effectiveXhsRetries,
+      xhs_delay: effectiveXhsDelayMs,
+      parallel,
+      split: effectiveSplit,
+      splitNote: effectiveSplit ? 'split=1 已固定全量 17 个 XHS 关键词' : '',
+      twitter_require_terms: TWITTER_REQUIRE_TERMS,
+      qualityPositiveCount: effectivePositiveKeywords.length,
+      qualityBlacklistCount: effectiveBlacklistKeywords.length,
+      trustedHandles: trustedHandles.length
+    };
 
     const allResults = [];
-    const platformStats = [];
-    const platformErrors = [];
-    const platformTotals = {
+    platformStats = [];
+    platformErrors = [];
+    platformTotals = {
       twitter: { fetched: 0, output: 0 },
       xiaohongshu: { fetched: 0, output: 0 }
     };
-    const platformFunnel = {
+    platformFunnel = {
       twitter: { fetched: 0, afterMinInteraction: 0, afterRecent: 0, afterAI: 0, afterQuality: 0 },
       xiaohongshu: { fetched: 0, afterMinInteraction: 0, afterRecent: 0, afterAI: 0, afterQuality: 0 }
     };
     const twitterSamples = [];
-    const funnel = {
+    funnel = {
       fetched: 0,
       afterMinInteraction: 0,
       afterRecent: 0,
@@ -828,7 +1001,7 @@ export default async function handler(req, res) {
       candidates: 0
     };
     const engagementDebug = [];
-    let runtimeGuardTriggered = false;
+    runtimeGuardTriggered = false;
     const snapshotId = new Date().toISOString();
     const snapshotTag = `snapshot:${snapshotId}`;
     const updatedTasks = [];
@@ -857,9 +1030,37 @@ export default async function handler(req, res) {
             let keywordResults = [];
             if (effectiveSplit) {
               const runKeywordSearch = async (keyword) => {
+                const query = buildTwitterQuery([keyword], twitterQueryOpts);
+                const startedAt = Date.now();
                 try {
-                  return await searchTwitter([keyword], effectiveLimit, xBearerToken, twitterQueryOpts);
+                  const oneKeywordResults = await searchTwitterByQuery(query, effectiveLimit, xBearerToken, 'relevancy');
+                  apiCallTrace.push({
+                    platform: 'twitter',
+                    provider: 'x_recent_search',
+                    queryMode: 'per_keyword',
+                    keyword,
+                    query,
+                    limit: effectiveLimit,
+                    attempt: 1,
+                    resultCount: oneKeywordResults.length,
+                    hasResults: oneKeywordResults.length > 0,
+                    durationMs: Date.now() - startedAt
+                  });
+                  return oneKeywordResults;
                 } catch (err) {
+                  apiCallTrace.push({
+                    platform: 'twitter',
+                    provider: 'x_recent_search',
+                    queryMode: 'per_keyword',
+                    keyword,
+                    query,
+                    limit: effectiveLimit,
+                    attempt: 1,
+                    resultCount: 0,
+                    hasResults: false,
+                    durationMs: Date.now() - startedAt,
+                    error: err.message || 'Unknown error'
+                  });
                   platformErrors.push({
                     platform: 'twitter',
                     error: `split-keyword "${keyword}": ${err.message || 'Unknown error'}`
@@ -878,7 +1079,21 @@ export default async function handler(req, res) {
                 }
               }
             } else {
-              keywordResults = await searchTwitter(twitterKeywordPool, effectiveLimit, xBearerToken, twitterQueryOpts);
+              const query = buildTwitterQuery(twitterKeywordPool, twitterQueryOpts);
+              const startedAt = Date.now();
+              keywordResults = await searchTwitterByQuery(query, effectiveLimit, xBearerToken, 'relevancy');
+              apiCallTrace.push({
+                platform: 'twitter',
+                provider: 'x_recent_search',
+                queryMode: 'single_or_query',
+                keywords: twitterKeywordPool,
+                query,
+                limit: effectiveLimit,
+                attempt: 1,
+                resultCount: keywordResults.length,
+                hasResults: keywordResults.length > 0,
+                durationMs: Date.now() - startedAt
+              });
             }
             let trustedResults = [];
             if (!trustedQueryRan && trustedHandles.length > 0) {
@@ -886,8 +1101,31 @@ export default async function handler(req, res) {
               const trustedQuery = `(${trustedHandles.map(handle => `from:${handle}`).join(' OR ')}) -is:retweet -is:reply`;
               try {
                 const trustedLimit = Math.min(Math.max(effectiveLimit * Math.min(trustedHandles.length, 3), 10), 100);
+                const startedAt = Date.now();
                 trustedResults = await searchTwitterByQuery(trustedQuery, trustedLimit, xBearerToken, 'recency');
+                apiCallTrace.push({
+                  platform: 'twitter',
+                  provider: 'x_recent_search',
+                  queryMode: 'trusted_accounts_feed',
+                  query: trustedQuery,
+                  limit: trustedLimit,
+                  attempt: 1,
+                  resultCount: trustedResults.length,
+                  hasResults: trustedResults.length > 0,
+                  durationMs: Date.now() - startedAt
+                });
               } catch (trustedErr) {
+                apiCallTrace.push({
+                  platform: 'twitter',
+                  provider: 'x_recent_search',
+                  queryMode: 'trusted_accounts_feed',
+                  query: trustedQuery,
+                  limit: effectiveLimit,
+                  attempt: 1,
+                  resultCount: 0,
+                  hasResults: false,
+                  error: trustedErr.message || 'Unknown error'
+                });
                 platformErrors.push({
                   platform: 'twitter',
                   error: `trusted-feed: ${trustedErr.message || 'Unknown error'}`
@@ -908,7 +1146,8 @@ export default async function handler(req, res) {
               keywordCount: keywordResults.length,
               trustedCount: trustedResults.length,
               split: effectiveSplit,
-              keywordTasks: effectiveSplit ? twitterSplitKeywordPool.length : twitterKeywordPool.length
+              keywordTasks: effectiveSplit ? twitterSplitKeywordPool.length : twitterKeywordPool.length,
+              keywordMode: effectiveSplit ? 'per_keyword_api_calls' : 'single_or_query'
             });
             platformTotals.twitter.fetched += results.length;
             return results;
@@ -917,32 +1156,71 @@ export default async function handler(req, res) {
             platformErrors.push({ platform: 'xiaohongshu', error: 'Xiaohongshu provider token not configured' });
             return [];
           }
-          const xhsRetries = effectiveSplit ? 1 : XHS_RETRIES;
-          const xhsDelay = effectiveSplit ? 250 : XHS_DELAY_MS;
-          const xhsTimeoutMs = effectiveSplit ? 8000 : DEFAULT_TIMEOUT_MS;
           let results = [];
+          let usedProvider = 'unknown';
           let lastError = null;
-          for (let attempt = 0; attempt <= xhsRetries; attempt += 1) {
+          for (let attempt = 0; attempt <= effectiveXhsRetries; attempt += 1) {
+            const startedAt = Date.now();
             try {
-              results = await searchXiaohongshu(task.keyword, 1, 'popularity_descending', '_0', undefined, {
+              const response = await searchXiaohongshu(task.keyword, 1, 'popularity_descending', '_0', undefined, {
                 justOneToken,
                 tikhubToken,
                 limit: effectiveLimit,
-                timeoutMs: xhsTimeoutMs
+                timeoutMs: effectiveXhsTimeoutMs,
+                returnMeta: true
+              });
+              results = Array.isArray(response) ? response : (response?.results || []);
+              usedProvider = response?.provider || 'unknown';
+              apiCallTrace.push({
+                platform: 'xiaohongshu',
+                provider: usedProvider,
+                queryMode: 'per_keyword',
+                keyword: task.keyword,
+                limit: effectiveLimit,
+                timeoutMs: effectiveXhsTimeoutMs,
+                retriesConfigured: effectiveXhsRetries,
+                delayMs: effectiveXhsDelayMs,
+                attempt: attempt + 1,
+                resultCount: results.length,
+                hasResults: results.length > 0,
+                durationMs: Date.now() - startedAt
               });
               lastError = null;
               break;
             } catch (err) {
               lastError = err;
-              await sleep(xhsDelay);
+              apiCallTrace.push({
+                platform: 'xiaohongshu',
+                provider: usedProvider,
+                queryMode: 'per_keyword',
+                keyword: task.keyword,
+                limit: effectiveLimit,
+                timeoutMs: effectiveXhsTimeoutMs,
+                retriesConfigured: effectiveXhsRetries,
+                delayMs: effectiveXhsDelayMs,
+                attempt: attempt + 1,
+                resultCount: 0,
+                hasResults: false,
+                durationMs: Date.now() - startedAt,
+                error: err.message || 'Unknown error'
+              });
+              if (attempt < effectiveXhsRetries) {
+                await sleep(effectiveXhsDelayMs);
+              }
             }
           }
           if (lastError) {
             throw lastError;
           }
           // Rate-limit between XHS calls to reduce timeouts
-          await sleep(xhsDelay);
-          platformStats.push({ platform: 'xiaohongshu', count: results.length });
+          await sleep(effectiveXhsDelayMs);
+          platformStats.push({
+            platform: 'xiaohongshu',
+            count: results.length,
+            keyword: task.keyword,
+            keywordMode: 'per_keyword_api_calls',
+            provider: usedProvider
+          });
           platformTotals.xiaohongshu.fetched += results.length;
           return results;
         } catch (err) {
@@ -1046,13 +1324,17 @@ export default async function handler(req, res) {
     }
     const candidates = Array.from(uniqueByUrl.values());
     funnel.candidates = candidates.length;
-    let fallbackCoverCount = 0;
+    fallbackCoverCount = 0;
     for (const item of candidates) {
       if (item?.platform !== 'Twitter') continue;
       item.coverImage = normalizeLegacyFallbackCover(item.coverImage || '');
       if (!item.coverImage || isTwitterPlaceholderImage(item.coverImage)) {
         const seed = item.sourceUrl || item.noteId || `${item.author || ''}-${item.publishTime || ''}`;
-        item.coverImage = getFallbackCoverPath(seed);
+        const semanticCover = pickSemanticCover({
+          text: `${item.title || ''}\n${item.desc || ''}`,
+          seed
+        });
+        item.coverImage = semanticCover.coverImage;
       }
       if (isFallbackCoverPath(item.coverImage)) {
         fallbackCoverCount += 1;
@@ -1070,18 +1352,13 @@ export default async function handler(req, res) {
         funnel
       });
       console.log('[cron-monitor] engagement debug sample', engagementDebug.slice(0, 10));
-      return res.status(200).json({
+      const apiCallsSummary = summarizeApiCalls(apiCallTrace);
+      const responsePayload = {
         inserted: 0,
         updatedTasks: updatedTasks.length,
-        effective: {
-          minInteraction: effectiveMinInteraction,
-          trustedMinInteraction: effectiveTrustedMinInteraction,
-          qualityBypassInteraction: HIGH_ENGAGEMENT_QUALITY_BYPASS,
-          split: effectiveSplit,
-          qualityPositiveCount: effectivePositiveKeywords.length,
-          qualityBlacklistCount: effectiveBlacklistKeywords.length,
-          trustedHandles: trustedHandles.length
-        },
+        effective: effectivePayload,
+        keywordExecution,
+        apiCallsSummary,
         funnel,
         platformFunnel,
         platformStats,
@@ -1090,7 +1367,35 @@ export default async function handler(req, res) {
         runtimeGuardTriggered,
         engagementDebug: engagementDebug.slice(0, 20),
         platformErrors
+      };
+      resultSummary = {
+        inserted: 0,
+        updatedExisting: 0,
+        updatedTasks: updatedTasks.length,
+        candidates: 0,
+        tasksRun: tasksToRun.length
+      };
+      await persistCronRunLog(supabase, {
+        trigger_source: triggerSource,
+        request_method: req.method,
+        request_url: requestUrl.toString(),
+        query_params: requestQuery,
+        effective_params: effectivePayload,
+        keyword_execution: keywordExecution,
+        api_call_trace: apiCallTrace,
+        api_calls_summary: apiCallsSummary,
+        funnel,
+        platform_funnel: platformFunnel,
+        platform_stats: platformStats,
+        platform_totals: platformTotals,
+        platform_errors: platformErrors,
+        result_summary: { ...resultSummary, fallbackCoverCount },
+        runtime_ms: Date.now() - runStartedAt,
+        runtime_guard_triggered: runtimeGuardTriggered,
+        success: true,
+        error_message: null
       });
+      return res.status(200).json(responsePayload);
     }
 
     const candidateUrls = candidates.map(c => c.sourceUrl).filter(Boolean);
@@ -1215,28 +1520,16 @@ export default async function handler(req, res) {
     // Skip tracking_tasks updates in keyword-pool mode
 
     console.log('[cron-monitor] engagement debug sample', engagementDebug.slice(0, 10));
-
-    return res.status(200).json({
+    const apiCallsSummary = summarizeApiCalls(apiCallTrace);
+    const responsePayload = {
       inserted: toInsert.length,
       updatedExisting,
       updatedTasks: updatedTasks.length,
       candidates: candidates.length,
       tasksRun: tasksToRun.length,
-      effective: {
-        days: effectiveRecentDays,
-        minInteraction: effectiveMinInteraction,
-        trustedMinInteraction: effectiveTrustedMinInteraction,
-        qualityBypassInteraction: HIGH_ENGAGEMENT_QUALITY_BYPASS,
-        limit: effectiveLimit,
-        tasks: effectiveMaxTasks,
-        parallel,
-        split: effectiveSplit,
-        twitter_days: effectiveTwitterDays,
-        twitter_require_terms: TWITTER_REQUIRE_TERMS,
-        qualityPositiveCount: effectivePositiveKeywords.length,
-        qualityBlacklistCount: effectiveBlacklistKeywords.length,
-        trustedHandles: trustedHandles.length
-      },
+      effective: effectivePayload,
+      keywordExecution,
+      apiCallsSummary,
       funnel,
       platformStats,
       platformTotals,
@@ -1247,9 +1540,58 @@ export default async function handler(req, res) {
       runtimeGuardTriggered,
       engagementDebug: engagementDebug.slice(0, 20),
       platformErrors
+    };
+    resultSummary = {
+      inserted: toInsert.length,
+      updatedExisting,
+      updatedTasks: updatedTasks.length,
+      candidates: candidates.length,
+      tasksRun: tasksToRun.length
+    };
+    await persistCronRunLog(supabase, {
+      trigger_source: triggerSource,
+      request_method: req.method,
+      request_url: requestUrl.toString(),
+      query_params: requestQuery,
+      effective_params: effectivePayload,
+      keyword_execution: keywordExecution,
+      api_call_trace: apiCallTrace,
+      api_calls_summary: apiCallsSummary,
+      funnel,
+      platform_funnel: platformFunnel,
+      platform_stats: platformStats,
+      platform_totals: platformTotals,
+      platform_errors: platformErrors,
+      result_summary: { ...resultSummary, fallbackCoverCount },
+      runtime_ms: Date.now() - runStartedAt,
+      runtime_guard_triggered: runtimeGuardTriggered,
+      success: true,
+      error_message: null
     });
+    return res.status(200).json(responsePayload);
   } catch (err) {
     console.error('Cron monitor error:', err);
+    platformErrors = [...platformErrors, { platform: 'system', error: err.message || 'Cron monitor failed' }];
+    await persistCronRunLog(supabase, {
+      trigger_source: triggerSource,
+      request_method: req.method,
+      request_url: requestUrl.toString(),
+      query_params: requestQuery,
+      effective_params: effectivePayload,
+      keyword_execution: keywordExecution,
+      api_call_trace: apiCallTrace,
+      api_calls_summary: summarizeApiCalls(apiCallTrace),
+      funnel,
+      platform_funnel: platformFunnel,
+      platform_stats: platformStats,
+      platform_totals: platformTotals,
+      platform_errors: platformErrors,
+      result_summary: { ...resultSummary, fallbackCoverCount },
+      runtime_ms: Date.now() - runStartedAt,
+      runtime_guard_triggered: runtimeGuardTriggered,
+      success: false,
+      error_message: err.message || 'Cron monitor failed'
+    });
     return res.status(500).json({ error: err.message || 'Cron monitor failed' });
   }
 }

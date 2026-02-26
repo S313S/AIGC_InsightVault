@@ -21,6 +21,7 @@ const buildPromptPayload = (payload: { mode: string; message: string; context?: 
 
 严格返回 JSON，不要返回任何额外文本，结构如下：
 {
+  "suggestedTitle": "建议标题（10-25字，简体中文）",
   "summary": "一句话总结（40-90字），说清最关键结论",
   "usageScenarios": [
     "场景1（短句，可执行）",
@@ -30,7 +31,8 @@ const buildPromptPayload = (payload: { mode: string; message: string; context?: 
     "知识点1（短句，保留关键方法）",
     "知识点2：..."
   ],
-  "extractedPrompts": ["从原文中提取的提示词原文，若无则空数组"]
+  "extractedPrompts": ["从原文中提取的提示词原文，若无则空数组"],
+  "toolTags": ["原文明确提到的工具/产品名，最多5个"]
 }
 
 规则：
@@ -43,6 +45,8 @@ const buildPromptPayload = (payload: { mode: string; message: string; context?: 
 7) 如果原文或配图里出现了具体名称（工具名/技能名/产品名/方法名），coreKnowledge 至少 2 条必须明确点名这些名称，格式优先用“名称：一句话作用或建议”。
 8) 严禁泛化表达：不要只写“高质量工具/核心技能/一些方法”等笼统词，必须尽量落到具体名词。
 9) 可以从配图文字中提取名称（按 OCR 理解），但不要编造不存在的名称。
+10) suggestedTitle 必须是中文，长度 10-25 字，禁止照抄整段原文。
+11) toolTags 只能填写原文或配图中明确出现的工具/产品名；若没有则返回空数组。
 
 帖子内容：
 "${message}"
@@ -213,7 +217,11 @@ const normalizeAIAnalysis = (analysis: Partial<AIAnalysis>): AIAnalysis => ({
   summary: typeof analysis.summary === 'string' ? analysis.summary.trim() : String(analysis.summary || '').trim(),
   usageScenarios: toStringArray(analysis.usageScenarios).slice(0, 3),
   coreKnowledge: toStringArray(analysis.coreKnowledge).slice(0, 3),
-  extractedPrompts: toStringArray(analysis.extractedPrompts)
+  extractedPrompts: toStringArray(analysis.extractedPrompts),
+  suggestedTitle: typeof analysis.suggestedTitle === 'string'
+    ? analysis.suggestedTitle.trim().slice(0, 40)
+    : '',
+  toolTags: Array.from(new Set(toStringArray(analysis.toolTags))).slice(0, 5)
 });
 
 const ensureAnalysisCompleteness = (analysis: AIAnalysis, sourceContent: string): AIAnalysis => {
@@ -240,7 +248,9 @@ const ensureAnalysisCompleteness = (analysis: AIAnalysis, sourceContent: string)
     summary: analysis.summary || fallbackSummary,
     usageScenarios,
     coreKnowledge,
-    extractedPrompts: analysis.extractedPrompts
+    extractedPrompts: analysis.extractedPrompts,
+    suggestedTitle: analysis.suggestedTitle,
+    toolTags: analysis.toolTags
   };
 };
 

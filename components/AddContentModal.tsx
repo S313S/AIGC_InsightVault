@@ -4,6 +4,7 @@ import { analyzeContentWithGemini, classifyContentWithGemini } from '../services
 import { fetchSocialContent, SocialMediaContent } from '../services/socialService';
 import { Platform, ContentType, KnowledgeCard, EngagementMetrics } from '../types';
 import { resolveContentTypeByPrompts } from '../shared/promptTagging.js';
+import { pickSemanticCover } from '../shared/semanticCovers.js';
 
 interface AddContentModalProps {
     onClose: () => void;
@@ -90,6 +91,7 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
             ?.map(t => t.slice(1))
             .filter(Boolean) || [];
         const baseTags = (fetchedData?.tags || []).filter(Boolean);
+        const aiToolTags = (analysis?.toolTags || []).filter(Boolean);
         const combinedText = [fetchedData?.title, fetchedData?.rawContent, contentToAnalyze].filter(Boolean).join('\n');
         let category = inferCategoryTag(combinedText);
         if (!category && combinedText.trim()) {
@@ -101,16 +103,24 @@ export const AddContentModal: React.FC<AddContentModalProps> = ({ onClose, onAdd
         if (category) tagSet.add(category);
         extractedTags.forEach(t => tagSet.add(t));
         baseTags.forEach(t => tagSet.add(t));
+        aiToolTags.forEach(t => tagSet.add(t));
         const tags = Array.from(tagSet);
+        const inferredTitle = (fetchedData?.title || analysis?.suggestedTitle || analysis.summary.slice(0, 50) + "...").trim() || '无标题';
+        const semanticCover = pickSemanticCover({
+            text: combinedText || contentToAnalyze,
+            seed: fetchedData?.sourceUrl || inferredTitle,
+            categoryHint: category
+        });
+        const preferredCoverImage = fetchedData?.coverImage || semanticCover.coverImage;
 
         const newCard: KnowledgeCard = {
             id: Date.now().toString(),
-            title: fetchedData?.title || analysis.summary.slice(0, 50) + "...",
+            title: inferredTitle,
             sourceUrl: fetchedData?.sourceUrl || url || '#',
             platform: (fetchedData?.platform as Platform) || Platform.Manual,
             author: fetchedData?.author || '我',
             date: new Date().toLocaleDateString(),
-            coverImage: fetchedData?.coverImage || 'https://picsum.photos/400/300?random=' + Date.now(),
+            coverImage: preferredCoverImage,
             images: fetchedData?.images || [],
             metrics: fetchedData?.metrics || { likes: 0, bookmarks: 0, comments: 0 },
             contentType: resolveContentTypeByPrompts(analysis?.extractedPrompts) as ContentType,

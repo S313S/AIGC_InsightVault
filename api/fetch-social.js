@@ -7,6 +7,7 @@ import {
     hasXiaohongshuXsecToken,
     normalizeXiaohongshuSourceUrl
 } from '../shared/xiaohongshuUrls.js';
+import { extractHashtagsFromText, pickSemanticCover } from '../shared/semanticCovers.js';
 
 export default async function handler(req, res) {
     // CORS headers
@@ -502,20 +503,17 @@ async function mapToKnowledgeCard(data, platform) {
             .map(m => m.url || m.preview_image_url)
             .filter(Boolean);
 
-        // Prefer original tweet media first. Generate AI cover only when media is unavailable.
-        let coverImage = images[0] || '';
-        let coverImageSource = coverImage ? 'media' : 'none';
-        if (!coverImage) {
-            const textForImage = data.text || '';
-            if (textForImage) {
-                try {
-                    coverImage = await generateCoverImage(textForImage);
-                    if (coverImage) coverImageSource = 'generated_bailian';
-                } catch (err) {
-                    console.warn('Failed to generate cover image via Bailian:', err.message);
-                }
-            }
-        }
+        const sourceUrl = data.author?.username
+            ? `https://twitter.com/${data.author.username}/status/${data.id}`
+            : `https://twitter.com/i/web/status/${data.id}`;
+        const semanticCover = pickSemanticCover({
+            text: data.text || '',
+            seed: sourceUrl || data.id
+        });
+        const coverImage = images[0] || semanticCover.coverImage;
+        const coverImageSource = images[0] ? 'media' : semanticCover.coverImageSource;
+        const hashtags = extractHashtagsFromText(data.text || '');
+        const tags = Array.from(new Set([semanticCover.category, ...hashtags].filter(Boolean)));
 
         return {
             platform: 'Twitter',
@@ -530,81 +528,10 @@ async function mapToKnowledgeCard(data, platform) {
                 bookmarks: data.public_metrics?.bookmark_count || 0,
                 comments: data.public_metrics?.reply_count || 0,
             },
-            tags: [], // Would need to parse hashtags from text
-            sourceUrl: `https://twitter.com/${data.author?.username}/status/${data.id}`,
+            tags,
+            sourceUrl,
         };
     }
 
     return { error: 'Unknown platform' };
-}
-
-// ============ Bailian (DashScope) Cover Image Generation ============
-
-/**
- * Call Alibaba Bailian (DashScope) Agent App to generate a cover image based on post text.
- * Returns the image URL or empty string on failure.
- */
-async function generateCoverImage(postText) {
-    const apiKey = process.env.DASHSCOPE_API_KEY;
-    const appId = process.env.DASHSCOPE_APP_ID;
-
-    if (!apiKey || !appId) {
-        console.warn('Bailian API not configured, skipping cover generation');
-        return '';
-    }
-
-    const endpoint = `https://dashscope.aliyuncs.com/api/v1/apps/${appId}/completion`;
-
-    // Truncate text if too long (to avoid token limits)
-    const truncatedText = postText.length > 500 ? postText.substring(0, 500) + '...' : postText;
-
-    const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            input: {
-                prompt: truncatedText
-            },
-            parameters: {},
-            debug: {}
-        }),
-    });
-
-    const data = await response.json();
-
-    // Debug: log response structure
-    console.log('Bailian response:', JSON.stringify(data, null, 2));
-
-    if (!response.ok || data.code) {
-        throw new Error(data.message || `Bailian API error: ${response.status}`);
-    }
-
-    // Extract image URL from response
-    // The response structure depends on Bailian app output. 
-    // Typical structure: data.output.text contains markdown with image, or data.output.images
-    const output = data.output;
-
-    // Case 1: Direct images array
-    if (output?.images && output.images.length > 0) {
-        return output.images[0].url || output.images[0];
-    }
-
-    // Case 2: Image URL in text (markdown format ![...](url))
-    if (output?.text) {
-        const imgMatch = output.text.match(/!\[.*?\]\((https?:\/\/[^\)]+)\)/);
-        if (imgMatch) {
-            return imgMatch[1];
-        }
-        // Case 3: Plain URL in text
-        const urlMatch = output.text.match(/(https?:\/\/[^\s\)]+\.(png|jpg|jpeg|webp|gif))/i);
-        if (urlMatch) {
-            return urlMatch[1];
-        }
-    }
-
-    console.warn('Could not extract image URL from Bailian response');
-    return '';
 }

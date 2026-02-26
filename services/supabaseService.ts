@@ -9,7 +9,8 @@ import {
     TrustedAccount,
     QualityKeyword,
     MonitorSettings,
-    XhsTokenConfig
+    XhsTokenConfig,
+    CronRunLog
 } from '../types';
 import { normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
 import { normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
@@ -250,6 +251,29 @@ const dbToQualityKeyword = (row: any): QualityKeyword => ({
     keyword: row.keyword || '',
     type: row.type === 'blacklist' ? 'blacklist' : 'positive',
     createdAt: row.created_at || undefined,
+});
+
+const dbToCronRunLog = (row: any): CronRunLog => ({
+    id: row.id,
+    createdAt: row.created_at || undefined,
+    triggerSource: row.trigger_source || 'manual',
+    requestMethod: row.request_method || 'GET',
+    requestUrl: row.request_url || '',
+    queryParams: row.query_params || {},
+    effectiveParams: row.effective_params || {},
+    keywordExecution: row.keyword_execution || {},
+    apiCallTrace: Array.isArray(row.api_call_trace) ? row.api_call_trace : [],
+    apiCallsSummary: row.api_calls_summary || {},
+    funnel: row.funnel || {},
+    platformFunnel: row.platform_funnel || {},
+    platformStats: Array.isArray(row.platform_stats) ? row.platform_stats : [],
+    platformTotals: row.platform_totals || {},
+    platformErrors: Array.isArray(row.platform_errors) ? row.platform_errors : [],
+    resultSummary: row.result_summary || {},
+    runtimeMs: Number(row.runtime_ms || 0),
+    runtimeGuardTriggered: Boolean(row.runtime_guard_triggered),
+    success: Boolean(row.success),
+    errorMessage: row.error_message || null,
 });
 
 // ============ 知识卡片 CRUD ============
@@ -789,6 +813,24 @@ export const updateMonitorSetting = async (key: string, value: string): Promise<
     }
 
     return true;
+};
+
+export const getCronRunLogs = async (limit: number = 30): Promise<CronRunLog[]> => {
+    if (!isSupabaseConnected() || !supabase) return [];
+
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(200, Math.floor(limit))) : 30;
+    const { data, error } = await supabase
+        .from('cron_run_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(safeLimit);
+
+    if (error) {
+        console.error('Error fetching cron run logs:', error);
+        return [];
+    }
+
+    return (data || []).map(dbToCronRunLog);
 };
 
 const XHS_TOKEN_SETTINGS_KEY = 'xhs_token_configs';

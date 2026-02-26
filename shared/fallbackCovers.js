@@ -4,6 +4,7 @@ const NEW_BASE_PATH = '/dashboard-fallbacks';
 
 const legacyPattern = /\/fallback-covers\/cover-(\d{1,3})\.svg(?:\?|#|$)/i;
 const newPattern = /\/dashboard-fallbacks\/nature-(\d{1,2})\.svg(?:\?|#|$)/i;
+const semanticPattern = /\/dashboard-fallbacks\/semantic-(?:image-gen|video-gen|vibe-coding)\.svg(?:\?|#|$)/i;
 
 const clampIndex = (index) => {
   const n = Number(index);
@@ -28,7 +29,7 @@ const buildNaturePath = (index) => `${NEW_BASE_PATH}/nature-${pad2(clampIndex(in
 export const isFallbackCoverUrl = (url) => {
   const raw = String(url || '').trim();
   if (!raw) return false;
-  return legacyPattern.test(raw) || newPattern.test(raw);
+  return legacyPattern.test(raw) || newPattern.test(raw) || semanticPattern.test(raw);
 };
 
 export const normalizeLegacyFallbackCover = (url) => {
@@ -43,6 +44,10 @@ export const normalizeLegacyFallbackCover = (url) => {
   const newMatch = raw.match(newPattern);
   if (newMatch?.[1]) {
     return buildNaturePath(newMatch[1]);
+  }
+
+  if (semanticPattern.test(raw)) {
+    return raw;
   }
 
   return raw;

@@ -14,6 +14,7 @@ import * as db from './services/supabaseService';
 import { fetchSocialContent, searchSocial } from './services/socialService';
 import { analyzeContentWithGemini, classifyContentWithGemini } from './services/geminiService';
 import { isFallbackCoverUrl } from './shared/fallbackCovers.js';
+import { pickSemanticCover } from './shared/semanticCovers.js';
 import {
   applyXiaohongshuTokenToUrl,
   getXiaohongshuNoteId,
@@ -154,8 +155,18 @@ const App: React.FC = () => {
       ? (baseText.length > 160 ? baseText.slice(0, 160) + '...' : baseText)
       : '暂无摘要';
     const extractedTags = (result.desc || '').match(/#[^\s#]+/g)?.map(t => t.slice(1)) || [];
+    const sourceTags = (result.tags || []).filter(Boolean);
+    const sourceToolTags = sourceTags.filter(t => t !== 'Image Gen' && t !== 'Video Gen' && t !== 'Vibe Coding');
     const category = inferCategoryTag(baseText);
-    const tags = category ? Array.from(new Set([category, ...extractedTags])) : extractedTags;
+    const tags = category
+      ? Array.from(new Set([category, ...sourceToolTags, ...extractedTags]))
+      : Array.from(new Set([...sourceTags, ...extractedTags]));
+    const semanticCover = pickSemanticCover({
+      text: baseText,
+      seed: result.sourceUrl || result.noteId || result.author,
+      categoryHint: category
+    });
+    const preferredCoverImage = result.coverImage || result.images?.[0] || semanticCover.coverImage;
 
     return {
       id: crypto.randomUUID(),
@@ -164,7 +175,7 @@ const App: React.FC = () => {
       platform: result.platform,
       author: result.author,
       date: result.publishTime || '',
-      coverImage: result.coverImage || result.images?.[0] || '',
+      coverImage: preferredCoverImage,
       images: result.images || [],
       metrics: result.metrics,
       contentType: ContentType.ToolReview,
@@ -518,13 +529,20 @@ const App: React.FC = () => {
 
         const analysis = await analyzeContentWithGemini(content, { imageUrls });
         const summary = analysis?.summary?.trim() || target.aiAnalysis?.summary || '';
+        const suggestedTitle = analysis?.suggestedTitle?.trim() || '';
+        const preferredTitle = target.platform === Platform.Twitter
+          ? (suggestedTitle || target.title || '').trim() || target.title
+          : (target.title || suggestedTitle).trim() || target.title;
         return {
           ...target,
+          title: preferredTitle,
           aiAnalysis: {
             summary,
             usageScenarios: analysis?.usageScenarios || target.aiAnalysis?.usageScenarios || [],
             coreKnowledge: analysis?.coreKnowledge || target.aiAnalysis?.coreKnowledge || [],
-            extractedPrompts: analysis?.extractedPrompts || target.aiAnalysis?.extractedPrompts || []
+            extractedPrompts: analysis?.extractedPrompts || target.aiAnalysis?.extractedPrompts || [],
+            suggestedTitle,
+            toolTags: analysis?.toolTags || target.aiAnalysis?.toolTags || []
           }
         };
       } catch (error) {
@@ -546,6 +564,15 @@ const App: React.FC = () => {
         }
       } catch (error) {
         console.warn('Cover image generation failed:', error);
+      }
+
+      const semanticCover = pickSemanticCover({
+        text: [target.title, target.rawContent, target.aiAnalysis?.summary].filter(Boolean).join('\n'),
+        seed: target.sourceUrl || target.id || target.author,
+        categoryHint: (target.tags || []).find(t => t === 'Image Gen' || t === 'Video Gen' || t === 'Vibe Coding') || ''
+      });
+      if (semanticCover?.coverImage) {
+        return { ...target, coverImage: semanticCover.coverImage };
       }
 
       return target;
@@ -575,6 +602,7 @@ const App: React.FC = () => {
       const tagSet = new Set<string>();
       if (category) tagSet.add(category);
       extracted.forEach(t => tagSet.add(t));
+      (target.aiAnalysis?.toolTags || []).forEach(t => tagSet.add(t));
 
       return { ...target, tags: Array.from(tagSet) };
     };

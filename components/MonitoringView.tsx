@@ -7,6 +7,7 @@ import { analyzeContentWithGemini, classifyContentWithGemini } from '../services
 import { searchSocial } from '../services/socialService';
 import { resolveContentTypeByPrompts } from '../shared/promptTagging.js';
 import { isFallbackCoverUrl } from '../shared/fallbackCovers.js';
+import { pickSemanticCover } from '../shared/semanticCovers.js';
 
 const CATEGORY_TAGS = ['Image Gen', 'Video Gen', 'Vibe Coding'];
 
@@ -387,6 +388,9 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                     : '暂无摘要';
 
                 const extractedTags = (result.desc || '').match(/#[^\s#]+/g)?.map(t => t.slice(1)) || [];
+                const sourceTags = (result.tags || []).filter(Boolean);
+                const sourceToolTags = sourceTags.filter(t => !CATEGORY_TAGS.includes(t));
+                const aiToolTags = (analysis?.toolTags || []).filter(Boolean);
 
                 // Category tagging: heuristic first, then AI fallback
                 const combinedText = [
@@ -403,20 +407,34 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({ tasks, onAddTask
                 }
 
                 const tagSet = new Set<string>();
+                for (const t of sourceToolTags.slice(0, 8)) {
+                    if (t) tagSet.add(t);
+                }
                 for (const t of extractedTags.slice(0, 5)) {
                     if (t && !CATEGORY_TAGS.includes(t)) tagSet.add(t);
                 }
+                for (const t of aiToolTags.slice(0, 5)) {
+                    if (t && !CATEGORY_TAGS.includes(t)) tagSet.add(t);
+                }
                 if (category) tagSet.add(category);
+                const fallbackTitle = result.desc?.slice(0, 30) || '无标题';
+                const preferredTitle = (result.title || analysis?.suggestedTitle || fallbackTitle).trim() || '无标题';
+                const semanticCover = pickSemanticCover({
+                    text: combinedText || rawText,
+                    seed: result.sourceUrl || result.noteId || preferredTitle,
+                    categoryHint: category
+                });
+                const preferredCoverImage = result.coverImage || result.images?.[0] || semanticCover.coverImage;
 
                 // Map search result to KnowledgeCard
                 const card: KnowledgeCard = {
                     id: crypto.randomUUID(),
-                    title: result.title || result.desc?.slice(0, 30) || '无标题',
+                    title: preferredTitle,
                     sourceUrl: result.sourceUrl,
                     platform: result.platform,
                     author: result.author,
                     date: result.publishTime,
-                    coverImage: result.coverImage || result.images?.[0] || '',
+                    coverImage: preferredCoverImage,
                     images: result.images || [],
                     metrics: result.metrics,
                     contentType: resolveContentTypeByPrompts(analysis?.extractedPrompts) as ContentType,
