@@ -840,18 +840,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </label>
           <label className="space-y-1">
             <span className="text-[11px] text-gray-400">split（分词）</span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <select
                 value={traceConfig.split ? '1' : '0'}
                 onChange={(e) => setTraceConfig(prev => ({ ...prev, split: e.target.value === '1' }))}
-                className="w-full bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100"
+                className="flex-1 bg-[#0d1526] border border-[#1e3a5f]/60 rounded-lg px-3 py-2 text-xs text-gray-100"
               >
                 <option value="1">1（按关键词分别查）</option>
                 <option value="0">0（关键词合并查询）</option>
               </select>
               <div className="group relative shrink-0">
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-amber-400/70 text-[11px] font-bold text-amber-300">!</span>
-                <div className="pointer-events-none absolute left-1/2 top-9 z-20 hidden w-80 -translate-x-1/2 rounded-lg border border-[#1e3a5f]/80 bg-[#0a1628] p-3 text-xs text-gray-300 shadow-xl group-hover:block">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-amber-400/70 text-[11px] font-bold text-amber-300">!</span>
+                <div className="pointer-events-none absolute left-1/2 top-11 z-20 hidden w-80 -translate-x-1/2 rounded-lg border border-[#1e3a5f]/80 bg-[#0a1628] p-3 text-xs text-gray-300 shadow-xl group-hover:block">
                   split=1 时，小红书固定跑 17 个关键词，xhs_tasks 不生效
                 </div>
               </div>
@@ -888,6 +888,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             刷新
           </button>
         </div>
+        <p className="text-xs text-gray-500">
+          说明：若自动更新已关闭，`vercel_cron` 触发会显示“已跳过”，不会执行抓取，也不会产生实际 API 抓取调用。
+        </p>
 
         {isLoadingCronLogs ? (
           <p className="text-sm text-gray-500">加载日志中...</p>
@@ -941,6 +944,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               const updatedExisting = Number(log.resultSummary?.updatedExisting || 0);
               const candidates = Number(log.resultSummary?.candidates || 0);
               const tasksRun = Number(log.resultSummary?.tasksRun || 0);
+              const isSkipped = Boolean(log.resultSummary?.skipped);
               const platformErrorMessages = (Array.isArray(log.platformErrors) ? log.platformErrors : [])
                 .map((item: any) => {
                   const platform = String(item?.platform || '').trim();
@@ -969,13 +973,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <div className="text-xs text-gray-300">
                       {log.createdAt ? new Date(log.createdAt).toLocaleString() : '未知时间'} · {log.triggerSource}
                     </div>
-                    <div className={`text-[11px] px-2 py-0.5 rounded-full border ${log.success ? 'border-emerald-500/50 text-emerald-300 bg-emerald-500/10' : 'border-rose-500/50 text-rose-300 bg-rose-500/10'}`}>
-                      {log.success ? 'SUCCESS' : 'FAILED'}
+                    <div className={`text-[11px] px-2 py-0.5 rounded-full border ${
+                      isSkipped
+                        ? 'border-amber-500/50 text-amber-300 bg-amber-500/10'
+                        : log.success
+                          ? 'border-emerald-500/50 text-emerald-300 bg-emerald-500/10'
+                          : 'border-rose-500/50 text-rose-300 bg-rose-500/10'
+                    }`}>
+                      {isSkipped ? 'SKIPPED（已跳过）' : log.success ? 'SUCCESS' : 'FAILED'}
                     </div>
                   </div>
-                  <div className="mt-1 text-xs text-gray-400">
-                    {twitterMode}；小红书实际关键词 {xhsTasks} 个；共请求 API {apiCalls} 次，其中有结果 {withResults} 次；总耗时约 {runtimeSeconds} 秒
-                  </div>
+                  {isSkipped ? (
+                    <div className="mt-1 text-xs text-amber-200/90">
+                      本次由定时任务触发，但因“自动更新”已关闭而跳过执行；未抓取内容、未发起实际 API 抓取调用。
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-xs text-gray-400">
+                      {twitterMode}；小红书实际关键词 {xhsTasks} 个；共请求 API {apiCalls} 次，其中有结果 {withResults} 次；总耗时约 {runtimeSeconds} 秒
+                    </div>
+                  )}
                   {!log.success && failureMessage && (
                     <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                       <div className="text-xs text-rose-300">
@@ -987,11 +1003,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </details>
                     </div>
                   )}
-                  <div className="mt-1 text-xs text-gray-300 leading-6">
-                    <div>「1」用到的关键词：{usedKeywords.length > 0 ? usedKeywords.join('、') : '未记录关键词'}</div>
-                    <div>「2」传到小红书 API：{xhsTransmitText}</div>
-                    <div>传到推特 API：{twitterTransmitText}</div>
-                  </div>
+                  {!isSkipped && (
+                    <div className="mt-1 text-xs text-gray-300 leading-6">
+                      <div>「1」用到的关键词：{usedKeywords.length > 0 ? usedKeywords.join('、') : '未记录关键词'}</div>
+                      <div>「2」传到小红书 API：{xhsTransmitText}</div>
+                      <div>传到推特 API：{twitterTransmitText}</div>
+                    </div>
+                  )}
                   <details className="mt-2">
                     <summary className="text-xs text-indigo-300 cursor-pointer">查看明细</summary>
                     <div className="mt-2 grid grid-cols-1 lg:grid-cols-2 gap-2 text-[11px] text-gray-300">
