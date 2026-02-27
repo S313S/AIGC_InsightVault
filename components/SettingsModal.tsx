@@ -839,7 +839,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </select>
           </label>
           <label className="space-y-1">
-            <span className="text-[11px] text-gray-400">split（分词）</span>
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-gray-400">
+              split（分词）
+              <span className="group relative inline-flex">
+                <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-amber-400/70 text-[10px] font-bold text-amber-300">!</span>
+                <span className="pointer-events-none absolute left-1/2 top-6 z-20 hidden w-80 -translate-x-1/2 rounded-lg border border-[#1e3a5f]/80 bg-[#0a1628] p-3 text-xs text-gray-300 shadow-xl group-hover:block">
+                  split=1 时，小红书固定跑 17 个关键词，xhs_tasks 不生效
+                </span>
+              </span>
+            </span>
             <div className="flex items-center gap-1.5">
               <select
                 value={traceConfig.split ? '1' : '0'}
@@ -849,12 +857,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <option value="1">1（按关键词分别查）</option>
                 <option value="0">0（关键词合并查询）</option>
               </select>
-              <div className="group relative shrink-0">
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-amber-400/70 text-[11px] font-bold text-amber-300">!</span>
-                <div className="pointer-events-none absolute left-1/2 top-11 z-20 hidden w-80 -translate-x-1/2 rounded-lg border border-[#1e3a5f]/80 bg-[#0a1628] p-3 text-xs text-gray-300 shadow-xl group-hover:block">
-                  split=1 时，小红书固定跑 17 个关键词，xhs_tasks 不生效
-                </div>
-              </div>
             </div>
           </label>
         </div>
