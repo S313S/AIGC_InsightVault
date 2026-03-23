@@ -35,6 +35,8 @@ export interface AIAnalysis {
 
 export interface KnowledgeCard {
   id: string;
+  ownerId?: string;
+  isPublic?: boolean;
   title: string;
   sourceUrl: string;
   platform: Platform;
@@ -53,6 +55,7 @@ export interface KnowledgeCard {
 
 export interface TrackingTask {
   id: string;
+  ownerId?: string;
   keywords: string;
   platforms: Platform[];
   dateRange: { start: string; end: string };
@@ -69,6 +72,8 @@ export interface TrackingTask {
 
 export interface Collection {
   id: string;
+  ownerId?: string;
+  isPublic?: boolean;
   name: string;
   coverImage: string;
   itemCount: number;
@@ -103,6 +108,7 @@ export interface SocialSearchResult {
 
 export interface TrustedAccount {
   id: string;
+  ownerId?: string;
   platform: string; // 'twitter' | 'xiaohongshu'
   handle: string; // without @
   category: string; // 'image_gen' | 'video_gen' | 'vibe_coding'
@@ -112,6 +118,7 @@ export interface TrustedAccount {
 
 export interface QualityKeyword {
   id: string;
+  ownerId?: string;
   keyword: string;
   type: 'positive' | 'blacklist';
   createdAt?: string;
@@ -126,6 +133,7 @@ export interface MonitorSettings {
 
 export interface CronRunLog {
   id: string;
+  ownerId?: string;
   createdAt?: string;
   triggerSource: string;
   requestMethod: string;
@@ -148,6 +156,7 @@ export interface CronRunLog {
 }
 
 export interface XhsTokenConfig {
+  ownerId?: string;
   noteId: string;
   xsecToken: string;
   xsecSource?: string;
@@ -170,4 +179,16 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   isThinking?: boolean;
+}
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  displayName: string;
+}
+
+export interface AuthResult {
+  ok: boolean;
+  error?: string;
+  user?: AuthUser;
 }

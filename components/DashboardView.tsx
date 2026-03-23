@@ -12,6 +12,9 @@ interface DashboardViewProps {
     onNavigateToVault: () => void;
     onSaveToVault: (card: KnowledgeCard) => void;
     onRepairSourceUrl: (card: KnowledgeCard) => Promise<{ updated: boolean; message: string }>;
+    canManageTasks?: boolean;
+    canMutateTrendingItem?: (card: KnowledgeCard) => boolean;
+    onRequireLogin?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -20,7 +23,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     onNavigateToMonitoring,
     onNavigateToVault,
     onSaveToVault,
-    onRepairSourceUrl
+    onRepairSourceUrl,
+    canManageTasks = false,
+    canMutateTrendingItem = () => false,
+    onRequireLogin
 }) => {
 
     const totalItemsFound = trendingItems.length;
@@ -210,11 +216,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </p>
                     <div className="flex gap-4">
                         <button
-                            onClick={onNavigateToMonitoring}
+                            onClick={canManageTasks ? onNavigateToMonitoring : onRequireLogin}
                             className="px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
                         >
                             <Activity size={16} />
-                            管理任务
+                            {canManageTasks ? '管理任务' : '登录后管理'}
                         </button>
                         <button
                             onClick={onNavigateToVault}
@@ -339,7 +345,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                             <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider truncate max-w-[80px]">
                                                 {item.author}
                                             </span>
-                                            {item.platform === Platform.Xiaohongshu && (
+                                            {item.platform === Platform.Xiaohongshu && canMutateTrendingItem(item) && (
                                                 <button
                                                     onClick={(e) => handleRepairClick(e, item)}
                                                     disabled={repairingCardId === item.id}
@@ -353,16 +359,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                                     {repairingCardId === item.id ? '修复中...' : '🔄 修复'}
                                                 </button>
                                             )}
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onSaveToVault(item);
-                                                }}
-                                                className="text-gray-500 hover:text-indigo-400 transition-colors"
-                                                title="保存到知识库"
-                                            >
-                                                <Save size={16} />
-                                            </button>
+                                            {canMutateTrendingItem(item) && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onSaveToVault(item);
+                                                    }}
+                                                    className="text-gray-500 hover:text-indigo-400 transition-colors"
+                                                    title="保存到知识库"
+                                                >
+                                                    <Save size={16} />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

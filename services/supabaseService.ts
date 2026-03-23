@@ -20,6 +20,8 @@ import { normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
 // 将数据库行转换为前端 KnowledgeCard 类型
 const dbToCard = (row: any): KnowledgeCard => ({
     id: row.id,
+    ownerId: row.owner_id || undefined,
+    isPublic: Boolean(row.is_public),
     title: row.title,
     sourceUrl: row.source_url || '#',
     platform: row.platform as Platform,
@@ -72,10 +74,11 @@ const pickLatestSnapshotTag = (tags: unknown[]): string => {
 };
 
 const buildCardDedupKey = (card: KnowledgeCard): string => {
+    const ownerKey = normalizeText(card.ownerId || 'public');
     const normalizedUrl = normalizeSourceUrl(card.sourceUrl);
-    if (normalizedUrl) return `url:${normalizedUrl}`;
+    if (normalizedUrl) return `owner:${ownerKey}|url:${normalizedUrl}`;
 
-    return `meta:${normalizeText(card.platform)}|${normalizeText(card.title)}|${normalizeText(card.author)}|${normalizeText(card.rawContent).slice(0, 120)}`;
+    return `owner:${ownerKey}|meta:${normalizeText(card.platform)}|${normalizeText(card.title)}|${normalizeText(card.author)}|${normalizeText(card.rawContent).slice(0, 120)}`;
 };
 
 const mergeAiAnalysis = (base: KnowledgeCard['aiAnalysis'], incoming: KnowledgeCard['aiAnalysis']) => {
@@ -116,6 +119,8 @@ const mergeCardsForDedup = (a: KnowledgeCard, b: KnowledgeCard): KnowledgeCard =
     return {
         ...primary,
         id: a.id,
+        ownerId: primary.ownerId || secondary.ownerId,
+        isPublic: Boolean(primary.isPublic || secondary.isPublic),
         sourceUrl: normalizeSourceUrl(primary.sourceUrl) || normalizeSourceUrl(secondary.sourceUrl) || '#',
         coverImage: primary.coverImage || secondary.coverImage || '',
         rawContent: (secondary.rawContent?.length || 0) > (primary.rawContent?.length || 0)
@@ -160,6 +165,8 @@ const dedupeCards = (cards: KnowledgeCard[]): KnowledgeCard[] => {
 // 将前端 KnowledgeCard 转换为数据库行
 const cardToDb = (card: KnowledgeCard, isTrending: boolean = false, skipId: boolean = false) => {
     const dbRow: any = {
+        owner_id: card.ownerId,
+        is_public: typeof card.isPublic === 'boolean' ? card.isPublic : false,
         title: card.title,
         source_url: normalizeSourceUrl(card.sourceUrl) || '#',
         platform: card.platform,
@@ -186,6 +193,8 @@ const cardToDb = (card: KnowledgeCard, isTrending: boolean = false, skipId: bool
 
 const dbToCollection = (row: any): Collection => ({
     id: row.id,
+    ownerId: row.owner_id || undefined,
+    isPublic: Boolean(row.is_public),
     name: row.name,
     coverImage: row.cover_image || '',
     itemCount: 0, // 将在获取后计算
@@ -193,6 +202,8 @@ const dbToCollection = (row: any): Collection => ({
 
 const collectionToDb = (collection: Collection, skipId: boolean = false) => {
     const dbRow: any = {
+        owner_id: collection.ownerId,
+        is_public: typeof collection.isPublic === 'boolean' ? collection.isPublic : false,
         name: collection.name,
         cover_image: collection.coverImage,
     };
@@ -207,6 +218,7 @@ const collectionToDb = (collection: Collection, skipId: boolean = false) => {
 
 const dbToTask = (row: any): TrackingTask => ({
     id: row.id,
+    ownerId: row.owner_id || undefined,
     keywords: row.keywords,
     platforms: row.platforms || [],
     dateRange: row.date_range || { start: '', end: '' },
@@ -218,6 +230,7 @@ const dbToTask = (row: any): TrackingTask => ({
 
 const taskToDb = (task: TrackingTask, skipId: boolean = false, includeConfig: boolean = true) => {
     const dbRow: any = {
+        owner_id: task.ownerId,
         keywords: task.keywords,
         platforms: task.platforms,
         date_range: task.dateRange,
@@ -239,6 +252,7 @@ const taskToDb = (task: TrackingTask, skipId: boolean = false, includeConfig: bo
 
 const dbToTrustedAccount = (row: any): TrustedAccount => ({
     id: row.id,
+    ownerId: row.owner_id || undefined,
     platform: row.platform || 'twitter',
     handle: row.handle || '',
     category: row.category || 'vibe_coding',
@@ -248,6 +262,7 @@ const dbToTrustedAccount = (row: any): TrustedAccount => ({
 
 const dbToQualityKeyword = (row: any): QualityKeyword => ({
     id: row.id,
+    ownerId: row.owner_id || undefined,
     keyword: row.keyword || '',
     type: row.type === 'blacklist' ? 'blacklist' : 'positive',
     createdAt: row.created_at || undefined,
@@ -255,6 +270,7 @@ const dbToQualityKeyword = (row: any): QualityKeyword => ({
 
 const dbToCronRunLog = (row: any): CronRunLog => ({
     id: row.id,
+    ownerId: row.owner_id || undefined,
     createdAt: row.created_at || undefined,
     triggerSource: row.trigger_source || 'manual',
     requestMethod: row.request_method || 'GET',
@@ -275,6 +291,17 @@ const dbToCronRunLog = (row: any): CronRunLog => ({
     success: Boolean(row.success),
     errorMessage: row.error_message || null,
 });
+
+const logWriteError = (action: string, error: any) => {
+    const message = String(error?.message || '');
+    const details = String(error?.details || '');
+    const full = `${message} ${details}`.trim().toLowerCase();
+    if (full.includes('row-level security') || full.includes('permission denied') || full.includes('42501')) {
+        console.error(`${action}: permission denied by RLS`, error);
+        return;
+    }
+    console.error(action, error);
+};
 
 // ============ 知识卡片 CRUD ============
 
@@ -332,11 +359,12 @@ export const saveCard = async (card: KnowledgeCard, isTrending: boolean = false)
     };
     const normalizedSourceUrl = normalizeSourceUrl(normalizedCard.sourceUrl);
 
-    if (normalizedSourceUrl) {
+    if (normalizedSourceUrl && normalizedCard.ownerId) {
         const { data: existingRows, error: queryError } = await supabase
             .from('knowledge_cards')
             .select('*')
             .eq('is_trending', isTrending)
+            .eq('owner_id', normalizedCard.ownerId)
             .eq('source_url', normalizedSourceUrl)
             .order('created_at', { ascending: false })
             .limit(1);
@@ -355,7 +383,7 @@ export const saveCard = async (card: KnowledgeCard, isTrending: boolean = false)
                 .eq('id', existing.id);
 
             if (updateError) {
-                console.error('Error updating existing card during save:', updateError);
+                logWriteError('Error updating existing card during save:', updateError);
                 return false;
             }
             return true;
@@ -367,7 +395,7 @@ export const saveCard = async (card: KnowledgeCard, isTrending: boolean = false)
         .upsert(cardToDb(normalizedCard, isTrending));
 
     if (error) {
-        console.error('Error saving card:', error);
+        logWriteError('Error saving card:', error);
         return false;
     }
 
@@ -383,7 +411,7 @@ export const updateCard = async (card: KnowledgeCard): Promise<boolean> => {
         .eq('id', card.id);
 
     if (error) {
-        console.error('Error updating card:', error);
+        logWriteError('Error updating card:', error);
         return false;
     }
 
@@ -399,7 +427,7 @@ export const deleteCard = async (cardId: string): Promise<boolean> => {
         .eq('id', cardId);
 
     if (error) {
-        console.error('Error deleting card:', error);
+        logWriteError('Error deleting card:', error);
         return false;
     }
 
@@ -412,11 +440,12 @@ export const moveTrendingToVault = async (card: KnowledgeCard): Promise<boolean>
 
     const normalizedSourceUrl = normalizeSourceUrl(card.sourceUrl);
 
-    if (normalizedSourceUrl) {
+    if (normalizedSourceUrl && card.ownerId) {
         const { data: existingRows, error: existingError } = await supabase
             .from('knowledge_cards')
             .select('*')
             .eq('is_trending', false)
+            .eq('owner_id', card.ownerId)
             .eq('source_url', normalizedSourceUrl)
             .neq('id', card.id)
             .order('created_at', { ascending: false })
@@ -436,7 +465,7 @@ export const moveTrendingToVault = async (card: KnowledgeCard): Promise<boolean>
                 .eq('id', existing.id);
 
             if (updateError) {
-                console.error('Error merging duplicate vault card:', updateError);
+                logWriteError('Error merging duplicate vault card:', updateError);
                 return false;
             }
 
@@ -446,7 +475,7 @@ export const moveTrendingToVault = async (card: KnowledgeCard): Promise<boolean>
                 .eq('id', card.id);
 
             if (deleteError) {
-                console.error('Error deleting duplicate trending card:', deleteError);
+                logWriteError('Error deleting duplicate trending card:', deleteError);
                 return false;
             }
 
@@ -460,7 +489,7 @@ export const moveTrendingToVault = async (card: KnowledgeCard): Promise<boolean>
         .eq('id', card.id);
 
     if (error) {
-        console.error('Error moving card to vault:', error);
+        logWriteError('Error moving card to vault:', error);
         return false;
     }
 
@@ -496,9 +525,9 @@ export const getCollections = async (): Promise<Collection[]> => {
 
         for (const row of cards) {
             const normalizedUrl = normalizeSourceUrl(row.source_url || '');
-            const dedupeKey = normalizedUrl
-                ? `url:${normalizedUrl}`
-                : `meta:${normalizeText(row.platform || '')}|${normalizeText(row.title || '')}|${normalizeText(row.author || '')}|${normalizeText(row.raw_content || '').slice(0, 120)}`;
+        const dedupeKey = normalizedUrl
+                ? `owner:${normalizeText(row.owner_id || 'public')}|url:${normalizedUrl}`
+                : `owner:${normalizeText(row.owner_id || 'public')}|meta:${normalizeText(row.platform || '')}|${normalizeText(row.title || '')}|${normalizeText(row.author || '')}|${normalizeText(row.raw_content || '').slice(0, 120)}`;
 
             const existingRefs = dedupedCollectionRefs.get(dedupeKey) || new Set<string>();
             for (const cid of toArray(row.collections)) {
@@ -528,7 +557,7 @@ export const saveCollection = async (collection: Collection): Promise<string | n
         .single();
 
     if (error) {
-        console.error('Error saving collection:', error);
+        logWriteError('Error saving collection:', error);
         return null;
     }
 
@@ -544,7 +573,7 @@ export const updateCollection = async (collection: Collection): Promise<boolean>
         .eq('id', collection.id);
 
     if (error) {
-        console.error('Error updating collection:', error);
+        logWriteError('Error updating collection:', error);
         return false;
     }
 
@@ -560,7 +589,7 @@ export const deleteCollection = async (collectionId: string): Promise<boolean> =
         .eq('id', collectionId);
 
     if (error) {
-        console.error('Error deleting collection:', error);
+        logWriteError('Error deleting collection:', error);
         return false;
     }
 
@@ -599,12 +628,12 @@ export const saveTask = async (task: TrackingTask): Promise<boolean> => {
                 .from('tracking_tasks')
                 .upsert(taskToDb(task, false, false));
             if (retryError) {
-                console.error('Error saving task (retry without config):', retryError);
+                logWriteError('Error saving task (retry without config):', retryError);
                 return false;
             }
             return true;
         }
-        console.error('Error saving task:', error);
+        logWriteError('Error saving task:', error);
         return false;
     }
 
@@ -620,7 +649,7 @@ export const deleteTask = async (taskId: string): Promise<boolean> => {
         .eq('id', taskId);
 
     if (error) {
-        console.error('Error deleting task:', error);
+        logWriteError('Error deleting task:', error);
         return false;
     }
 
@@ -665,7 +694,7 @@ export const saveTrustedAccount = async (
         .single();
 
     if (error) {
-        console.error('Error saving trusted account:', error);
+        logWriteError('Error saving trusted account:', error);
         return null;
     }
 
@@ -687,7 +716,7 @@ export const updateTrustedAccount = async (account: TrustedAccount): Promise<boo
         .eq('id', account.id);
 
     if (error) {
-        console.error('Error updating trusted account:', error);
+        logWriteError('Error updating trusted account:', error);
         return false;
     }
 
@@ -703,7 +732,7 @@ export const deleteTrustedAccount = async (id: string): Promise<boolean> => {
         .eq('id', id);
 
     if (error) {
-        console.error('Error deleting trusted account:', error);
+        logWriteError('Error deleting trusted account:', error);
         return false;
     }
 
@@ -744,7 +773,7 @@ export const saveQualityKeyword = async (
         .single();
 
     if (error) {
-        console.error('Error saving quality keyword:', error);
+        logWriteError('Error saving quality keyword:', error);
         return null;
     }
 
@@ -760,7 +789,7 @@ export const deleteQualityKeyword = async (id: string): Promise<boolean> => {
         .eq('id', id);
 
     if (error) {
-        console.error('Error deleting quality keyword:', error);
+        logWriteError('Error deleting quality keyword:', error);
         return false;
     }
 
@@ -810,7 +839,7 @@ export const updateMonitorSetting = async (key: string, value: string): Promise<
         );
 
     if (error) {
-        console.error(`Error updating monitor setting (${key}):`, error);
+        logWriteError(`Error updating monitor setting (${key}):`, error);
         return false;
     }
 

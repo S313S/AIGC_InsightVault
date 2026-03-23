@@ -1,20 +1,23 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { LayoutGrid, Plus, Search, Database, Menu, MessageSquare, Activity, Home, Folder, X, Check, MoreVertical, Edit2, Trash2, CheckSquare, FolderPlus, Sparkles, Loader2, Settings } from './components/Icons';
+import { LayoutGrid, Plus, Search, Database, Menu, MessageSquare, Activity, Home, Folder, X, Check, MoreVertical, Edit2, Trash2, CheckSquare, FolderPlus, Sparkles, Loader2, Settings, LogOut } from './components/Icons';
 import { Card } from './components/Card';
 import { DetailModal } from './components/DetailModal';
 import { AddContentModal } from './components/AddContentModal';
+import { LoginModal } from './components/LoginModal';
 import { ChatView } from './components/ChatView';
 import { MonitoringView } from './components/MonitoringView';
 import { DashboardView } from './components/DashboardView';
 import { SettingsModal } from './components/SettingsModal';
 import { INITIAL_DATA, INITIAL_TASKS, TRENDING_DATA, INITIAL_COLLECTIONS } from './mockData';
-import { KnowledgeCard, FilterState, TrackingTask, Collection, ContentType, Platform, SocialSearchResult, TaskStatus, XhsMissingTokenItem, XhsTokenConfig } from './types';
+import { AuthUser, KnowledgeCard, FilterState, TrackingTask, Collection, ContentType, Platform, SocialSearchResult, TaskStatus, XhsMissingTokenItem, XhsTokenConfig } from './types';
 import { isSupabaseConnected } from './services/supabaseClient';
 import * as db from './services/supabaseService';
+import * as auth from './services/authService';
 import { fetchSocialContent, searchSocial } from './services/socialService';
 import { analyzeContentWithGemini, classifyContentWithGemini } from './services/geminiService';
 import { isFallbackCoverUrl } from './shared/fallbackCovers.js';
 import { pickSemanticCover } from './shared/semanticCovers.js';
+import { canAccessManagement, canMutateResource } from './shared/authAccess.js';
 import {
   applyXiaohongshuTokenToUrl,
   getXiaohongshuNoteId,
@@ -32,14 +35,29 @@ const POPULAR_TOPICS = ['All', 'Image Gen', 'Video Gen', 'Vibe Coding'];
 const AUTO_MONITOR_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000;
 const ENABLE_CLIENT_MONITORING = false;
 const DEFAULT_MONITOR_KEYWORDS = ['AI', 'AIGC', '人工智能', '大模型', 'LLM', 'GPT', 'Claude'];
+const OFFLINE_PUBLIC_OWNER_ID = 'offline-public';
+
+const toOfflinePublicCard = (card: KnowledgeCard): KnowledgeCard => ({
+  ...card,
+  ownerId: OFFLINE_PUBLIC_OWNER_ID,
+  isPublic: true,
+});
+
+const toOfflinePublicCollection = (collection: Collection): Collection => ({
+  ...collection,
+  ownerId: OFFLINE_PUBLIC_OWNER_ID,
+  isPublic: true,
+});
 
 const App: React.FC = () => {
   const [cards, setCards] = useState<KnowledgeCard[]>([]);
   const [tasks, setTasks] = useState<TrackingTask[]>([]);
   const [trending, setTrending] = useState<KnowledgeCard[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [selectedCard, setSelectedCard] = useState<KnowledgeCard | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState<ViewMode>('dashboard');
@@ -76,41 +94,66 @@ const App: React.FC = () => {
     selectedTopic: 'All'
   });
 
+  const isAuthenticated = Boolean(currentUser);
+  const canManageData = canAccessManagement(isAuthenticated);
+
+  const userCanMutate = (ownerId?: string) =>
+    canMutateResource(currentUser?.id || null, ownerId || null);
+
+  const openLoginModal = () => setIsLoginModalOpen(true);
+
+  const loadData = async (authUser: AuthUser | null) => {
+    setIsLoading(true);
+
+    if (isSupabaseConnected()) {
+      const [dbCards, dbTrending, dbCollections, dbTasks] = await Promise.all([
+        db.getKnowledgeCards(),
+        db.getTrendingCards(),
+        db.getCollections(),
+        authUser ? db.getTasks() : Promise.resolve([])
+      ]);
+
+      setCards(dbCards);
+      setTrending(dbTrending);
+      setCollections(dbCollections);
+      setTasks(dbTasks);
+      setChatScope({ cards: dbCards, title: '全部知识库' });
+    } else {
+      const offlineCards = INITIAL_DATA.map(toOfflinePublicCard);
+      setCards(offlineCards);
+      setTrending(TRENDING_DATA.map(toOfflinePublicCard));
+      setCollections(INITIAL_COLLECTIONS.map(toOfflinePublicCollection));
+      setTasks([]);
+      setChatScope({ cards: offlineCards, title: '全部知识库' });
+    }
+
+    setIsLoading(false);
+  };
+
   // ============ 从 Supabase 加载数据 ============
   useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
+    let active = true;
 
-      if (isSupabaseConnected()) {
-        // 尝试初始化 mock 数据（首次运行时）
-        await db.initializeWithMockData(INITIAL_DATA, TRENDING_DATA, INITIAL_COLLECTIONS, INITIAL_TASKS);
-
-        // 从数据库加载
-        const [dbCards, dbTrending, dbCollections, dbTasks] = await Promise.all([
-          db.getKnowledgeCards(),
-          db.getTrendingCards(),
-          db.getCollections(),
-          db.getTasks()
-        ]);
-
-        setCards(dbCards);
-        setTrending(dbTrending);
-        setCollections(dbCollections);
-        setTasks(dbTasks);
-        setChatScope({ cards: dbCards, title: '全部知识库' });
-      } else {
-        // 离线模式：使用 mock 数据
-        setCards(INITIAL_DATA);
-        setTrending(TRENDING_DATA);
-        setCollections(INITIAL_COLLECTIONS);
-        setTasks(INITIAL_TASKS);
-        setChatScope({ cards: INITIAL_DATA, title: '全部知识库' });
-      }
-
-      setIsLoading(false);
+    const hydrate = async () => {
+      const authUser = isSupabaseConnected() ? await auth.getCurrentAuthUser() : null;
+      if (!active) return;
+      setCurrentUser(authUser);
+      await loadData(authUser);
     };
 
-    loadData();
+    hydrate();
+
+    const subscription = auth.onAuthStateChange(async (_event, session) => {
+      const authUser = session ? await auth.getCurrentAuthUser() : null;
+      if (!active) return;
+      setCurrentUser(authUser);
+      await loadData(authUser);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -304,11 +347,34 @@ const App: React.FC = () => {
     // 但鉴于 saveCard 在离线时返回 false，这里主要处理在线逻辑。
   };
 
+  const handleLoginSubmit = async (username: string, password: string): Promise<string | null> => {
+    const result = await auth.signInWithUsername(username, password);
+    if (!result.ok) {
+      return result.error || '登录失败，请重试。';
+    }
+
+    const authUser = result.user || await auth.getCurrentAuthUser();
+    setCurrentUser(authUser);
+    await loadData(authUser);
+    return null;
+  };
+
+  const handleLogout = async () => {
+    await auth.signOut();
+    setCurrentUser(null);
+    setShowSettings(false);
+    setSelectedCard(null);
+    setIsSidebarOpen(false);
+    setIsSelectionMode(false);
+    setSelectedCardIds(new Set());
+    await loadData(null);
+  };
+
   const { displayCollections, collectionAliasMap } = useMemo(() => {
     const groups = new Map<string, { canonical: Collection; ids: string[] }>();
 
     for (const col of collections) {
-      const key = `${col.name.trim().toLowerCase()}::${col.coverImage || ''}`;
+      const key = `${col.ownerId || 'public'}::${col.name.trim().toLowerCase()}::${col.coverImage || ''}`;
       const group = groups.get(key);
       if (!group) {
         groups.set(key, { canonical: col, ids: [col.id] });
@@ -335,6 +401,7 @@ const App: React.FC = () => {
     const seenNoteIds = new Set<string>();
 
     const collect = (card: KnowledgeCard, from: 'trending' | 'vault') => {
+      if (!userCanMutate(card.ownerId)) return;
       if (card.platform !== Platform.Xiaohongshu) return;
       const normalized = normalizeXiaohongshuSourceUrl(card.sourceUrl) || card.sourceUrl;
       if (!isXiaohongshuUrl(normalized)) return;
@@ -358,7 +425,7 @@ const App: React.FC = () => {
     trending.forEach(card => collect(card, 'trending'));
     cards.forEach(card => collect(card, 'vault'));
     return items;
-  }, [cards, trending]);
+  }, [cards, currentUser, trending]);
 
   const handleApplyXhsTokenConfig = async (config: XhsTokenConfig) => {
     const noteId = String(config.noteId || '').trim();
@@ -367,6 +434,7 @@ const App: React.FC = () => {
     if (!noteId || !token) return;
 
     const patchCard = (card: KnowledgeCard): KnowledgeCard => {
+      if (!userCanMutate(card.ownerId)) return card;
       const normalized = normalizeXiaohongshuSourceUrl(card.sourceUrl) || card.sourceUrl;
       if (!isXiaohongshuUrl(normalized)) return card;
       if (getXiaohongshuNoteId(normalized) !== noteId) return card;
@@ -401,6 +469,9 @@ const App: React.FC = () => {
   const handleRepairTrendingSourceUrl = async (
     card: KnowledgeCard
   ): Promise<{ updated: boolean; message: string }> => {
+    if (!userCanMutate(card.ownerId)) {
+      return { updated: false, message: '只能修复你自己的内容链接。' };
+    }
     const currentUrl = normalizeXiaohongshuSourceUrl(card.sourceUrl) || card.sourceUrl;
     if (card.platform !== Platform.Xiaohongshu || !isXiaohongshuUrl(currentUrl)) {
       return { updated: false, message: '仅支持小红书链接修复。' };
@@ -460,6 +531,13 @@ const App: React.FC = () => {
 
   // Delete Card Handler
   const handleDeleteCard = async (cardId: string) => {
+    const target = cards.find(c => c.id === cardId) || trending.find(c => c.id === cardId) || selectedCard;
+    if (!userCanMutate(target?.ownerId)) {
+      window.alert(isAuthenticated ? '只能删除你自己的内容。' : '请先登录后再操作。');
+      if (!isAuthenticated) openLoginModal();
+      return;
+    }
+
     if (isSupabaseConnected()) {
       const success = await db.deleteCard(cardId);
       if (success) {
@@ -476,20 +554,47 @@ const App: React.FC = () => {
   };
 
   const handleAddCard = async (newCard: KnowledgeCard) => {
-    setCards(prev => [newCard, ...prev]);
+    if (!currentUser) {
+      openLoginModal();
+      return;
+    }
+
+    const ownedCard: KnowledgeCard = {
+      ...newCard,
+      ownerId: currentUser.id,
+      isPublic: false,
+    };
+
+    setCards(prev => [ownedCard, ...prev]);
     if (isSupabaseConnected()) {
-      await db.saveCard(newCard, false);
+      await db.saveCard(ownedCard, false);
     }
   };
 
   const handleAddTask = async (newTask: TrackingTask) => {
-    setTasks(prev => [newTask, ...prev]);
+    if (!currentUser) {
+      openLoginModal();
+      return;
+    }
+
+    const ownedTask: TrackingTask = {
+      ...newTask,
+      ownerId: currentUser.id,
+    };
+
+    setTasks(prev => [ownedTask, ...prev]);
     if (isSupabaseConnected()) {
-      await db.saveTask(newTask);
+      await db.saveTask(ownedTask);
     }
   };
 
   const handleDeleteTask = async (taskId: string) => {
+    const target = tasks.find(t => t.id === taskId);
+    if (!userCanMutate(target?.ownerId)) {
+      window.alert(isAuthenticated ? '只能删除你自己的任务。' : '请先登录后再操作。');
+      if (!isAuthenticated) openLoginModal();
+      return;
+    }
     setTasks(prev => prev.filter(t => t.id !== taskId));
     if (isSupabaseConnected()) {
       await db.deleteTask(taskId);
@@ -497,6 +602,12 @@ const App: React.FC = () => {
   };
 
   const handleSaveTrendingToVault = async (card: KnowledgeCard) => {
+    if (!userCanMutate(card.ownerId)) {
+      window.alert(isAuthenticated ? '只能保存或移动你自己的热点内容。' : '请先登录后再操作。');
+      if (!isAuthenticated) openLoginModal();
+      return;
+    }
+
     const shouldAnalyze = (target: KnowledgeCard) => {
       const summary = target.aiAnalysis?.summary?.trim() || '';
       const hasSummary = summary.length > 0 && summary !== '暂无摘要';
@@ -632,6 +743,12 @@ const App: React.FC = () => {
 
   // Update card data (e.g. when adding a note)
   const handleUpdateCard = async (updatedCard: KnowledgeCard) => {
+    if (!userCanMutate(updatedCard.ownerId)) {
+      window.alert(isAuthenticated ? '只能编辑你自己的内容。' : '请先登录后再操作。');
+      if (!isAuthenticated) openLoginModal();
+      return;
+    }
+
     // Update selected card state
     setSelectedCard(updatedCard);
 
@@ -658,6 +775,10 @@ const App: React.FC = () => {
   };
 
   const handleMainNavigation = (view: ViewMode) => {
+    if (view === 'monitoring' && !canManageData) {
+      openLoginModal();
+      return;
+    }
     setActiveView(view);
     if (view === 'chat') {
       // Sidebar Assistant should always represent full-vault chat scope.
@@ -673,6 +794,11 @@ const App: React.FC = () => {
   // --- Collection Management Functions ---
 
   const confirmCreateCollection = async () => {
+    if (!currentUser) {
+      openLoginModal();
+      return;
+    }
+
     if (newCollectionName.trim()) {
       // 使用固定的 placeholder 图片，避免刷新时变化
       const placeholderImages = [
@@ -686,6 +812,8 @@ const App: React.FC = () => {
 
       const newCollection: Collection = {
         id: `c_${Date.now()}`, // 临时 ID，数据库会返回真正的 UUID
+        ownerId: currentUser.id,
+        isPublic: false,
         name: newCollectionName,
         coverImage: placeholderImages[randomIndex],
         itemCount: 0
@@ -716,6 +844,12 @@ const App: React.FC = () => {
 
   const handleDeleteCollection = async (e: React.MouseEvent, collectionId: string) => {
     e.stopPropagation();
+    const target = collections.find(c => c.id === collectionId) || collections.find(c => getCollectionAliasIds(collectionId).includes(c.id));
+    if (!userCanMutate(target?.ownerId)) {
+      window.alert(isAuthenticated ? '只能删除你自己的收藏夹。' : '请先登录后再操作。');
+      if (!isAuthenticated) openLoginModal();
+      return;
+    }
     const aliasIds = getCollectionAliasIds(collectionId);
     if (window.confirm("确定要删除这个收藏夹吗？其中内容不会被删除。")) {
       setCollections(prev => prev.filter(c => !aliasIds.includes(c.id)));
@@ -732,6 +866,12 @@ const App: React.FC = () => {
 
   const handleRenameCollection = async (e: React.MouseEvent, collectionId: string, currentName: string) => {
     e.stopPropagation();
+    const target = collections.find(c => c.id === collectionId) || collections.find(c => getCollectionAliasIds(collectionId).includes(c.id));
+    if (!userCanMutate(target?.ownerId)) {
+      window.alert(isAuthenticated ? '只能重命名你自己的收藏夹。' : '请先登录后再操作。');
+      if (!isAuthenticated) openLoginModal();
+      return;
+    }
     const aliasIds = getCollectionAliasIds(collectionId);
     const newName = window.prompt("重命名收藏夹", currentName);
     if (newName && newName.trim()) {
@@ -767,11 +907,19 @@ const App: React.FC = () => {
   // --- Batch Selection Functions ---
 
   const toggleSelectionMode = () => {
+    if (!canManageData) {
+      openLoginModal();
+      return;
+    }
     setIsSelectionMode(!isSelectionMode);
     setSelectedCardIds(new Set());
   };
 
   const toggleCardSelection = (cardId: string) => {
+    const target = cards.find(card => card.id === cardId);
+    if (target && !userCanMutate(target.ownerId)) {
+      return;
+    }
     const newSet = new Set(selectedCardIds);
     if (newSet.has(cardId)) {
       newSet.delete(cardId);
@@ -783,6 +931,10 @@ const App: React.FC = () => {
 
   const handleRemoveSelectedFromCollection = async () => {
     if (!currentCollectionId || selectedCardIds.size === 0) return;
+    if (!canManageData) {
+      openLoginModal();
+      return;
+    }
     const aliasIds = getCollectionAliasIds(currentCollectionId);
 
     if (window.confirm(`确定从当前收藏夹移除 ${selectedCardIds.size} 条内容吗？`)) {
@@ -814,9 +966,14 @@ const App: React.FC = () => {
   };
 
   const handleBatchAddToCollection = async (targetCollectionId: string) => {
+    if (!canManageData) {
+      openLoginModal();
+      return;
+    }
     const updatedCards: KnowledgeCard[] = [];
     setCards(prevCards => prevCards.map(card => {
       if (selectedCardIds.has(card.id)) {
+        if (!userCanMutate(card.ownerId)) return card;
         const currentCollections = card.collections || [];
         if (!currentCollections.includes(targetCollectionId)) {
           const updated = { ...card, collections: [...currentCollections, targetCollectionId] };
@@ -839,8 +996,8 @@ const App: React.FC = () => {
   };
 
   const activeCollectionName = useMemo(() => {
-    return collections.find(c => c.id === currentCollectionId)?.name;
-  }, [currentCollectionId, collections]);
+    return displayCollections.find(c => c.id === currentCollectionId)?.name;
+  }, [currentCollectionId, displayCollections]);
 
   // Click outside listener to close dropdowns
   useEffect(() => {
@@ -923,7 +1080,7 @@ const App: React.FC = () => {
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg font-medium transition-colors ${activeView === 'monitoring' ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
             >
               <Activity size={20} />
-              热点搜索
+              {canManageData ? '热点搜索' : '登录后管理'}
             </button>
             <button
               onClick={() => handleMainNavigation('chat')}
@@ -939,12 +1096,14 @@ const App: React.FC = () => {
         <div className="flex-1 overflow-y-auto px-6 py-4 mt-2">
           <div className="flex items-center justify-between mb-3 px-1">
             <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">收藏夹</h3>
-            <button
-              onClick={() => setIsCreatingCollection(true)}
-              className="text-gray-500 hover:text-indigo-400 hover:bg-indigo-500/20 p-1 rounded-md transition-colors"
-            >
-              <Plus size={14} />
-            </button>
+            {canManageData && (
+              <button
+                onClick={() => setIsCreatingCollection(true)}
+                className="text-gray-500 hover:text-indigo-400 hover:bg-indigo-500/20 p-1 rounded-md transition-colors"
+              >
+                <Plus size={14} />
+              </button>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -971,15 +1130,17 @@ const App: React.FC = () => {
                   </div>
 
                   {/* More Menu Trigger */}
-                  <button
-                    className={`absolute right-2 top-3 p-1 rounded-md text-gray-500 hover:text-gray-300 hover:bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity ${activeCollectionMenuId === col.id ? 'opacity-100 bg-white/10' : ''}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActiveCollectionMenuId(activeCollectionMenuId === col.id ? null : col.id);
-                    }}
-                  >
-                    <MoreVertical size={14} />
-                  </button>
+                  {userCanMutate(col.ownerId) && (
+                    <button
+                      className={`absolute right-2 top-3 p-1 rounded-md text-gray-500 hover:text-gray-300 hover:bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity ${activeCollectionMenuId === col.id ? 'opacity-100 bg-white/10' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveCollectionMenuId(activeCollectionMenuId === col.id ? null : col.id);
+                      }}
+                    >
+                      <MoreVertical size={14} />
+                    </button>
+                  )}
 
                   {/* Dropdown Menu */}
                   {activeCollectionMenuId === col.id && (
@@ -1003,7 +1164,7 @@ const App: React.FC = () => {
             })}
           </div>
 
-          {isCreatingCollection ? (
+          {canManageData && isCreatingCollection ? (
             <div className="mt-4 p-3 border border-indigo-500/30 bg-indigo-500/10 rounded-xl animate-in fade-in zoom-in-95 duration-200">
               <input
                 type="text"
@@ -1032,13 +1193,17 @@ const App: React.FC = () => {
                 </button>
               </div>
             </div>
-          ) : (
+          ) : canManageData ? (
             <button
               onClick={() => setIsCreatingCollection(true)}
               className="w-full mt-4 flex items-center justify-center gap-2 py-3 border-2 border-dashed border-[#1e3a5f]/50 rounded-xl text-gray-500 hover:text-indigo-400 hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all text-sm font-medium">
               <Plus size={16} />
               新建收藏夹
             </button>
+          ) : (
+            <div className="mt-4 rounded-xl border border-dashed border-[#1e3a5f]/50 px-4 py-3 text-center text-xs text-gray-500">
+              登录后可创建和管理收藏夹
+            </div>
           )}
         </div>
 
@@ -1046,19 +1211,37 @@ const App: React.FC = () => {
         <div className="p-4 border-t border-[#1e3a5f]/30 bg-[#0d1526]/50">
           <div className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/5 transition-colors cursor-pointer">
             <div className="w-8 h-8 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-xs">
-              X
+              {(currentUser?.username || 'G').slice(0, 1).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-100 truncate">XiaoCi</p>
-              <p className="text-xs text-gray-500 truncate">专业版</p>
+              <p className="text-sm font-medium text-gray-100 truncate">{currentUser?.displayName || '游客模式'}</p>
+              <p className="text-xs text-gray-500 truncate">{currentUser ? `@${currentUser.username}` : '仅可浏览公开内容'}</p>
             </div>
-            <button
-              onClick={() => setShowSettings(true)}
-              className="p-1.5 rounded-md text-gray-500 hover:text-gray-200 hover:bg-white/10 transition-colors"
-              title="设置"
-            >
-              <Settings size={16} />
-            </button>
+            {currentUser ? (
+              <>
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="p-1.5 rounded-md text-gray-500 hover:text-gray-200 hover:bg-white/10 transition-colors"
+                  title="设置"
+                >
+                  <Settings size={16} />
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="p-1.5 rounded-md text-gray-500 hover:text-gray-200 hover:bg-white/10 transition-colors"
+                  title="退出登录"
+                >
+                  <LogOut size={16} />
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={openLoginModal}
+                className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+              >
+                登录
+              </button>
+            )}
           </div>
         </div>
       </aside>
@@ -1102,13 +1285,23 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => setIsAddModalOpen(true)}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm shadow-indigo-500/30"
-              >
-                <Plus size={18} />
-                <span className="hidden sm:inline">手动录入</span>
-              </button>
+              {canManageData ? (
+                <button
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm shadow-indigo-500/30"
+                >
+                  <Plus size={18} />
+                  <span className="hidden sm:inline">手动录入</span>
+                </button>
+              ) : (
+                <button
+                  onClick={openLoginModal}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm shadow-indigo-500/30"
+                >
+                  <Plus size={18} />
+                  <span className="hidden sm:inline">登录后编辑</span>
+                </button>
+              )}
             </div>
           </header>
         )}
@@ -1121,22 +1314,40 @@ const App: React.FC = () => {
               <DashboardView
                 tasks={tasks}
                 trendingItems={trending}
-                onNavigateToMonitoring={() => setActiveView('monitoring')}
+                onNavigateToMonitoring={() => handleMainNavigation('monitoring')}
                 onNavigateToVault={() => handleMainNavigation('grid')}
                 onSaveToVault={handleSaveTrendingToVault}
                 onRepairSourceUrl={handleRepairTrendingSourceUrl}
+                canManageTasks={canManageData}
+                canMutateTrendingItem={(card) => userCanMutate(card.ownerId)}
+                onRequireLogin={openLoginModal}
               />
             </div>
           )}
 
           {activeView === 'monitoring' && (
             <div className="h-full overflow-y-auto p-3 sm:p-6">
-              <MonitoringView
-                tasks={tasks}
-                onAddTask={handleAddTask}
-                onDeleteTask={handleDeleteTask}
-                onCardsAdded={refreshCards}
-              />
+              {canManageData ? (
+                <MonitoringView
+                  tasks={tasks}
+                  onAddTask={handleAddTask}
+                  onDeleteTask={handleDeleteTask}
+                  onCardsAdded={refreshCards}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center rounded-xl border border-[#1e3a5f]/40 bg-[#0d1526]/60 p-8 text-center">
+                  <div>
+                    <p className="text-lg font-semibold text-gray-100">登录后才能管理搜索和导入</p>
+                    <p className="mt-2 text-sm text-gray-500">游客模式仅支持浏览公开内容。</p>
+                    <button
+                      onClick={openLoginModal}
+                      className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+                    >
+                      立即登录
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1170,10 +1381,10 @@ const App: React.FC = () => {
                       与收藏夹对话
                     </button>
 
-                    <div className="w-px h-6 bg-[#1e3a5f]/50 mx-1"></div>
+                    {canManageData && <div className="w-px h-6 bg-[#1e3a5f]/50 mx-1"></div>}
 
                     {/* Batch Management Tools */}
-                    {isSelectionMode ? (
+                    {canManageData && isSelectionMode ? (
                       <div className="flex flex-wrap items-center gap-2 bg-[#1e3a5f]/30 rounded-lg p-1">
                         <span className="text-xs font-semibold px-2 text-indigo-400">已选 {selectedCardIds.size} 条</span>
                         <button
@@ -1193,16 +1404,16 @@ const App: React.FC = () => {
                           取消
                         </button>
                       </div>
-                    ) : (
+                    ) : canManageData ? (
                       <button
                         onClick={toggleSelectionMode}
                         className="px-3 py-1.5 bg-[#0d1526]/50 text-gray-400 border border-[#1e3a5f]/50 rounded-lg text-xs font-medium hover:bg-white/5 flex items-center gap-1"
                       >
                         <CheckSquare size={14} /> 管理条目
                       </button>
-                    )}
+                    ) : null}
 
-                    <div className="w-px h-6 bg-[#1e3a5f]/50 mx-1"></div>
+                    {canManageData && <div className="w-px h-6 bg-[#1e3a5f]/50 mx-1"></div>}
 
                     <button
                       onClick={() => setCurrentCollectionId(null)}
@@ -1235,7 +1446,7 @@ const App: React.FC = () => {
 
                   {/* Main View Batch Actions */}
                   <div className="flex flex-wrap items-center gap-2">
-                    {isSelectionMode ? (
+                    {canManageData && isSelectionMode ? (
                       <div className="flex flex-wrap items-center gap-2 bg-[#1e3a5f]/30 rounded-lg p-1">
                         <span className="text-xs font-semibold px-2 text-indigo-400">已选 {selectedCardIds.size} 条</span>
                         <button
@@ -1255,13 +1466,15 @@ const App: React.FC = () => {
                           取消
                         </button>
                       </div>
-                    ) : (
+                    ) : canManageData ? (
                       <button
                         onClick={toggleSelectionMode}
                         className="px-3 py-1.5 bg-[#0d1526]/60 text-gray-400 border border-[#1e3a5f]/40 rounded-lg text-xs font-medium hover:bg-white/5 flex items-center gap-1"
                       >
                         <CheckSquare size={14} /> 管理条目
                       </button>
+                    ) : (
+                      <div className="text-xs text-gray-500">登录后可批量管理卡片</div>
                     )}
                   </div>
                 </div>
@@ -1302,20 +1515,22 @@ const App: React.FC = () => {
         <DetailModal
           card={selectedCard}
           allCollections={displayCollections}
+          editableCollections={displayCollections.filter(col => userCanMutate(col.ownerId))}
           onClose={() => setSelectedCard(null)}
           onUpdate={handleUpdateCard}
           onDelete={handleDeleteCard}
+          canEdit={userCanMutate(selectedCard.ownerId)}
         />
       )}
 
-      {isAddModalOpen && (
+      {isAddModalOpen && canManageData && (
         <AddContentModal
           onClose={() => setIsAddModalOpen(false)}
           onAdd={handleAddCard}
         />
       )}
 
-      {showSettings && (
+      {showSettings && canManageData && (
         <SettingsModal
           onClose={() => setShowSettings(false)}
           xhsMissingTokenItems={xhsMissingTokenItems}
@@ -1324,7 +1539,7 @@ const App: React.FC = () => {
       )}
 
       {/* Add To Collection Modal */}
-      {isAddToCollectionModalOpen && (
+      {isAddToCollectionModalOpen && canManageData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsAddToCollectionModalOpen(false)}></div>
           <div className="relative bg-[#0d1526]/95 backdrop-blur-xl rounded-xl w-full max-w-sm overflow-hidden shadow-2xl border border-[#1e3a5f]/50 animate-in zoom-in-95 duration-200">
@@ -1333,10 +1548,10 @@ const App: React.FC = () => {
               <button onClick={() => setIsAddToCollectionModalOpen(false)}><X size={18} className="text-gray-500 hover:text-gray-300" /></button>
             </div>
             <div className="p-2 max-h-80 overflow-y-auto">
-              {displayCollections.length === 0 ? (
+              {displayCollections.filter(col => userCanMutate(col.ownerId)).length === 0 ? (
                 <p className="p-4 text-center text-gray-500 text-sm">还没有创建收藏夹。</p>
               ) : (
-                displayCollections.map(col => (
+                displayCollections.filter(col => userCanMutate(col.ownerId)).map(col => (
                   <button
                     key={col.id}
                     onClick={() => handleBatchAddToCollection(col.id)}
@@ -1363,6 +1578,13 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {isLoginModalOpen && (
+        <LoginModal
+          onClose={() => setIsLoginModalOpen(false)}
+          onSubmit={handleLoginSubmit}
+        />
       )}
     </div>
   );

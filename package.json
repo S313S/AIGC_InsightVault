@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test": "node --test scripts/*.test.mjs",
     "preview": "vite preview",
     "generate:fallback-covers": "node scripts/generate-fallback-covers.mjs",
     "cleanup:dedupe:dry": "node scripts/cleanup-supabase-duplicates.mjs",

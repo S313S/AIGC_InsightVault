@@ -230,7 +230,7 @@ const passesQualityFilter = (item, positiveKeywords, blacklistKeywords) => {
   return positive.some(kw => text.includes(kw));
 };
 
-const buildTrendingRow = (result, snapshotTag) => {
+const buildTrendingRow = (result, snapshotTag, ownerId) => {
   const baseText = result.desc || result.title || '';
   const summary = baseText
     ? (baseText.length > 160 ? baseText.slice(0, 160) + '...' : baseText)
@@ -244,6 +244,8 @@ const buildTrendingRow = (result, snapshotTag) => {
   const tagsWithSnapshot = snapshotTag ? Array.from(new Set([...tags, snapshotTag])) : tags;
 
   return {
+    owner_id: ownerId,
+    is_public: true,
     title: result.title || (result.desc ? result.desc.slice(0, 40) : '') || '无标题',
     source_url: result.sourceUrl,
     platform: result.platform,
@@ -297,10 +299,28 @@ const isTwitterPlaceholderImage = (url) => {
 };
 
 const getSupabaseClient = () => {
-  const url = process.env.VITE_SUPABASE_URL;
-  const key = process.env.VITE_SUPABASE_ANON_KEY;
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
+};
+
+const getCronOwnerContext = async (supabase) => {
+  const username = String(process.env.CRON_OWNER_USERNAME || 'xiaoci').trim().replace(/^@+/, '').toLowerCase();
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, username')
+    .eq('username', username)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || 'Failed to resolve cron owner');
+  }
+  if (!data?.id) {
+    throw new Error(`Cron owner "${username}" not found in profiles`);
+  }
+
+  return { ownerId: data.id, username: data.username || username };
 };
 
 const API_BASE_XHS = 'https://api.justoneapi.com';
@@ -765,10 +785,16 @@ export default async function handler(req, res) {
 
   const supabase = getSupabaseClient();
   if (!supabase) {
-    return res.status(500).json({ error: 'Supabase not configured' });
+    return res.status(500).json({ error: 'Supabase service role not configured' });
   }
 
+  let ownerId = null;
+  let ownerUsername = String(process.env.CRON_OWNER_USERNAME || 'xiaoci').trim().replace(/^@+/, '').toLowerCase();
+
   try {
+    const ownerContext = await getCronOwnerContext(supabase);
+    ownerId = ownerContext.ownerId;
+    ownerUsername = ownerContext.username;
     const isNearTimeout = () => (Date.now() - runStartedAt) >= SOFT_TIMEOUT_GUARD_MS;
 
     const overrideDays = Number(getQueryParam('days'));
@@ -817,6 +843,7 @@ export default async function handler(req, res) {
       const { data: trendRows, error: trendError } = await supabase
         .from('knowledge_cards')
         .select('id, tags')
+        .eq('owner_id', ownerId)
         .eq('is_trending', true);
 
       if (trendError) {
@@ -830,6 +857,7 @@ export default async function handler(req, res) {
         const { error: updateError } = await supabase
           .from('knowledge_cards')
           .update({ tags: mergedTags, is_trending: true })
+          .eq('owner_id', ownerId)
           .eq('id', row.id);
         if (updateError) {
           throw new Error(updateError.message || 'Failed to update trending snapshot tags');
@@ -841,6 +869,7 @@ export default async function handler(req, res) {
       const { data: refreshedRows, error: refreshError } = await supabase
         .from('knowledge_cards')
         .select('id, tags')
+        .eq('owner_id', ownerId)
         .eq('is_trending', true);
 
       if (refreshError) {
@@ -868,6 +897,7 @@ export default async function handler(req, res) {
         const { error: cleanupError } = await supabase
           .from('knowledge_cards')
           .delete()
+          .eq('owner_id', ownerId)
           .in('id', idsToDelete);
         if (cleanupError) {
           throw new Error(cleanupError.message || 'Failed to cleanup old snapshots');
@@ -878,7 +908,8 @@ export default async function handler(req, res) {
         mode: 'rebuild',
         updatedExisting,
         totalTrending: (refreshedRows || []).length,
-        snapshot: snapshotTag
+        snapshot: snapshotTag,
+        owner: ownerContext.username
       });
     }
 
@@ -889,6 +920,7 @@ export default async function handler(req, res) {
     const { data: settingRows, error: settingsError } = await supabase
       .from('monitor_settings')
       .select('key, value')
+      .eq('owner_id', ownerId)
       .in('key', ['min_engagement', 'trusted_min_engagement', 'split_keywords', 'twitter_split_keywords', 'auto_update_enabled']);
     if (settingsError) {
       console.warn('[cron-monitor] failed to read monitor_settings:', settingsError.message || settingsError);
@@ -928,6 +960,7 @@ export default async function handler(req, res) {
         skipReason: 'auto_update_disabled'
       };
       await persistCronRunLog(supabase, {
+        owner_id: ownerId,
         trigger_source: triggerSource,
         request_method: req.method,
         request_url: requestUrl.toString(),
@@ -972,6 +1005,7 @@ export default async function handler(req, res) {
 
     const { data: keywordRows, error: keywordError } = await supabase
       .from('quality_keywords')
+      .eq('owner_id', ownerId)
       .select('keyword, type');
     if (keywordError) {
       console.warn('[cron-monitor] failed to read quality_keywords:', keywordError.message || keywordError);
@@ -990,6 +1024,7 @@ export default async function handler(req, res) {
     const { data: trustedRows, error: trustedError } = await supabase
       .from('trusted_accounts')
       .select('handle, platform')
+      .eq('owner_id', ownerId)
       .eq('platform', 'twitter');
     if (trustedError) {
       console.warn('[cron-monitor] failed to read trusted_accounts:', trustedError.message || trustedError);
@@ -1469,6 +1504,7 @@ export default async function handler(req, res) {
         tasksRun: tasksToRun.length
       };
       await persistCronRunLog(supabase, {
+        owner_id: ownerId,
         trigger_source: triggerSource,
         request_method: req.method,
         request_url: requestUrl.toString(),
@@ -1501,6 +1537,7 @@ export default async function handler(req, res) {
     const { data: existingRows, error: existingError } = await supabase
       .from('knowledge_cards')
       .select('id, source_url')
+      .eq('owner_id', ownerId)
       .eq('is_trending', true);
 
     if (existingError) {
@@ -1510,7 +1547,7 @@ export default async function handler(req, res) {
     const existingNorms = new Set((existingRows || []).map(r => normalizeSourceUrl(r.source_url)));
     const toInsert = candidates
       .filter(c => !existingNorms.has(normalizeSourceUrl(c.sourceUrl)))
-      .map(c => buildTrendingRow(c, snapshotTag));
+      .map(c => buildTrendingRow(c, snapshotTag, ownerId));
     let updatedExisting = 0;
 
     if (toInsert.length > 0) {
@@ -1527,6 +1564,7 @@ export default async function handler(req, res) {
       const { data: existingCards, error: existingCardsError } = await supabase
         .from('knowledge_cards')
         .select('id, tags, source_url')
+        .eq('owner_id', ownerId)
         .eq('is_trending', true);
 
       if (existingCardsError) {
@@ -1536,7 +1574,7 @@ export default async function handler(req, res) {
       for (const row of existingCards || []) {
         const candidate = candidateNorms.get(normalizeSourceUrl(row.source_url));
         if (!candidate) continue;
-        const updatedRow = buildTrendingRow(candidate, snapshotTag);
+        const updatedRow = buildTrendingRow(candidate, snapshotTag, ownerId);
         const tags = Array.isArray(row.tags) ? row.tags : [];
         const updatedRowTags = Array.isArray(updatedRow.tags) ? updatedRow.tags : [];
         const mergedTags = Array.from(new Set([
@@ -1547,6 +1585,8 @@ export default async function handler(req, res) {
         const { error: updateError } = await supabase
           .from('knowledge_cards')
           .update({
+            owner_id: ownerId,
+            is_public: true,
             title: updatedRow.title,
             source_url: updatedRow.source_url,
             platform: updatedRow.platform,
@@ -1562,6 +1602,7 @@ export default async function handler(req, res) {
             collections: updatedRow.collections,
             is_trending: true
           })
+          .eq('owner_id', ownerId)
           .eq('id', row.id);
         if (updateError) {
           throw new Error(updateError.message || 'Failed to update existing trending cards');
@@ -1574,6 +1615,7 @@ export default async function handler(req, res) {
     const { data: trendRows, error: trendError } = await supabase
       .from('knowledge_cards')
       .select('id, tags')
+      .eq('owner_id', ownerId)
       .eq('is_trending', true);
 
     if (trendError) {
@@ -1604,6 +1646,7 @@ export default async function handler(req, res) {
       const { error: cleanupError } = await supabase
         .from('knowledge_cards')
         .delete()
+        .eq('owner_id', ownerId)
         .in('id', idsToDelete);
       if (cleanupError) {
         throw new Error(cleanupError.message || 'Failed to cleanup old snapshots');
@@ -1642,6 +1685,7 @@ export default async function handler(req, res) {
       tasksRun: tasksToRun.length
     };
     await persistCronRunLog(supabase, {
+      owner_id: ownerId,
       trigger_source: triggerSource,
       request_method: req.method,
       request_url: requestUrl.toString(),
@@ -1666,6 +1710,7 @@ export default async function handler(req, res) {
     console.error('Cron monitor error:', err);
     platformErrors = [...platformErrors, { platform: 'system', error: err.message || 'Cron monitor failed' }];
     await persistCronRunLog(supabase, {
+      owner_id: ownerId,
       trigger_source: triggerSource,
       request_method: req.method,
       request_url: requestUrl.toString(),
