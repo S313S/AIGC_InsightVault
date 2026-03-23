@@ -8,9 +8,11 @@ import { getXiaohongshuNoteId, hasXiaohongshuXsecToken, isXiaohongshuUrl, normal
 interface DetailModalProps {
   card: KnowledgeCard | null;
   allCollections: Collection[];
+  editableCollections?: Collection[];
   onClose: () => void;
   onUpdate: (card: KnowledgeCard) => void;
   onDelete: (id: string) => void;
+  canEdit?: boolean;
 }
 
 const NOTE_PLACEHOLDER = `## 实验想法
@@ -20,7 +22,7 @@ const NOTE_PLACEHOLDER = `## 实验想法
 - 观察点 1
 - 观察点 2`;
 
-export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, onClose, onUpdate, onDelete }) => {
+export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, editableCollections = [], onClose, onUpdate, onDelete, canEdit = false }) => {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [noteContent, setNoteContent] = useState('');
@@ -71,11 +73,13 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
   };
 
   const handleSaveNote = () => {
+    if (!canEdit) return;
     onUpdate({ ...card, userNotes: noteContent });
     setIsEditingNote(false);
   };
 
   const toggleCollection = (collectionId: string) => {
+    if (!canEdit) return;
     const currentCollections = card.collections || [];
     let newCollections;
 
@@ -89,6 +93,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
   };
 
   const handleDelete = () => {
+    if (!canEdit) return;
     if (window.confirm('确定要删除这张卡片吗？此操作不可撤销。')) {
       onDelete(card.id);
       onClose(); // Close modal after delete
@@ -96,6 +101,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
   };
 
   const handleRepairSourceUrl = async () => {
+    if (!canEdit) return;
     if (!isXiaohongshuCard || !xhsNoteId || isRepairingSourceUrl) return;
 
     setIsRepairingSourceUrl(true);
@@ -128,8 +134,9 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
       <div className="relative bg-[#0d1526]/95 backdrop-blur-xl rounded-none sm:rounded-2xl w-full h-[100dvh] sm:h-auto sm:max-w-4xl sm:max-h-[90vh] overflow-hidden shadow-2xl border border-[#1e3a5f]/50 flex flex-col md:flex-row">
 
         {/* Header Actions (Absolute) */}
-        <div className="absolute top-3 right-3 sm:top-4 sm:right-4 z-10 flex gap-1.5 sm:gap-2">
+          <div className="absolute top-3 right-3 sm:top-4 sm:right-4 z-10 flex gap-1.5 sm:gap-2">
           {/* Collection Dropdown */}
+          {canEdit && (
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setIsCollectionMenuOpen(!isCollectionMenuOpen)}
@@ -145,10 +152,10 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
                   <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">保存到收藏夹</span>
                 </div>
                 <div className="max-h-60 overflow-y-auto">
-                  {allCollections.length === 0 ? (
+                  {editableCollections.length === 0 ? (
                     <div className="px-4 py-3 text-sm text-gray-500 text-center">尚未创建收藏夹</div>
                   ) : (
-                    allCollections.map(col => {
+                    editableCollections.map(col => {
                       const isSelected = card.collections?.includes(col.id);
                       return (
                         <button
@@ -169,14 +176,17 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
               </div>
             )}
           </div>
+          )}
 
-          <button
-            onClick={handleDelete}
-            className="p-2 bg-[#0d1526]/90 hover:bg-red-500/20 rounded-full shadow-sm transition-colors text-red-400 hover:text-red-300"
-            title="删除卡片"
-          >
-            <Trash2 size={20} />
-          </button>
+          {canEdit && (
+            <button
+              onClick={handleDelete}
+              className="p-2 bg-[#0d1526]/90 hover:bg-red-500/20 rounded-full shadow-sm transition-colors text-red-400 hover:text-red-300"
+              title="删除卡片"
+            >
+              <Trash2 size={20} />
+            </button>
+          )}
           <button
             onClick={onClose}
             className="p-2 bg-[#0d1526]/90 hover:bg-[#1e3a5f]/70 rounded-full shadow-sm transition-colors text-gray-500 hover:text-gray-300"
@@ -266,7 +276,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
                 提示：该条小红书链接可能无法直接打开。建议先点击“🔄 修复链接（noteId）”。
               </p>
             )}
-            {isXiaohongshuCard && (
+            {isXiaohongshuCard && canEdit && (
               <button
                 onClick={handleRepairSourceUrl}
                 disabled={isRepairingSourceUrl || !xhsNoteId}
@@ -366,7 +376,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
                 </div>
                 <h3 className="text-lg font-bold text-gray-100">我的笔记</h3>
               </div>
-              {!isEditingNote && (
+              {!isEditingNote && canEdit && (
                 <button
                   onClick={() => setIsEditingNote(true)}
                   className="text-xs flex items-center gap-1 text-gray-500 hover:text-indigo-400 transition-colors"
@@ -377,7 +387,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
               )}
             </div>
 
-            {isEditingNote ? (
+            {isEditingNote && canEdit ? (
               <div className="animate-in fade-in duration-200">
                 <textarea
                   value={noteContent}
@@ -407,13 +417,18 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
               </div>
             ) : (
               <div
-                onClick={() => setIsEditingNote(true)}
-                className="p-4 rounded-xl border border-[#1e3a5f]/50 bg-[#0a0f1a]/50 transition-all cursor-text group hover:border-[#1e3a5f] h-48 overflow-y-auto"
+                onClick={() => {
+                  if (canEdit) setIsEditingNote(true);
+                }}
+                className={`p-4 rounded-xl border border-[#1e3a5f]/50 bg-[#0a0f1a]/50 transition-all h-48 overflow-y-auto ${canEdit ? 'cursor-text group hover:border-[#1e3a5f]' : 'cursor-default opacity-90'}`}
               >
                 <div className={`text-sm whitespace-pre-wrap leading-relaxed font-mono ${!noteContent ? 'text-gray-600' : 'text-gray-300'}`}>
                   {noteContent || NOTE_PLACEHOLDER}
                 </div>
               </div>
+            )}
+            {!canEdit && (
+              <p className="mt-2 text-xs text-amber-300">当前内容为只读。只有内容所有者可以编辑笔记、收藏夹和链接。</p>
             )}
           </div>
         </div>

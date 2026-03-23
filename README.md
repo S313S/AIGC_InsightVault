@@ -19,11 +19,17 @@ View your app in AI Studio: https://ai.studio/apps/drive/1kKnUAfJ9j-8NUlTuLW57Ms
    - `VITE_GEMINI_API_KEY`
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `CRON_OWNER_USERNAME` (default `xiaoci`)
    - `X_API_BEARER_TOKEN` (Twitter/X fetch & search)
    - `JUSTONEAPI_TOKEN` and/or `TIKHUB_API_TOKEN` (Xiaohongshu fetch/search, supports fallback)
    - Optional: `XHS_NOTE_PROVIDER=auto|justone|tikhub` (default `auto`, for single-note fetch)
    - Optional: `XHS_SEARCH_PROVIDER=auto|justone|tikhub` (default `auto`, for keyword search)
    - Optional: `TIKHUB_XHS_SEARCH_PATH` (default `/api/v1/xiaohongshu/app/search_notes`)
-3. Run the app:
+3. Apply the owner/RLS migration in Supabase SQL editor:
+   `scripts/supabase-auth-rls.sql`
+   This creates `profiles`, seeds `xiaoci`, backfills existing data ownership, and enables RLS.
+4. Run the app:
    `npm run dev`
  
