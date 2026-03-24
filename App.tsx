@@ -26,6 +26,7 @@ import {
   normalizeXiaohongshuSourceUrl
 } from './shared/xiaohongshuUrls.js';
 import { removeAliasIdsFromCollections } from './shared/collectionAliases.js';
+import { getSettledValue } from './shared/settledLoad.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 
@@ -104,30 +105,44 @@ const App: React.FC = () => {
 
   const loadData = async (authUser: AuthUser | null) => {
     setIsLoading(true);
+    try {
+      if (isSupabaseConnected()) {
+        const [cardsResult, trendingResult, collectionsResult, tasksResult] = await Promise.allSettled([
+          db.getKnowledgeCards(),
+          db.getTrendingCards(),
+          db.getCollections(),
+          authUser ? db.getTasks() : Promise.resolve([])
+        ]);
 
-    if (isSupabaseConnected()) {
-      const [dbCards, dbTrending, dbCollections, dbTasks] = await Promise.all([
-        db.getKnowledgeCards(),
-        db.getTrendingCards(),
-        db.getCollections(),
-        authUser ? db.getTasks() : Promise.resolve([])
-      ]);
+        const dbCards = getSettledValue(cardsResult, [], 'Loading knowledge cards');
+        const dbTrending = getSettledValue(trendingResult, [], 'Loading trending cards');
+        const dbCollections = getSettledValue(collectionsResult, [], 'Loading collections');
+        const dbTasks = getSettledValue(tasksResult, [], 'Loading tasks');
 
-      setCards(dbCards);
-      setTrending(dbTrending);
-      setCollections(dbCollections);
-      setTasks(dbTasks);
-      setChatScope({ cards: dbCards, title: '全部知识库' });
-    } else {
+        setCards(dbCards);
+        setTrending(dbTrending);
+        setCollections(dbCollections);
+        setTasks(dbTasks);
+        setChatScope({ cards: dbCards, title: '全部知识库' });
+        return;
+      }
+
       const offlineCards = INITIAL_DATA.map(toOfflinePublicCard);
       setCards(offlineCards);
       setTrending(TRENDING_DATA.map(toOfflinePublicCard));
       setCollections(INITIAL_COLLECTIONS.map(toOfflinePublicCollection));
       setTasks([]);
       setChatScope({ cards: offlineCards, title: '全部知识库' });
+    } catch (error) {
+      console.error('Failed to load app data:', error);
+      setCards([]);
+      setTrending([]);
+      setCollections([]);
+      setTasks([]);
+      setChatScope({ cards: [], title: '全部知识库' });
+    } finally {
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
   };
 
   // ============ 从 Supabase 加载数据 ============

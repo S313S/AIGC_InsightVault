@@ -48,17 +48,14 @@ alter table if exists public.monitor_settings
 alter table if exists public.cron_run_logs
   add column if not exists owner_id uuid references auth.users (id) default auth.uid();
 
-drop index if exists trusted_accounts_platform_handle_key;
 alter table if exists public.trusted_accounts drop constraint if exists trusted_accounts_platform_handle_key;
 create unique index if not exists trusted_accounts_owner_platform_handle_key
   on public.trusted_accounts (owner_id, platform, handle);
 
-drop index if exists quality_keywords_keyword_type_key;
 alter table if exists public.quality_keywords drop constraint if exists quality_keywords_keyword_type_key;
 create unique index if not exists quality_keywords_owner_keyword_type_key
   on public.quality_keywords (owner_id, keyword, type);
 
-drop index if exists monitor_settings_key_key;
 alter table if exists public.monitor_settings drop constraint if exists monitor_settings_key_key;
 create unique index if not exists monitor_settings_owner_key_key
   on public.monitor_settings (owner_id, key);
@@ -111,29 +108,29 @@ begin
       '',
       ''
     );
-
-    insert into auth.identities (
-      id,
-      user_id,
-      identity_data,
-      provider,
-      provider_id,
-      last_sign_in_at,
-      created_at,
-      updated_at
-    )
-    values (
-      gen_random_uuid()::text,
-      xiaoci_user_id,
-      jsonb_build_object('sub', xiaoci_user_id::text, 'email', xiaoci_email),
-      'email',
-      xiaoci_user_id::text,
-      now(),
-      now(),
-      now()
-    )
-    on conflict (provider, provider_id) do nothing;
   end if;
+
+  insert into auth.identities (
+    id,
+    user_id,
+    identity_data,
+    provider,
+    provider_id,
+    last_sign_in_at,
+    created_at,
+    updated_at
+  )
+  values (
+    gen_random_uuid(),
+    xiaoci_user_id,
+    jsonb_build_object('sub', xiaoci_user_id::text, 'email', xiaoci_email),
+    'email',
+    xiaoci_user_id::text,
+    now(),
+    now(),
+    now()
+  )
+  on conflict (provider, provider_id) do nothing;
 
   insert into public.profiles (id, username, display_name)
   values (xiaoci_user_id, 'xiaoci', 'xiaoci')
