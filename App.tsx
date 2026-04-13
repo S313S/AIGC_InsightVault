@@ -26,6 +26,7 @@ import {
   normalizeXiaohongshuSourceUrl
 } from './shared/xiaohongshuUrls.js';
 import { removeAliasIdsFromCollections } from './shared/collectionAliases.js';
+import { normalizeCollectionName, shouldSubmitCollectionName } from './shared/collectionCreation.js';
 import { getSettledValue } from './shared/settledLoad.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
@@ -814,7 +815,9 @@ const App: React.FC = () => {
       return;
     }
 
-    if (newCollectionName.trim()) {
+    const normalizedName = normalizeCollectionName(newCollectionName);
+
+    if (normalizedName) {
       // 使用固定的 placeholder 图片，避免刷新时变化
       const placeholderImages = [
         'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=200&h=200&fit=crop', // books
@@ -829,7 +832,7 @@ const App: React.FC = () => {
         id: `c_${Date.now()}`, // 临时 ID，数据库会返回真正的 UUID
         ownerId: currentUser.id,
         isPublic: false,
-        name: newCollectionName,
+        name: normalizedName,
         coverImage: placeholderImages[randomIndex],
         itemCount: 0
       };
@@ -1189,7 +1192,7 @@ const App: React.FC = () => {
                 value={newCollectionName}
                 onChange={(e) => setNewCollectionName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') confirmCreateCollection();
+                  if (shouldSubmitCollectionName({ key: e.key, isComposing: e.nativeEvent.isComposing })) confirmCreateCollection();
                   if (e.key === 'Escape') cancelCreateCollection();
                 }}
               />
@@ -1202,7 +1205,8 @@ const App: React.FC = () => {
                 </button>
                 <button
                   onClick={confirmCreateCollection}
-                  className="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors shadow-sm"
+                  disabled={!normalizeCollectionName(newCollectionName)}
+                  className="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded transition-colors shadow-sm disabled:cursor-not-allowed disabled:opacity-50 hover:bg-indigo-700"
                 >
                   创建
                 </button>
