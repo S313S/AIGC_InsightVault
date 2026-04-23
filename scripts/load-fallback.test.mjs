@@ -30,6 +30,7 @@ test('resolveLoadFallback uses offline snapshot when cloud datasets are all empt
     collections: [],
     tasks: [],
     offlineSnapshot,
+    authUser: null,
   });
 
   assert.deepEqual(result.cards, offlineSnapshot.cards);
@@ -53,11 +54,28 @@ test('resolveLoadFallback prefers last successful snapshot over offline data', (
     tasks: [],
     offlineSnapshot,
     previousSnapshot,
+    authUser: { id: 'user-1' },
   });
 
   assert.deepEqual(result.cards, previousSnapshot.cards);
   assert.deepEqual(result.trending, previousSnapshot.trending);
   assert.deepEqual(result.collections, previousSnapshot.collections);
   assert.deepEqual(result.tasks, previousSnapshot.tasks);
+  assert.equal(result.usedFallback, true);
+});
+
+test('resolveLoadFallback does not use offline snapshot for authenticated users without any personal cache', () => {
+  const result = resolveLoadFallback({
+    cards: [],
+    trending: [],
+    collections: [],
+    tasks: [],
+    offlineSnapshot,
+    authUser: { id: 'user-1' },
+  });
+
+  assert.deepEqual(result.cards, []);
+  assert.deepEqual(result.trending, []);
+  assert.deepEqual(result.collections, []);
   assert.equal(result.usedFallback, true);
 });

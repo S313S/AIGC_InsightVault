@@ -32,6 +32,7 @@ import { withTimeout } from './shared/asyncTimeout.js';
 import { resolveLoadFallback } from './shared/loadFallback.js';
 import { shouldReloadOnAuthEvent } from './shared/authEvents.js';
 import { resolveCurrentAuthUser } from './shared/authState.js';
+import { readStoredSnapshot, writeStoredSnapshot } from './shared/dataSnapshot.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 
@@ -147,13 +148,16 @@ const App: React.FC = () => {
           collections: INITIAL_COLLECTIONS.map(toOfflinePublicCollection),
           tasks: [],
         };
+        const storedSnapshot = readStoredSnapshot(authUser?.id || null);
         const resolvedData = resolveLoadFallback({
           cards: dbCards,
           trending: dbTrending,
           collections: dbCollections,
           tasks: dbTasks,
+          authUser,
           offlineSnapshot,
           previousSnapshot: lastSuccessfulDataRef.current,
+          storedSnapshot,
         });
 
         setCards(resolvedData.cards);
@@ -169,13 +173,16 @@ const App: React.FC = () => {
             collections: resolvedData.collections,
             tasks: resolvedData.tasks,
           };
+          writeStoredSnapshot(authUser?.id || null, lastSuccessfulDataRef.current);
         }
 
         if (resolvedData.usedFallback && isSupabaseConnected()) {
           setLoadNotice(
-            lastSuccessfulDataRef.current
+            lastSuccessfulDataRef.current || storedSnapshot
               ? '部分云端数据加载超时，当前继续显示最近一次成功加载的数据。可以稍后刷新重试。'
-              : '部分云端数据加载超时，当前已回退到内置公开内容。可以稍后刷新重试。'
+              : authUser
+                ? '部分云端数据加载超时，当前未能加载你的私有知识卡片。请稍后刷新重试。'
+                : '部分云端数据加载超时，当前已回退到内置公开内容。可以稍后刷新重试。'
           );
         }
         return;

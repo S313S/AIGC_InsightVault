@@ -3,8 +3,10 @@ export const resolveLoadFallback = ({
   trending,
   collections,
   tasks,
+  authUser,
   offlineSnapshot,
   previousSnapshot,
+  storedSnapshot,
 }) => {
   const hasCloudData = cards.length > 0 || trending.length > 0 || collections.length > 0;
 
@@ -29,6 +31,31 @@ export const resolveLoadFallback = ({
       trending: previousSnapshot.trending,
       collections: previousSnapshot.collections,
       tasks: previousSnapshot.tasks,
+      usedFallback: true,
+    };
+  }
+
+  const hasStoredSnapshot = storedSnapshot &&
+    (storedSnapshot.cards?.length > 0 ||
+      storedSnapshot.trending?.length > 0 ||
+      storedSnapshot.collections?.length > 0);
+
+  if (hasStoredSnapshot) {
+    return {
+      cards: storedSnapshot.cards,
+      trending: storedSnapshot.trending,
+      collections: storedSnapshot.collections,
+      tasks: storedSnapshot.tasks,
+      usedFallback: true,
+    };
+  }
+
+  if (authUser) {
+    return {
+      cards: [],
+      trending: [],
+      collections: [],
+      tasks: [],
       usedFallback: true,
     };
   }
