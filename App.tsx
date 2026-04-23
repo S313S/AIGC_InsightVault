@@ -30,6 +30,7 @@ import { normalizeCollectionName, shouldSubmitCollectionName } from './shared/co
 import { getSettledValue } from './shared/settledLoad.js';
 import { withTimeout } from './shared/asyncTimeout.js';
 import { resolveLoadFallback } from './shared/loadFallback.js';
+import { shouldReloadOnAuthEvent } from './shared/authEvents.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 
@@ -82,6 +83,7 @@ const App: React.FC = () => {
   const cardsRef = useRef<KnowledgeCard[]>([]);
   const trendingRef = useRef<KnowledgeCard[]>([]);
   const lastSuccessfulDataRef = useRef<LoadedSnapshot | null>(null);
+  const hasCompletedInitialLoadRef = useRef(false);
 
   // Chat Context State
   const [chatScope, setChatScope] = useState<{ cards: KnowledgeCard[], title: string }>({
@@ -116,9 +118,14 @@ const App: React.FC = () => {
 
   const openLoginModal = () => setIsLoginModalOpen(true);
 
-  const loadData = async (authUser: AuthUser | null) => {
-    setIsLoading(true);
-    setLoadNotice('');
+  const loadData = async (
+    authUser: AuthUser | null,
+    options: { showOverlay?: boolean; preserveNotice?: boolean } = {}
+  ) => {
+    const { showOverlay = !hasCompletedInitialLoadRef.current, preserveNotice = false } = options;
+
+    if (showOverlay) setIsLoading(true);
+    if (!preserveNotice) setLoadNotice('');
     try {
       if (isSupabaseConnected()) {
         const [cardsResult, trendingResult, collectionsResult, tasksResult] = await Promise.allSettled([
@@ -193,7 +200,8 @@ const App: React.FC = () => {
       setTasks([]);
       setChatScope({ cards: [], title: '全部知识库' });
     } finally {
-      setIsLoading(false);
+      hasCompletedInitialLoadRef.current = true;
+      if (showOverlay) setIsLoading(false);
     }
   };
 
@@ -210,18 +218,19 @@ const App: React.FC = () => {
         setLoadNotice('登录状态读取超时，当前按游客模式继续加载。可以稍后再试登录。');
       }
       setCurrentUser(authUser);
-      await loadData(authUser);
+      await loadData(authUser, { showOverlay: true, preserveNotice: true });
     };
 
     hydrate();
 
-    const subscription = auth.onAuthStateChange(async (_event, session) => {
+    const subscription = auth.onAuthStateChange(async (event, session) => {
+      if (!shouldReloadOnAuthEvent(event)) return;
       const authUser = session
         ? await withTimeout(auth.getCurrentAuthUser(), DATA_LOAD_TIMEOUT_MS, null)
         : null;
       if (!active) return;
       setCurrentUser(authUser);
-      await loadData(authUser);
+      await loadData(authUser, { showOverlay: false });
     });
 
     return () => {
@@ -429,7 +438,6 @@ const App: React.FC = () => {
 
     const authUser = result.user || await auth.getCurrentAuthUser();
     setCurrentUser(authUser);
-    await loadData(authUser);
     return null;
   };
 
@@ -441,7 +449,6 @@ const App: React.FC = () => {
     setIsSidebarOpen(false);
     setIsSelectionMode(false);
     setSelectedCardIds(new Set());
-    await loadData(null);
   };
 
   const handleClearLocalAuthState = () => {
