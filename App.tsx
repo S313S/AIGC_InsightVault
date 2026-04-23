@@ -33,6 +33,7 @@ import { resolveLoadFallback } from './shared/loadFallback.js';
 import { shouldReloadOnAuthEvent } from './shared/authEvents.js';
 import { resolveCurrentAuthUser } from './shared/authState.js';
 import { readStoredSnapshot, writeStoredSnapshot } from './shared/dataSnapshot.js';
+import { mergeLoadedSnapshot } from './shared/loadMerge.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 
@@ -84,9 +85,11 @@ const App: React.FC = () => {
   const tasksRef = useRef<TrackingTask[]>([]);
   const cardsRef = useRef<KnowledgeCard[]>([]);
   const trendingRef = useRef<KnowledgeCard[]>([]);
+  const collectionsRef = useRef<Collection[]>([]);
   const lastSuccessfulDataRef = useRef<LoadedSnapshot | null>(null);
   const hasCompletedInitialLoadRef = useRef(false);
   const currentUserRef = useRef<AuthUser | null>(null);
+  const loadRequestIdRef = useRef(0);
 
   // Chat Context State
   const [chatScope, setChatScope] = useState<{ cards: KnowledgeCard[], title: string }>({
@@ -126,22 +129,12 @@ const App: React.FC = () => {
     options: { showOverlay?: boolean; preserveNotice?: boolean } = {}
   ) => {
     const { showOverlay = !hasCompletedInitialLoadRef.current, preserveNotice = false } = options;
+    const requestId = ++loadRequestIdRef.current;
 
     if (showOverlay) setIsLoading(true);
     if (!preserveNotice) setLoadNotice('');
     try {
       if (isSupabaseConnected()) {
-        const [cardsResult, trendingResult, collectionsResult, tasksResult] = await Promise.allSettled([
-          withTimeout(db.getKnowledgeCards(), DATA_LOAD_TIMEOUT_MS, []),
-          withTimeout(db.getTrendingCards(), DATA_LOAD_TIMEOUT_MS, []),
-          withTimeout(db.getCollections(), DATA_LOAD_TIMEOUT_MS, []),
-          withTimeout(authUser ? db.getTasks() : Promise.resolve([]), DATA_LOAD_TIMEOUT_MS, [])
-        ]);
-
-        const dbCards = getSettledValue(cardsResult, [], 'Loading knowledge cards');
-        const dbTrending = getSettledValue(trendingResult, [], 'Loading trending cards');
-        const dbCollections = getSettledValue(collectionsResult, [], 'Loading collections');
-        const dbTasks = getSettledValue(tasksResult, [], 'Loading tasks');
         const offlineSnapshot = {
           cards: INITIAL_DATA.map(toOfflinePublicCard),
           trending: TRENDING_DATA.map(toOfflinePublicCard),
@@ -149,34 +142,53 @@ const App: React.FC = () => {
           tasks: [],
         };
         const storedSnapshot = readStoredSnapshot(authUser?.id || null);
-        const resolvedData = resolveLoadFallback({
+        const liveSnapshot = {
+          cards: cardsRef.current,
+          trending: trendingRef.current,
+          collections: collectionsRef.current,
+          tasks: tasksRef.current,
+        };
+        const baselineSnapshot = lastSuccessfulDataRef.current || storedSnapshot || liveSnapshot;
+
+        const [cardsResult, trendingResult] = await Promise.allSettled([
+          withTimeout(db.getKnowledgeCards(), DATA_LOAD_TIMEOUT_MS, []),
+          withTimeout(db.getTrendingCards(), DATA_LOAD_TIMEOUT_MS, []),
+        ]);
+
+        if (requestId !== loadRequestIdRef.current) return;
+
+        const dbCards = getSettledValue(cardsResult, [], 'Loading knowledge cards');
+        const dbTrending = getSettledValue(trendingResult, [], 'Loading trending cards');
+        const primaryResolved = resolveLoadFallback({
           cards: dbCards,
           trending: dbTrending,
-          collections: dbCollections,
-          tasks: dbTasks,
+          collections: [],
+          tasks: [],
           authUser,
           offlineSnapshot,
-          previousSnapshot: lastSuccessfulDataRef.current,
+          previousSnapshot: baselineSnapshot,
           storedSnapshot,
         });
+        const primarySnapshot = mergeLoadedSnapshot(baselineSnapshot, {
+          cards: primaryResolved.cards,
+          trending: primaryResolved.trending,
+        });
 
-        setCards(resolvedData.cards);
-        setTrending(resolvedData.trending);
-        setCollections(resolvedData.collections);
-        setTasks(resolvedData.tasks);
-        setChatScope({ cards: resolvedData.cards, title: '全部知识库' });
+        setCards(primarySnapshot.cards);
+        setTrending(primarySnapshot.trending);
+        setCollections(primarySnapshot.collections);
+        setTasks(primarySnapshot.tasks);
+        setChatScope({ cards: primarySnapshot.cards, title: '全部知识库' });
 
-        if (!resolvedData.usedFallback) {
-          lastSuccessfulDataRef.current = {
-            cards: resolvedData.cards,
-            trending: resolvedData.trending,
-            collections: resolvedData.collections,
-            tasks: resolvedData.tasks,
-          };
+        if (!primaryResolved.usedFallback) {
+          lastSuccessfulDataRef.current = primarySnapshot;
           writeStoredSnapshot(authUser?.id || null, lastSuccessfulDataRef.current);
         }
 
-        if (resolvedData.usedFallback && isSupabaseConnected()) {
+        hasCompletedInitialLoadRef.current = true;
+        if (showOverlay) setIsLoading(false);
+
+        if (primaryResolved.usedFallback && isSupabaseConnected()) {
           setLoadNotice(
             lastSuccessfulDataRef.current || storedSnapshot
               ? '部分云端数据加载超时，当前继续显示最近一次成功加载的数据。可以稍后刷新重试。'
@@ -184,6 +196,32 @@ const App: React.FC = () => {
                 ? '部分云端数据加载超时，当前未能加载你的私有知识卡片。请稍后刷新重试。'
                 : '部分云端数据加载超时，当前已回退到内置公开内容。可以稍后刷新重试。'
           );
+        }
+
+        const [collectionsResult, tasksResult] = await Promise.allSettled([
+          withTimeout(db.getCollections(), DATA_LOAD_TIMEOUT_MS, []),
+          withTimeout(authUser ? db.getTasks() : Promise.resolve([]), DATA_LOAD_TIMEOUT_MS, []),
+        ]);
+
+        if (requestId !== loadRequestIdRef.current) return;
+
+        const dbCollections = getSettledValue(collectionsResult, [], 'Loading collections');
+        const dbTasks = getSettledValue(tasksResult, [], 'Loading tasks');
+        const secondarySnapshot = mergeLoadedSnapshot(primarySnapshot, {
+          collections: dbCollections,
+          tasks: dbTasks,
+        });
+
+        setCollections(secondarySnapshot.collections);
+        setTasks(secondarySnapshot.tasks);
+
+        if (
+          secondarySnapshot.cards.length > 0 ||
+          secondarySnapshot.trending.length > 0 ||
+          secondarySnapshot.collections.length > 0
+        ) {
+          lastSuccessfulDataRef.current = secondarySnapshot;
+          writeStoredSnapshot(authUser?.id || null, secondarySnapshot);
         }
         return;
       }
@@ -200,6 +238,7 @@ const App: React.FC = () => {
         collections: INITIAL_COLLECTIONS.map(toOfflinePublicCollection),
         tasks: [],
       };
+      writeStoredSnapshot(null, lastSuccessfulDataRef.current);
     } catch (error) {
       console.error('Failed to load app data:', error);
       setLoadNotice('云端数据加载失败，当前已回退为空状态。请稍后刷新重试。');
@@ -296,6 +335,10 @@ const App: React.FC = () => {
   useEffect(() => {
     trendingRef.current = trending;
   }, [trending]);
+
+  useEffect(() => {
+    collectionsRef.current = collections;
+  }, [collections]);
 
   const inferCategoryTag = (text: string) => {
     const t = (text || '').toLowerCase();
