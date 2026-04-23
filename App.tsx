@@ -28,6 +28,7 @@ import {
 import { removeAliasIdsFromCollections } from './shared/collectionAliases.js';
 import { normalizeCollectionName, shouldSubmitCollectionName } from './shared/collectionCreation.js';
 import { getSettledValue } from './shared/settledLoad.js';
+import { withTimeout } from './shared/asyncTimeout.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 
@@ -38,6 +39,7 @@ const AUTO_MONITOR_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000;
 const ENABLE_CLIENT_MONITORING = false;
 const DEFAULT_MONITOR_KEYWORDS = ['AI', 'AIGC', '人工智能', '大模型', 'LLM', 'GPT', 'Claude'];
 const OFFLINE_PUBLIC_OWNER_ID = 'offline-public';
+const DATA_LOAD_TIMEOUT_MS = 12000;
 
 const toOfflinePublicCard = (card: KnowledgeCard): KnowledgeCard => ({
   ...card,
@@ -63,6 +65,7 @@ const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState<ViewMode>('dashboard');
+  const [loadNotice, setLoadNotice] = useState('');
 
   // Loading State
   const [isLoading, setIsLoading] = useState(true);
@@ -106,13 +109,14 @@ const App: React.FC = () => {
 
   const loadData = async (authUser: AuthUser | null) => {
     setIsLoading(true);
+    setLoadNotice('');
     try {
       if (isSupabaseConnected()) {
         const [cardsResult, trendingResult, collectionsResult, tasksResult] = await Promise.allSettled([
-          db.getKnowledgeCards(),
-          db.getTrendingCards(),
-          db.getCollections(),
-          authUser ? db.getTasks() : Promise.resolve([])
+          withTimeout(db.getKnowledgeCards(), DATA_LOAD_TIMEOUT_MS, []),
+          withTimeout(db.getTrendingCards(), DATA_LOAD_TIMEOUT_MS, []),
+          withTimeout(db.getCollections(), DATA_LOAD_TIMEOUT_MS, []),
+          withTimeout(authUser ? db.getTasks() : Promise.resolve([]), DATA_LOAD_TIMEOUT_MS, [])
         ]);
 
         const dbCards = getSettledValue(cardsResult, [], 'Loading knowledge cards');
@@ -125,6 +129,10 @@ const App: React.FC = () => {
         setCollections(dbCollections);
         setTasks(dbTasks);
         setChatScope({ cards: dbCards, title: '全部知识库' });
+
+        if (dbCards.length === 0 && dbTrending.length === 0 && dbCollections.length === 0 && isSupabaseConnected()) {
+          setLoadNotice('部分云端数据加载超时，页面已回退为空状态。可以稍后刷新重试。');
+        }
         return;
       }
 
@@ -136,6 +144,7 @@ const App: React.FC = () => {
       setChatScope({ cards: offlineCards, title: '全部知识库' });
     } catch (error) {
       console.error('Failed to load app data:', error);
+      setLoadNotice('云端数据加载失败，当前已回退为空状态。请稍后刷新重试。');
       setCards([]);
       setTrending([]);
       setCollections([]);
@@ -1044,6 +1053,12 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[100] bg-[#0a0f1a]/95 flex flex-col items-center justify-center">
           <Loader2 className="w-10 h-10 text-indigo-400 animate-spin mb-4" />
           <p className="text-gray-400 text-sm">正在加载你的知识库...</p>
+        </div>
+      )}
+
+      {loadNotice && !isLoading && (
+        <div className="fixed top-4 left-1/2 z-[90] -translate-x-1/2 rounded-xl border border-amber-400/20 bg-amber-500/10 px-4 py-2 text-sm text-amber-100 backdrop-blur">
+          {loadNotice}
         </div>
       )}
 
