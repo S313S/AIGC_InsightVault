@@ -29,6 +29,7 @@ import { removeAliasIdsFromCollections } from './shared/collectionAliases.js';
 import { normalizeCollectionName, shouldSubmitCollectionName } from './shared/collectionCreation.js';
 import { getSettledValue } from './shared/settledLoad.js';
 import { withTimeout } from './shared/asyncTimeout.js';
+import { resolveLoadFallback } from './shared/loadFallback.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 
@@ -40,6 +41,13 @@ const ENABLE_CLIENT_MONITORING = false;
 const DEFAULT_MONITOR_KEYWORDS = ['AI', 'AIGC', '人工智能', '大模型', 'LLM', 'GPT', 'Claude'];
 const OFFLINE_PUBLIC_OWNER_ID = 'offline-public';
 const DATA_LOAD_TIMEOUT_MS = 12000;
+
+type LoadedSnapshot = {
+  cards: KnowledgeCard[];
+  trending: KnowledgeCard[];
+  collections: Collection[];
+  tasks: TrackingTask[];
+};
 
 const toOfflinePublicCard = (card: KnowledgeCard): KnowledgeCard => ({
   ...card,
@@ -73,6 +81,7 @@ const App: React.FC = () => {
   const tasksRef = useRef<TrackingTask[]>([]);
   const cardsRef = useRef<KnowledgeCard[]>([]);
   const trendingRef = useRef<KnowledgeCard[]>([]);
+  const lastSuccessfulDataRef = useRef<LoadedSnapshot | null>(null);
 
   // Chat Context State
   const [chatScope, setChatScope] = useState<{ cards: KnowledgeCard[], title: string }>({
@@ -123,15 +132,42 @@ const App: React.FC = () => {
         const dbTrending = getSettledValue(trendingResult, [], 'Loading trending cards');
         const dbCollections = getSettledValue(collectionsResult, [], 'Loading collections');
         const dbTasks = getSettledValue(tasksResult, [], 'Loading tasks');
+        const offlineSnapshot = {
+          cards: INITIAL_DATA.map(toOfflinePublicCard),
+          trending: TRENDING_DATA.map(toOfflinePublicCard),
+          collections: INITIAL_COLLECTIONS.map(toOfflinePublicCollection),
+          tasks: [],
+        };
+        const resolvedData = resolveLoadFallback({
+          cards: dbCards,
+          trending: dbTrending,
+          collections: dbCollections,
+          tasks: dbTasks,
+          offlineSnapshot,
+          previousSnapshot: lastSuccessfulDataRef.current,
+        });
 
-        setCards(dbCards);
-        setTrending(dbTrending);
-        setCollections(dbCollections);
-        setTasks(dbTasks);
-        setChatScope({ cards: dbCards, title: '全部知识库' });
+        setCards(resolvedData.cards);
+        setTrending(resolvedData.trending);
+        setCollections(resolvedData.collections);
+        setTasks(resolvedData.tasks);
+        setChatScope({ cards: resolvedData.cards, title: '全部知识库' });
 
-        if (dbCards.length === 0 && dbTrending.length === 0 && dbCollections.length === 0 && isSupabaseConnected()) {
-          setLoadNotice('部分云端数据加载超时，页面已回退为空状态。可以稍后刷新重试。');
+        if (!resolvedData.usedFallback) {
+          lastSuccessfulDataRef.current = {
+            cards: resolvedData.cards,
+            trending: resolvedData.trending,
+            collections: resolvedData.collections,
+            tasks: resolvedData.tasks,
+          };
+        }
+
+        if (resolvedData.usedFallback && isSupabaseConnected()) {
+          setLoadNotice(
+            lastSuccessfulDataRef.current
+              ? '部分云端数据加载超时，当前继续显示最近一次成功加载的数据。可以稍后刷新重试。'
+              : '部分云端数据加载超时，当前已回退到内置公开内容。可以稍后刷新重试。'
+          );
         }
         return;
       }
@@ -142,6 +178,12 @@ const App: React.FC = () => {
       setCollections(INITIAL_COLLECTIONS.map(toOfflinePublicCollection));
       setTasks([]);
       setChatScope({ cards: offlineCards, title: '全部知识库' });
+      lastSuccessfulDataRef.current = {
+        cards: offlineCards,
+        trending: TRENDING_DATA.map(toOfflinePublicCard),
+        collections: INITIAL_COLLECTIONS.map(toOfflinePublicCollection),
+        tasks: [],
+      };
     } catch (error) {
       console.error('Failed to load app data:', error);
       setLoadNotice('云端数据加载失败，当前已回退为空状态。请稍后刷新重试。');
