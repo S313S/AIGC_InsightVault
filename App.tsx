@@ -31,6 +31,7 @@ import { getSettledValue } from './shared/settledLoad.js';
 import { withTimeout } from './shared/asyncTimeout.js';
 import { resolveLoadFallback } from './shared/loadFallback.js';
 import { shouldReloadOnAuthEvent } from './shared/authEvents.js';
+import { resolveCurrentAuthUser } from './shared/authState.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 
@@ -84,6 +85,7 @@ const App: React.FC = () => {
   const trendingRef = useRef<KnowledgeCard[]>([]);
   const lastSuccessfulDataRef = useRef<LoadedSnapshot | null>(null);
   const hasCompletedInitialLoadRef = useRef(false);
+  const currentUserRef = useRef<AuthUser | null>(null);
 
   // Chat Context State
   const [chatScope, setChatScope] = useState<{ cards: KnowledgeCard[], title: string }>({
@@ -210,27 +212,60 @@ const App: React.FC = () => {
     let active = true;
 
     const hydrate = async () => {
-      const authUser = isSupabaseConnected()
-        ? await withTimeout(auth.getCurrentAuthUser(), DATA_LOAD_TIMEOUT_MS, null)
+      const session = isSupabaseConnected()
+        ? await withTimeout(auth.getSession(), DATA_LOAD_TIMEOUT_MS, null)
         : null;
+      const authUser = resolveCurrentAuthUser({
+        session,
+        fetchedUser: null,
+        previousUser: currentUserRef.current,
+      });
       if (!active) return;
-      if (isSupabaseConnected() && !authUser) {
-        setLoadNotice('登录状态读取超时，当前按游客模式继续加载。可以稍后再试登录。');
-      }
       setCurrentUser(authUser);
+      currentUserRef.current = authUser;
       await loadData(authUser, { showOverlay: true, preserveNotice: true });
+
+      if (!session?.user) return;
+
+      const enrichedUser = await withTimeout(auth.getCurrentAuthUser(), DATA_LOAD_TIMEOUT_MS, authUser);
+      if (!active) return;
+
+      const resolvedUser = resolveCurrentAuthUser({
+        session,
+        fetchedUser: enrichedUser,
+        previousUser: currentUserRef.current,
+      });
+      setCurrentUser(resolvedUser);
+      currentUserRef.current = resolvedUser;
     };
 
     hydrate();
 
     const subscription = auth.onAuthStateChange(async (event, session) => {
       if (!shouldReloadOnAuthEvent(event)) return;
-      const authUser = session
-        ? await withTimeout(auth.getCurrentAuthUser(), DATA_LOAD_TIMEOUT_MS, null)
-        : null;
+
+      const authUser = resolveCurrentAuthUser({
+        session,
+        fetchedUser: null,
+        previousUser: currentUserRef.current,
+      });
       if (!active) return;
       setCurrentUser(authUser);
+      currentUserRef.current = authUser;
       await loadData(authUser, { showOverlay: false });
+
+      if (!session?.user) return;
+
+      const enrichedUser = await withTimeout(auth.getCurrentAuthUser(), DATA_LOAD_TIMEOUT_MS, authUser);
+      if (!active) return;
+
+      const resolvedUser = resolveCurrentAuthUser({
+        session,
+        fetchedUser: enrichedUser,
+        previousUser: currentUserRef.current,
+      });
+      setCurrentUser(resolvedUser);
+      currentUserRef.current = resolvedUser;
     });
 
     return () => {
@@ -242,6 +277,10 @@ const App: React.FC = () => {
   useEffect(() => {
     tasksRef.current = tasks;
   }, [tasks]);
+
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
 
   useEffect(() => {
     cardsRef.current = cards;
@@ -438,12 +477,14 @@ const App: React.FC = () => {
 
     const authUser = result.user || await auth.getCurrentAuthUser();
     setCurrentUser(authUser);
+    currentUserRef.current = authUser;
     return null;
   };
 
   const handleLogout = async () => {
     await auth.signOut();
     setCurrentUser(null);
+    currentUserRef.current = null;
     setShowSettings(false);
     setSelectedCard(null);
     setIsSidebarOpen(false);

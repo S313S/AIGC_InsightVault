@@ -3,6 +3,7 @@ import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 import { supabase, isSupabaseConnected } from './supabaseClient';
 import type { AuthResult, AuthUser } from '../types';
 import { normalizeUsername, usernameToSyntheticEmail } from '../shared/authAccess.js';
+import { toSessionAuthUser } from '../shared/authState.js';
 import { buildSupabaseStorageKeys, mapAuthErrorMessage } from '../shared/authUi.js';
 
 const SIGN_IN_TIMEOUT_MS = 12000;
@@ -44,6 +45,11 @@ export const getCurrentAuthUser = async (): Promise<AuthUser | null> => {
   if (!user) return null;
   const profile = await getProfile(user.id);
   return profileToAuthUser(user, profile);
+};
+
+export const getSessionAuthUser = async (): Promise<AuthUser | null> => {
+  const session = await getSession();
+  return toSessionAuthUser(session?.user);
 };
 
 export const signInWithUsername = async (username: string, password: string): Promise<AuthResult> => {
