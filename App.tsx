@@ -160,8 +160,13 @@ const App: React.FC = () => {
     let active = true;
 
     const hydrate = async () => {
-      const authUser = isSupabaseConnected() ? await auth.getCurrentAuthUser() : null;
+      const authUser = isSupabaseConnected()
+        ? await withTimeout(auth.getCurrentAuthUser(), DATA_LOAD_TIMEOUT_MS, null)
+        : null;
       if (!active) return;
+      if (isSupabaseConnected() && !authUser) {
+        setLoadNotice('登录状态读取超时，当前按游客模式继续加载。可以稍后再试登录。');
+      }
       setCurrentUser(authUser);
       await loadData(authUser);
     };
@@ -169,7 +174,9 @@ const App: React.FC = () => {
     hydrate();
 
     const subscription = auth.onAuthStateChange(async (_event, session) => {
-      const authUser = session ? await auth.getCurrentAuthUser() : null;
+      const authUser = session
+        ? await withTimeout(auth.getCurrentAuthUser(), DATA_LOAD_TIMEOUT_MS, null)
+        : null;
       if (!active) return;
       setCurrentUser(authUser);
       await loadData(authUser);
