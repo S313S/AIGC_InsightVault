@@ -386,6 +386,11 @@ const App: React.FC = () => {
     await loadData(null);
   };
 
+  const handleClearLocalAuthState = () => {
+    auth.clearLocalAuthState();
+    setCurrentUser(null);
+  };
+
   const { displayCollections, collectionAliasMap } = useMemo(() => {
     const groups = new Map<string, { canonical: Collection; ids: string[] }>();
 
@@ -1603,6 +1608,7 @@ const App: React.FC = () => {
         <LoginModal
           onClose={() => setIsLoginModalOpen(false)}
           onSubmit={handleLoginSubmit}
+          onClearLocalAuthState={handleClearLocalAuthState}
         />
       )}
     </div>

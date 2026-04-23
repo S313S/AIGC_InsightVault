@@ -3,6 +3,9 @@ import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 import { supabase, isSupabaseConnected } from './supabaseClient';
 import type { AuthResult, AuthUser } from '../types';
 import { normalizeUsername, usernameToSyntheticEmail } from '../shared/authAccess.js';
+import { buildSupabaseStorageKeys, mapAuthErrorMessage } from '../shared/authUi.js';
+
+const SIGN_IN_TIMEOUT_MS = 12000;
 
 const profileToAuthUser = (user: User, profile?: { username?: string | null; display_name?: string | null } | null): AuthUser => {
   const fallbackUsername =
@@ -54,17 +57,40 @@ export const signInWithUsername = async (username: string, password: string): Pr
     return { ok: false, error: '请输入账号名和密码。' };
   }
 
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+  try {
+    const signInPromise = supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-  if (error || !data.user) {
-    return { ok: false, error: '账号名或密码错误。' };
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      const timer = window.setTimeout(() => {
+        window.clearTimeout(timer);
+        reject(new Error('Login timeout'));
+      }, SIGN_IN_TIMEOUT_MS);
+    });
+
+    const { data, error } = await Promise.race([signInPromise, timeoutPromise]);
+
+    if (error || !data.user) {
+      return { ok: false, error: mapAuthErrorMessage(error) };
+    }
+
+    const profile = await getProfile(data.user.id);
+    return { ok: true, user: profileToAuthUser(data.user, profile) };
+  } catch (error) {
+    return { ok: false, error: mapAuthErrorMessage(error) };
   }
+};
 
-  const profile = await getProfile(data.user.id);
-  return { ok: true, user: profileToAuthUser(data.user, profile) };
+export const clearLocalAuthState = (): void => {
+  if (typeof window === 'undefined') return;
+
+  const keys = buildSupabaseStorageKeys(import.meta.env.VITE_SUPABASE_URL);
+  for (const key of keys) {
+    window.localStorage.removeItem(key);
+    window.sessionStorage.removeItem(key);
+  }
 };
 
 export const signOut = async (): Promise<void> => {

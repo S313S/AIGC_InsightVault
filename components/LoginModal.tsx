@@ -5,28 +5,47 @@ import { Loader2, Shield, X } from './Icons';
 interface LoginModalProps {
   onClose: () => void;
   onSubmit: (username: string, password: string) => Promise<string | null>;
+  onClearLocalAuthState: () => void;
 }
 
-export const LoginModal: React.FC<LoginModalProps> = ({ onClose, onSubmit }) => {
+export const LoginModal: React.FC<LoginModalProps> = ({ onClose, onSubmit, onClearLocalAuthState }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [messageTone, setMessageTone] = useState<'error' | 'info'>('error');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isClearingState, setIsClearingState] = useState(false);
 
   const handleSubmit = async () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
-    setError('');
+    setMessage('');
+    setMessageTone('error');
 
     try {
       const nextError = await onSubmit(username, password);
       if (nextError) {
-        setError(nextError);
+        setMessage(nextError);
+        setMessageTone('error');
         return;
       }
       onClose();
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleClearLocalAuthState = () => {
+    if (isClearingState) return;
+    setIsClearingState(true);
+    setMessage('');
+
+    try {
+      onClearLocalAuthState();
+      setMessage('已清除本地登录状态，请重新尝试登录。');
+      setMessageTone('info');
+    } finally {
+      setIsClearingState(false);
     }
   };
 
@@ -75,7 +94,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onClose, onSubmit }) => 
               className="w-full rounded-lg border border-[#1e3a5f]/50 bg-[#0a0f1a] px-3 py-2 text-sm text-gray-100 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30"
             />
           </div>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {message && (
+            <p className={`text-sm ${messageTone === 'error' ? 'text-red-400' : 'text-sky-300'}`}>
+              {message}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={handleClearLocalAuthState}
+            disabled={isSubmitting || isClearingState}
+            className="text-left text-xs text-indigo-300 transition-colors hover:text-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            清除本地登录状态并重试
+          </button>
           <button
             onClick={handleSubmit}
             disabled={isSubmitting}
