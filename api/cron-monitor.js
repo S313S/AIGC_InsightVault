@@ -1005,8 +1005,8 @@ export default async function handler(req, res) {
 
     const { data: keywordRows, error: keywordError } = await supabase
       .from('quality_keywords')
-      .eq('owner_id', ownerId)
-      .select('keyword, type');
+      .select('keyword, type')
+      .eq('owner_id', ownerId);
     if (keywordError) {
       console.warn('[cron-monitor] failed to read quality_keywords:', keywordError.message || keywordError);
     }
