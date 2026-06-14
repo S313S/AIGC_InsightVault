@@ -5,6 +5,7 @@ import {
   buildSnapshotStorageKey,
   deserializeSnapshot,
   serializeSnapshot,
+  shouldPersistSnapshot,
 } from '../shared/dataSnapshot.js';
 
 test('buildSnapshotStorageKey namespaces authenticated users', () => {
@@ -30,4 +31,36 @@ test('serializeSnapshot and deserializeSnapshot round-trip snapshot data', () =>
 test('deserializeSnapshot rejects invalid payloads', () => {
   assert.equal(deserializeSnapshot('not-json'), null);
   assert.equal(deserializeSnapshot(JSON.stringify({ cards: 'bad' })), null);
+});
+
+test('shouldPersistSnapshot allows authenticated post-load snapshots', () => {
+  const snapshot = {
+    cards: [{ id: 'card-1', ownerId: 'user-1', collections: ['collection-1'] }],
+    trending: [],
+    collections: [{ id: 'collection-1', ownerId: 'user-1' }],
+    tasks: [],
+  };
+
+  assert.equal(shouldPersistSnapshot({
+    snapshot,
+    userId: 'user-1',
+    hasCompletedInitialLoad: true,
+    isLoading: false,
+  }), true);
+});
+
+test('shouldPersistSnapshot avoids writing private data to guest cache', () => {
+  const snapshot = {
+    cards: [{ id: 'card-1', ownerId: 'user-1', isPublic: false }],
+    trending: [],
+    collections: [{ id: 'collection-1', ownerId: 'user-1', isPublic: false }],
+    tasks: [],
+  };
+
+  assert.equal(shouldPersistSnapshot({
+    snapshot,
+    userId: null,
+    hasCompletedInitialLoad: true,
+    isLoading: false,
+  }), false);
 });

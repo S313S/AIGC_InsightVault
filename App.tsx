@@ -32,7 +32,7 @@ import { withTimeout } from './shared/asyncTimeout.js';
 import { resolveLoadFallback } from './shared/loadFallback.js';
 import { shouldReloadOnAuthEvent } from './shared/authEvents.js';
 import { resolveCurrentAuthUser } from './shared/authState.js';
-import { readStoredSnapshot, writeStoredSnapshot } from './shared/dataSnapshot.js';
+import { readStoredSnapshot, shouldPersistSnapshot, writeStoredSnapshot } from './shared/dataSnapshot.js';
 import { mergeLoadedSnapshot } from './shared/loadMerge.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
@@ -339,6 +339,21 @@ const App: React.FC = () => {
   useEffect(() => {
     collectionsRef.current = collections;
   }, [collections]);
+
+  useEffect(() => {
+    const snapshot = { cards, trending, collections, tasks };
+    if (!shouldPersistSnapshot({
+      snapshot,
+      userId: currentUser?.id || null,
+      hasCompletedInitialLoad: hasCompletedInitialLoadRef.current,
+      isLoading,
+    })) {
+      return;
+    }
+
+    lastSuccessfulDataRef.current = snapshot;
+    writeStoredSnapshot(currentUser?.id || null, snapshot);
+  }, [cards, trending, collections, tasks, currentUser?.id, isLoading]);
 
   const inferCategoryTag = (text: string) => {
     const t = (text || '').toLowerCase();

@@ -4,6 +4,7 @@ import { Flame, ArrowRight, Save, ExternalLink, Activity, LayoutGrid, Clock, Hea
 import { hasPromptEvidence } from '../shared/promptTagging.js';
 import { fallbackCoverFromSeed, isRenderableCoverUrl, normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
 import { hasXiaohongshuXsecToken, isXiaohongshuUrl, normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
+import { getSourceUrlOpenBlockReason, resolveOpenableSourceUrl } from '../shared/sourceUrls.js';
 
 interface DashboardViewProps {
     tasks: TrackingTask[];
@@ -110,7 +111,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     };
 
     const openSourceUrl = (url: string) => {
-        const safeUrl = normalizeXiaohongshuSourceUrl(url) || url;
+        const safeUrl = resolveOpenableSourceUrl(normalizeXiaohongshuSourceUrl(url) || url);
+        const blockReason = getSourceUrlOpenBlockReason(url);
+        if (blockReason) {
+            window.alert(blockReason);
+            return;
+        }
         if (!safeUrl) return;
         if (isXiaohongshuUrl(safeUrl) && !hasXiaohongshuXsecToken(safeUrl)) {
             window.alert('该小红书链接缺少 xsec_token，可能会 404。请到「设置 → XHS Token 配置」补全后再打开。');

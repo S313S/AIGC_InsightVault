@@ -23,6 +23,32 @@ export const deserializeSnapshot = (value) => {
   }
 };
 
+const snapshotArrays = (snapshot) => [
+  snapshot?.cards,
+  snapshot?.trending,
+  snapshot?.collections,
+  snapshot?.tasks,
+].filter(Array.isArray);
+
+const snapshotHasData = (snapshot) =>
+  snapshotArrays(snapshot).some((items) => items.length > 0);
+
+const snapshotHasPrivateData = (snapshot) =>
+  snapshotArrays(snapshot).some((items) =>
+    items.some((item) => item?.ownerId && item?.isPublic !== true)
+  );
+
+export const shouldPersistSnapshot = ({
+  snapshot,
+  userId,
+  hasCompletedInitialLoad,
+  isLoading,
+}) => {
+  if (!hasCompletedInitialLoad || isLoading || !snapshotHasData(snapshot)) return false;
+  if (!userId && snapshotHasPrivateData(snapshot)) return false;
+  return true;
+};
+
 export const readStoredSnapshot = (userId) => {
   if (typeof window === 'undefined') return null;
   return deserializeSnapshot(window.localStorage.getItem(buildSnapshotStorageKey(userId)));

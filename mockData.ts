@@ -9,7 +9,7 @@ export const INITIAL_DATA: KnowledgeCard[] = [
   {
     id: '1',
     title: 'Midjourney v6.1 Photorealism Guide',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Twitter,
     author: 'AI_Artist_X',
     date: '2025-01-20',
@@ -33,7 +33,7 @@ export const INITIAL_DATA: KnowledgeCard[] = [
   {
     id: '2',
     title: 'Claude Code: New Vibe Coding Capabilities',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Xiaohongshu,
     author: 'TechDaily',
     date: '2025-01-22',
@@ -54,7 +54,7 @@ export const INITIAL_DATA: KnowledgeCard[] = [
   {
     id: '3',
     title: 'VEO3 Video Generation consistent characters',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Twitter,
     author: 'VideoAI_Pro',
     date: '2025-01-23',
@@ -77,7 +77,7 @@ export const INITIAL_DATA: KnowledgeCard[] = [
   {
     id: '4',
     title: 'Top 10 AI Design Tools for 2026',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Manual,
     author: 'DesignWeekly',
     date: '2025-01-24',
@@ -99,7 +99,7 @@ export const INITIAL_DATA: KnowledgeCard[] = [
   {
     id: '5',
     title: 'DeepSeek-R1 vs OpenAI o1: Coding Benchmark',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Twitter,
     author: 'Code_Benchmarks',
     date: '2025-01-25',
@@ -119,7 +119,7 @@ export const INITIAL_DATA: KnowledgeCard[] = [
   {
     id: '6',
     title: 'ComfyUI Flux Workflow for Consistent IP',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Xiaohongshu,
     author: 'Comfy_Wizard',
     date: '2025-01-26',
@@ -139,7 +139,7 @@ export const INITIAL_DATA: KnowledgeCard[] = [
   {
     id: '7',
     title: 'Legal Document Analysis using Gemini 2.0',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Manual,
     author: 'LegalTech_Daily',
     date: '2025-01-26',
@@ -159,7 +159,7 @@ export const INITIAL_DATA: KnowledgeCard[] = [
   {
     id: '8',
     title: 'Cinematic Lighting Prompts for Magnific AI',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Twitter,
     author: 'Visual_Director',
     date: '2025-01-27',
@@ -179,7 +179,7 @@ export const INITIAL_DATA: KnowledgeCard[] = [
   {
     id: '9',
     title: 'Building a Local RAG with Ollama & Llama 3',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Manual,
     author: 'OpenSource_Dev',
     date: '2025-01-27',
@@ -199,7 +199,7 @@ export const INITIAL_DATA: KnowledgeCard[] = [
   {
     id: '10',
     title: 'Fashion eCommerce: AI Model Swap Guide',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Xiaohongshu,
     author: 'Ecomm_AI',
     date: '2025-01-28',
@@ -219,7 +219,7 @@ export const INITIAL_DATA: KnowledgeCard[] = [
   {
     id: '11',
     title: 'Sora vs Gen-3 vs Kling: The Ultimate Showdown',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Twitter,
     author: 'Video_Benchmarker',
     date: '2025-01-28',
@@ -239,7 +239,7 @@ export const INITIAL_DATA: KnowledgeCard[] = [
   {
     id: '12',
     title: 'System Prompts for Senior Developer Persona',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Manual,
     author: 'Prompt_Engineer',
     date: '2025-01-29',
@@ -285,7 +285,7 @@ export const TRENDING_DATA: KnowledgeCard[] = [
   {
     id: 't-1',
     title: 'BREAKING: OpenAI Sora 2.0 leaked capabilities',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Twitter,
     author: 'Insider_AI',
     date: 'Just now',
@@ -299,7 +299,7 @@ export const TRENDING_DATA: KnowledgeCard[] = [
   {
     id: 't-2',
     title: 'ComfyUI New Node for ControlNet Speedup',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Xiaohongshu,
     author: 'ComfyMaster',
     date: '15m ago',
@@ -313,7 +313,7 @@ export const TRENDING_DATA: KnowledgeCard[] = [
   {
     id: 't-3',
     title: 'Runway Gen-3 Alpha Prompt Guide for VFX',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Twitter,
     author: 'Motion_Design',
     date: '1h ago',
@@ -327,7 +327,7 @@ export const TRENDING_DATA: KnowledgeCard[] = [
   {
     id: 't-4',
     title: 'Flux.1 LoRA Training: Zero to Hero',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Manual,
     author: 'Diffusers_Guy',
     date: '2h ago',
@@ -341,7 +341,7 @@ export const TRENDING_DATA: KnowledgeCard[] = [
   {
     id: 't-5',
     title: 'Cursor + Claude 3.7: The Ultimate Stack',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Twitter,
     author: 'CodeNinja',
     date: '3h ago',
@@ -355,7 +355,7 @@ export const TRENDING_DATA: KnowledgeCard[] = [
   {
     id: 't-6',
     title: 'Bolt.new vs v0.dev: Vibe Coding Battle',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Twitter,
     author: 'Frontend_Wizard',
     date: '4h ago',
@@ -369,7 +369,7 @@ export const TRENDING_DATA: KnowledgeCard[] = [
   {
     id: 't-7',
     title: 'React Agent: The Future of Vibe Coding?',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Xiaohongshu,
     author: 'JS_Lover',
     date: '6h ago',
@@ -383,7 +383,7 @@ export const TRENDING_DATA: KnowledgeCard[] = [
   {
     id: 't-8',
     title: 'Prompt Engineering for Code Generation',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Manual,
     author: 'Senior_Dev',
     date: '1d ago',
@@ -397,7 +397,7 @@ export const TRENDING_DATA: KnowledgeCard[] = [
   {
     id: 't-9',
     title: 'Midjourney --cref is a Game Changer',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Xiaohongshu,
     author: 'DesignBot',
     date: '5h ago',
@@ -411,7 +411,7 @@ export const TRENDING_DATA: KnowledgeCard[] = [
   {
     id: 't-10',
     title: 'Kling AI 1.5 Update Review',
-    sourceUrl: 'https://twitter.com/example/status/123456',
+    sourceUrl: '#',
     platform: Platform.Twitter,
     author: 'AI_Video_News',
     date: '1d ago',
