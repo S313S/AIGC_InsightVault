@@ -13,6 +13,8 @@ interface DetailModalProps {
   onUpdate: (card: KnowledgeCard) => void;
   onDelete: (id: string) => void;
   canEdit?: boolean;
+  isDetailLoading?: boolean;
+  detailError?: string;
 }
 
 const NOTE_PLACEHOLDER = `## 实验想法
@@ -22,7 +24,17 @@ const NOTE_PLACEHOLDER = `## 实验想法
 - 观察点 1
 - 观察点 2`;
 
-export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, editableCollections = [], onClose, onUpdate, onDelete, canEdit = false }) => {
+export const DetailModal: React.FC<DetailModalProps> = ({
+  card,
+  allCollections,
+  editableCollections = [],
+  onClose,
+  onUpdate,
+  onDelete,
+  canEdit = false,
+  isDetailLoading = false,
+  detailError = ''
+}) => {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [noteContent, setNoteContent] = useState('');
@@ -295,15 +307,31 @@ export const DetailModal: React.FC<DetailModalProps> = ({ card, allCollections, 
             {/* Raw Content Preview (Collapsed usually, showing snippet here) */}
             <div className="mt-6 pt-6 border-t border-[#1e3a5f]/40">
               <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">原始内容</h4>
-              <p className="text-xs text-gray-400 line-clamp-6 whitespace-pre-wrap">
-                {card.rawContent}
-              </p>
+              {isDetailLoading && !card.rawContent ? (
+                <div className="flex items-center gap-2 text-xs text-indigo-300">
+                  <Loader2 size={14} className="animate-spin" />
+                  正在加载完整内容...
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 line-clamp-6 whitespace-pre-wrap">
+                  {card.rawContent || '完整原文暂未加载。'}
+                </p>
+              )}
             </div>
           </div>
         </div>
 
         {/* Right Side: Knowledge & Prompts */}
         <div className="w-full md:w-3/5 bg-[#0d1526]/30 overflow-y-auto p-4 sm:p-6 md:p-8">
+          {(isDetailLoading || detailError) && (
+            <div className={`mb-4 rounded-lg border px-3 py-2 text-xs ${
+              detailError
+                ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+                : 'border-indigo-500/30 bg-indigo-500/10 text-indigo-200'
+            }`}>
+              {detailError || '正在补全卡片详情，列表摘要可先查看。'}
+            </div>
+          )}
 
           {/* AI Summary Section - Now First */}
           <div className="mb-8">

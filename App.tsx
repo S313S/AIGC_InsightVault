@@ -45,6 +45,7 @@ const ENABLE_CLIENT_MONITORING = false;
 const DEFAULT_MONITOR_KEYWORDS = ['AI', 'AIGC', '人工智能', '大模型', 'LLM', 'GPT', 'Claude'];
 const OFFLINE_PUBLIC_OWNER_ID = 'offline-public';
 const DATA_LOAD_TIMEOUT_MS = 12000;
+const CARD_PAGE_SIZE = 60;
 
 type LoadedSnapshot = {
   cards: KnowledgeCard[];
@@ -95,6 +96,13 @@ const preserveOnFailedLoad = <T,>(
   return undefined;
 };
 
+const showCachedSnapshotImmediately = (
+  snapshot: LoadedSnapshot,
+  applySnapshot: (snapshot: LoadedSnapshot) => void
+) => {
+  applySnapshot(snapshot);
+};
+
 const toOfflinePublicCard = (card: KnowledgeCard): KnowledgeCard => ({
   ...card,
   ownerId: OFFLINE_PUBLIC_OWNER_ID,
@@ -120,9 +128,13 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState<ViewMode>('dashboard');
   const [loadNotice, setLoadNotice] = useState('');
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
 
   // Loading State
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMoreCards, setIsLoadingMoreCards] = useState(false);
+  const [hasMoreCards, setHasMoreCards] = useState(false);
   const autoMonitoringRef = useRef(false);
   const tasksRef = useRef<TrackingTask[]>([]);
   const cardsRef = useRef<KnowledgeCard[]>([]);
@@ -132,6 +144,7 @@ const App: React.FC = () => {
   const hasCompletedInitialLoadRef = useRef(false);
   const currentUserRef = useRef<AuthUser | null>(null);
   const loadRequestIdRef = useRef(0);
+  const detailRequestIdRef = useRef(0);
 
   // Chat Context State
   const [chatScope, setChatScope] = useState<{ cards: KnowledgeCard[], title: string }>({
@@ -193,6 +206,19 @@ const App: React.FC = () => {
         const baselineSnapshot = lastSuccessfulDataRef.current || storedSnapshot || liveSnapshot;
 
         const hasBaselineData = snapshotHasAnyData(baselineSnapshot);
+        const applyLoadedSnapshot = (snapshot: LoadedSnapshot) => {
+          setCards(snapshot.cards);
+          setTrending(snapshot.trending);
+          setCollections(snapshot.collections);
+          setTasks(snapshot.tasks);
+          setChatScope({ cards: snapshot.cards, title: '全部知识库' });
+        };
+
+        if (showOverlay && hasBaselineData && baselineSnapshot) {
+          showCachedSnapshotImmediately(baselineSnapshot, applyLoadedSnapshot);
+          hasCompletedInitialLoadRef.current = true;
+          setIsLoading(false);
+        }
 
         const [cardsResult, trendingResult] = await Promise.allSettled([
           withTimeoutResult(db.getKnowledgeCards(), DATA_LOAD_TIMEOUT_MS, []),
@@ -206,6 +232,9 @@ const App: React.FC = () => {
         const dbCards = cardsLoad.value;
         const dbTrending = trendingLoad.value;
         const primaryHadFailure = !cardsLoad.ok || !trendingLoad.ok;
+        if (cardsLoad.ok) {
+          setHasMoreCards(dbCards.length >= CARD_PAGE_SIZE);
+        }
         const primaryResolved = resolveLoadFallback({
           cards: dbCards,
           trending: dbTrending,
@@ -221,11 +250,7 @@ const App: React.FC = () => {
           trending: preserveOnFailedLoad(trendingLoad, primaryResolved.trending, hasBaselineData),
         });
 
-        setCards(primarySnapshot.cards);
-        setTrending(primarySnapshot.trending);
-        setCollections(primarySnapshot.collections);
-        setTasks(primarySnapshot.tasks);
-        setChatScope({ cards: primarySnapshot.cards, title: '全部知识库' });
+        applyLoadedSnapshot(primarySnapshot);
 
         if (!primaryResolved.usedFallback) {
           lastSuccessfulDataRef.current = primarySnapshot;
@@ -290,6 +315,7 @@ const App: React.FC = () => {
       setTrending(TRENDING_DATA.map(toOfflinePublicCard));
       setCollections(INITIAL_COLLECTIONS.map(toOfflinePublicCollection));
       setTasks([]);
+      setHasMoreCards(false);
       setChatScope({ cards: offlineCards, title: '全部知识库' });
       lastSuccessfulDataRef.current = {
         cards: offlineCards,
@@ -305,6 +331,7 @@ const App: React.FC = () => {
       setTrending([]);
       setCollections([]);
       setTasks([]);
+      setHasMoreCards(false);
       setChatScope({ cards: [], title: '全部知识库' });
     } finally {
       hasCompletedInitialLoadRef.current = true;
@@ -587,10 +614,41 @@ const App: React.FC = () => {
     if (isSupabaseConnected()) {
       const dbCards = await db.getKnowledgeCards();
       setCards(dbCards);
+      setHasMoreCards(dbCards.length >= CARD_PAGE_SIZE);
       setChatScope(prev => ({ ...prev, cards: dbCards })); // Update chat scope if needed
     }
     // 离线模式下暂时无法真正保存新卡片，除非我们修改内存中的 STATE。
     // 但鉴于 saveCard 在离线时返回 false，这里主要处理在线逻辑。
+  };
+
+  const handleLoadMoreCards = async () => {
+    if (!isSupabaseConnected() || isLoadingMoreCards || !hasMoreCards) return;
+    setIsLoadingMoreCards(true);
+    try {
+      const nextCards = await db.getKnowledgeCards({
+        offset: cardsRef.current.length,
+        limit: CARD_PAGE_SIZE,
+      });
+      setHasMoreCards(nextCards.length >= CARD_PAGE_SIZE);
+      if (nextCards.length === 0) return;
+
+      setCards(prev => {
+        const seen = new Set(prev.map(card => card.id));
+        return [...prev, ...nextCards.filter(card => !seen.has(card.id))];
+      });
+      setChatScope(prev => {
+        const seen = new Set(prev.cards.map(card => card.id));
+        return {
+          ...prev,
+          cards: [...prev.cards, ...nextCards.filter(card => !seen.has(card.id))],
+        };
+      });
+    } catch (error) {
+      console.error('Failed to load more cards:', error);
+      setLoadNotice('更多知识卡片加载失败，当前内容保持不变。可以稍后重试。');
+    } finally {
+      setIsLoadingMoreCards(false);
+    }
   };
 
   const handleLoginSubmit = async (username: string, password: string): Promise<string | null> => {
@@ -611,6 +669,8 @@ const App: React.FC = () => {
     currentUserRef.current = null;
     setShowSettings(false);
     setSelectedCard(null);
+    setIsDetailLoading(false);
+    setDetailError('');
     setIsSidebarOpen(false);
     setIsSelectionMode(false);
     setSelectedCardIds(new Set());
@@ -619,6 +679,46 @@ const App: React.FC = () => {
   const handleClearLocalAuthState = () => {
     auth.clearLocalAuthState();
     setCurrentUser(null);
+  };
+
+  const syncLoadedCard = (loadedCard: KnowledgeCard) => {
+    setSelectedCard(prev => (prev?.id === loadedCard.id ? loadedCard : prev));
+    setCards(prev => prev.map(card => (card.id === loadedCard.id ? loadedCard : card)));
+    setTrending(prev => prev.map(card => (card.id === loadedCard.id ? loadedCard : card)));
+    setChatScope(prev => ({
+      ...prev,
+      cards: prev.cards.map(card => (card.id === loadedCard.id ? loadedCard : card)),
+    }));
+  };
+
+  const handleOpenCard = async (card: KnowledgeCard) => {
+    const requestId = ++detailRequestIdRef.current;
+    setSelectedCard(card);
+    setDetailError('');
+
+    if (!isSupabaseConnected() || card.isDetailLoaded) {
+      setIsDetailLoading(false);
+      return;
+    }
+
+    setIsDetailLoading(true);
+    try {
+      const detail = await db.getKnowledgeCardById(card.id);
+      if (requestId !== detailRequestIdRef.current) return;
+      if (!detail) {
+        setDetailError('完整内容暂时没有加载成功，当前显示列表摘要。');
+        return;
+      }
+      syncLoadedCard({ ...card, ...detail, isDetailLoaded: true });
+    } catch (error) {
+      if (requestId !== detailRequestIdRef.current) return;
+      console.error('Failed to load card detail:', error);
+      setDetailError('完整内容加载失败，当前显示列表摘要。');
+    } finally {
+      if (requestId === detailRequestIdRef.current) {
+        setIsDetailLoading(false);
+      }
+    }
   };
 
   const { displayCollections, collectionAliasMap } = useMemo(() => {
@@ -794,12 +894,16 @@ const App: React.FC = () => {
       if (success) {
         setCards(prev => prev.filter(c => c.id !== cardId));
         setChatScope(prev => ({ ...prev, cards: prev.cards.filter(c => c.id !== cardId) }));
+        setIsDetailLoading(false);
+        setDetailError('');
         setSelectedCard(null); // Close modal if open
       }
     } else {
       // Offline mode deletion
       setCards(prev => prev.filter(c => c.id !== cardId));
       setChatScope(prev => ({ ...prev, cards: prev.cards.filter(c => c.id !== cardId) }));
+      setIsDetailLoading(false);
+      setDetailError('');
       setSelectedCard(null);
     }
   };
@@ -1742,17 +1846,30 @@ const App: React.FC = () => {
 
               {/* Grid */}
               {filteredCards.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-12">
-                  {filteredCards.map(card => (
-                    <Card
-                      key={card.id}
-                      card={card}
-                      onClick={setSelectedCard}
-                      isSelectionMode={isSelectionMode}
-                      isSelected={selectedCardIds.has(card.id)}
-                      onToggleSelect={toggleCardSelection}
-                    />
-                  ))}
+                <div className="pb-12">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {filteredCards.map(card => (
+                      <Card
+                        key={card.id}
+                        card={card}
+                        onClick={handleOpenCard}
+                        isSelectionMode={isSelectionMode}
+                        isSelected={selectedCardIds.has(card.id)}
+                        onToggleSelect={toggleCardSelection}
+                      />
+                    ))}
+                  </div>
+                  {hasMoreCards && (
+                    <div className="mt-8 flex justify-center">
+                      <button
+                        onClick={handleLoadMoreCards}
+                        disabled={isLoadingMoreCards}
+                        className="rounded-lg border border-[#1e3a5f]/50 bg-[#0d1526]/70 px-4 py-2 text-sm font-medium text-indigo-300 transition-colors hover:bg-indigo-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isLoadingMoreCards ? '加载中...' : '加载更多'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-20">
@@ -1776,10 +1893,17 @@ const App: React.FC = () => {
           card={selectedCard}
           allCollections={displayCollections}
           editableCollections={displayCollections.filter(col => userCanMutate(col.ownerId))}
-          onClose={() => setSelectedCard(null)}
+          onClose={() => {
+            detailRequestIdRef.current += 1;
+            setSelectedCard(null);
+            setIsDetailLoading(false);
+            setDetailError('');
+          }}
           onUpdate={handleUpdateCard}
           onDelete={handleDeleteCard}
           canEdit={userCanMutate(selectedCard.ownerId)}
+          isDetailLoading={isDetailLoading}
+          detailError={detailError}
         />
       )}
 

@@ -51,6 +51,7 @@ export interface KnowledgeCard {
   tags: string[]; // e.g., "Midjourney", "Claude"
   userNotes?: string; // Markdown supported user notes
   collections?: string[]; // IDs of collections this card belongs to
+  isDetailLoaded?: boolean;
 }
 
 export interface TrackingTask {

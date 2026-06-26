@@ -17,8 +17,31 @@ import { normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
 
 // ============ 类型转换工具 ============
 
+const CARD_LIST_LIMIT = 60;
+const CARD_LIST_SELECT_FIELDS = [
+    'id',
+    'owner_id',
+    'is_public',
+    'title',
+    'source_url',
+    'platform',
+    'author',
+    'date',
+    'cover_image',
+    'metrics',
+    'content_type',
+    'ai_analysis',
+    'tags',
+    'collections',
+].join(',');
+
+type CardListOptions = {
+    limit?: number;
+    offset?: number;
+};
+
 // 将数据库行转换为前端 KnowledgeCard 类型
-const dbToCard = (row: any): KnowledgeCard => ({
+const dbToCard = (row: any, options: { isDetailLoaded?: boolean } = {}): KnowledgeCard => ({
     id: row.id,
     ownerId: row.owner_id || undefined,
     isPublic: Boolean(row.is_public),
@@ -35,6 +58,7 @@ const dbToCard = (row: any): KnowledgeCard => ({
     tags: row.tags || [],
     userNotes: row.user_notes || '',
     collections: row.collections || [],
+    isDetailLoaded: options.isDetailLoaded ?? true,
 });
 
 // 判断是否是有效的 UUID
@@ -175,13 +199,16 @@ const cardToDb = (card: KnowledgeCard, isTrending: boolean = false, skipId: bool
         cover_image: normalizeLegacyFallbackCover(card.coverImage),
         metrics: card.metrics,
         content_type: card.contentType,
-        raw_content: card.rawContent,
-        ai_analysis: card.aiAnalysis,
         tags: uniqStrings(card.tags || []),
-        user_notes: card.userNotes || '',
         collections: uniqStrings(card.collections || []),
         is_trending: isTrending,
     };
+
+    if (card.isDetailLoaded !== false) {
+        dbRow.raw_content = card.rawContent;
+        dbRow.ai_analysis = card.aiAnalysis;
+        dbRow.user_notes = card.userNotes || '';
+    }
 
     // 只有当 ID 是有效 UUID 时才包含它
     if (!skipId && isValidUUID(card.id)) {
@@ -305,21 +332,24 @@ const logWriteError = (action: string, error: any) => {
 
 // ============ 知识卡片 CRUD ============
 
-export const getKnowledgeCards = async (): Promise<KnowledgeCard[]> => {
+export const getKnowledgeCards = async (options: CardListOptions = {}): Promise<KnowledgeCard[]> => {
     if (!isSupabaseConnected() || !supabase) return [];
+    const limit = options.limit || CARD_LIST_LIMIT;
+    const offset = options.offset || 0;
 
     const { data, error } = await supabase
         .from('knowledge_cards')
-        .select('*')
+        .select(CARD_LIST_SELECT_FIELDS)
         .eq('is_trending', false)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
 
     if (error) {
         console.error('Error fetching cards:', error);
         return [];
     }
 
-    return dedupeCards((data || []).map(dbToCard));
+    return dedupeCards((data || []).map(row => dbToCard(row, { isDetailLoaded: false })));
 };
 
 export const getTrendingCards = async (): Promise<KnowledgeCard[]> => {
@@ -327,16 +357,17 @@ export const getTrendingCards = async (): Promise<KnowledgeCard[]> => {
 
     const { data, error } = await supabase
         .from('knowledge_cards')
-        .select('*')
+        .select(CARD_LIST_SELECT_FIELDS)
         .eq('is_trending', true)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(CARD_LIST_LIMIT);
 
     if (error) {
         console.error('Error fetching trending cards:', error);
         return [];
     }
 
-    const cards = dedupeCards((data || []).map(dbToCard));
+    const cards = dedupeCards((data || []).map(row => dbToCard(row, { isDetailLoaded: false })));
     const snapshotTags = cards
         .map(c => pickLatestSnapshotTag(c.tags || []))
         .filter(Boolean)
@@ -346,6 +377,23 @@ export const getTrendingCards = async (): Promise<KnowledgeCard[]> => {
 
     const latest = snapshotTags[0];
     return cards.filter(c => pickLatestSnapshotTag(c.tags || []) === latest);
+};
+
+export const getKnowledgeCardById = async (cardId: string): Promise<KnowledgeCard | null> => {
+    if (!isSupabaseConnected() || !supabase) return null;
+
+    const { data, error } = await supabase
+        .from('knowledge_cards')
+        .select('*')
+        .eq('id', cardId)
+        .single();
+
+    if (error) {
+        console.error('Error fetching card detail:', error);
+        return null;
+    }
+
+    return data ? dbToCard(data, { isDetailLoaded: true }) : null;
 };
 
 export const saveCard = async (card: KnowledgeCard, isTrending: boolean = false): Promise<boolean> => {
