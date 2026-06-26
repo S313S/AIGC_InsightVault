@@ -14,10 +14,12 @@ import {
 } from '../types';
 import { normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
 import { normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
+import { countCollectionItems } from '../shared/collectionCounts.js';
 
 // ============ 类型转换工具 ============
 
 const CARD_LIST_LIMIT = 60;
+const COLLECTION_COUNT_PAGE_SIZE = 1000;
 const CARD_LIST_SELECT_FIELDS = [
     'id',
     'owner_id',
@@ -560,6 +562,34 @@ export const getCollections = async (): Promise<Collection[]> => {
     }
 
     return (data || []).map(dbToCollection);
+};
+
+export const getCollectionItemCounts = async (): Promise<Record<string, number>> => {
+    if (!isSupabaseConnected() || !supabase) return {};
+
+    const rows: { collections?: string[] | null }[] = [];
+    let offset = 0;
+
+    while (true) {
+        const { data, error } = await supabase
+            .from('knowledge_cards')
+            .select('collections')
+            .eq('is_trending', false)
+            .range(offset, offset + COLLECTION_COUNT_PAGE_SIZE - 1);
+
+        if (error) {
+            console.error('Error fetching collection item counts:', error);
+            return {};
+        }
+
+        const page = data || [];
+        rows.push(...page);
+
+        if (page.length < COLLECTION_COUNT_PAGE_SIZE) break;
+        offset += COLLECTION_COUNT_PAGE_SIZE;
+    }
+
+    return countCollectionItems(rows);
 };
 
 export const saveCollection = async (collection: Collection): Promise<string | null> => {

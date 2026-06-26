@@ -34,6 +34,7 @@ import { resolveCurrentAuthUser } from './shared/authState.js';
 import { readStoredSnapshot, shouldPersistSnapshot, writeStoredSnapshot } from './shared/dataSnapshot.js';
 import { mergeLoadedSnapshot } from './shared/loadMerge.js';
 import { resolveLoadNotice } from './shared/loadNotice.js';
+import { applyCollectionCounts } from './shared/collectionCounts.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 
@@ -269,16 +270,22 @@ const App: React.FC = () => {
         });
         if (primaryNotice) setLoadNotice(primaryNotice);
 
-        const [collectionsResult, tasksResult] = await Promise.allSettled([
+        const [collectionsResult, collectionCountsResult, tasksResult] = await Promise.allSettled([
           withTimeoutResult(db.getCollections(), DATA_LOAD_TIMEOUT_MS, []),
+          withTimeoutResult(db.getCollectionItemCounts(), DATA_LOAD_TIMEOUT_MS, {}),
           withTimeoutResult(authUser ? db.getTasks() : Promise.resolve([]), DATA_LOAD_TIMEOUT_MS, []),
         ]);
 
         if (requestId !== loadRequestIdRef.current) return;
 
         const collectionsLoad = getLoadResult(collectionsResult, [], 'Loading collections');
+        const collectionCountsLoad = getLoadResult(collectionCountsResult, {}, 'Loading collection item counts');
         const tasksLoad = getLoadResult(tasksResult, [], 'Loading tasks');
-        const dbCollections = collectionsLoad.value;
+        const dbCollections = applyCollectionCounts(
+          collectionsLoad.value,
+          collectionCountsLoad.ok ? collectionCountsLoad.value : {},
+          primarySnapshot.collections
+        );
         const dbTasks = tasksLoad.value;
         const secondaryHadFailure = !collectionsLoad.ok || !tasksLoad.ok;
         const secondarySnapshot = mergeLoadedSnapshot(primarySnapshot, {
@@ -737,7 +744,11 @@ const App: React.FC = () => {
     const aliasMap: Record<string, string[]> = {};
     const deduped = Array.from(groups.values()).map(group => {
       aliasMap[group.canonical.id] = group.ids;
-      return group.canonical;
+      const itemCount = group.ids.reduce((sum, id) => {
+        const collection = collections.find(col => col.id === id);
+        return sum + (collection?.itemCount || 0);
+      }, 0);
+      return { ...group.canonical, itemCount };
     });
 
     return { displayCollections: deduped, collectionAliasMap: aliasMap };
@@ -745,6 +756,30 @@ const App: React.FC = () => {
 
   const getCollectionAliasIds = (collectionId: string) => {
     return collectionAliasMap[collectionId] || [collectionId];
+  };
+
+  const adjustCollectionItemCounts = (collectionIds: string[] | undefined, delta: number) => {
+    const ids = new Set((collectionIds || []).filter(Boolean));
+    if (ids.size === 0 || delta === 0) return;
+
+    setCollections(prev => prev.map(collection => (
+      ids.has(collection.id)
+        ? { ...collection, itemCount: Math.max(0, (collection.itemCount || 0) + delta) }
+        : collection
+    )));
+  };
+
+  const syncCollectionItemCountDiff = (
+    previousIds: string[] | undefined,
+    nextIds: string[] | undefined
+  ) => {
+    const previous = new Set((previousIds || []).filter(Boolean));
+    const next = new Set((nextIds || []).filter(Boolean));
+    const added = [...next].filter(id => !previous.has(id));
+    const removed = [...previous].filter(id => !next.has(id));
+
+    adjustCollectionItemCounts(added, 1);
+    adjustCollectionItemCounts(removed, -1);
   };
 
   const xhsMissingTokenItems = useMemo<XhsMissingTokenItem[]>(() => {
@@ -893,6 +928,7 @@ const App: React.FC = () => {
       const success = await db.deleteCard(cardId);
       if (success) {
         setCards(prev => prev.filter(c => c.id !== cardId));
+        adjustCollectionItemCounts(target?.collections, -1);
         setChatScope(prev => ({ ...prev, cards: prev.cards.filter(c => c.id !== cardId) }));
         setIsDetailLoading(false);
         setDetailError('');
@@ -901,6 +937,7 @@ const App: React.FC = () => {
     } else {
       // Offline mode deletion
       setCards(prev => prev.filter(c => c.id !== cardId));
+      adjustCollectionItemCounts(target?.collections, -1);
       setChatScope(prev => ({ ...prev, cards: prev.cards.filter(c => c.id !== cardId) }));
       setIsDetailLoading(false);
       setDetailError('');
@@ -921,6 +958,7 @@ const App: React.FC = () => {
     };
 
     setCards(prev => [ownedCard, ...prev]);
+    adjustCollectionItemCounts(ownedCard.collections, 1);
     if (isSupabaseConnected()) {
       await db.saveCard(ownedCard, false);
     }
@@ -1076,6 +1114,7 @@ const App: React.FC = () => {
     // Add to main cards list
     const savedCard = { ...card, id: isSupabaseConnected() ? card.id : Date.now().toString() };
     setCards(prev => [savedCard, ...prev]);
+    adjustCollectionItemCounts(savedCard.collections, 1);
     // Remove from trending list
     setTrending(prev => prev.filter(c => c.id !== card.id));
 
@@ -1103,6 +1142,11 @@ const App: React.FC = () => {
       if (!isAuthenticated) openLoginModal();
       return;
     }
+
+    const previousCard = cards.find(c => c.id === updatedCard.id)
+      || trending.find(c => c.id === updatedCard.id)
+      || selectedCard;
+    syncCollectionItemCountDiff(previousCard?.collections, updatedCard.collections);
 
     // Update selected card state
     setSelectedCard(updatedCard);
@@ -1295,9 +1339,11 @@ const App: React.FC = () => {
     const aliasIds = getCollectionAliasIds(currentCollectionId);
 
     if (window.confirm(`确定从当前收藏夹移除 ${selectedCardIds.size} 条内容吗？`)) {
+      const selectedIds = new Set(selectedCardIds);
       const updatedCards: KnowledgeCard[] = [];
-      setCards(prevCards => prevCards.map(card => {
-        if (selectedCardIds.has(card.id)) {
+      const removedCollectionIds: string[] = [];
+      const nextCards = cardsRef.current.map(card => {
+        if (selectedIds.has(card.id)) {
           const nextCollections = removeAliasIdsFromCollections(card.collections || [], aliasIds);
           if (nextCollections.length === (card.collections || []).length) {
             return card;
@@ -1307,10 +1353,14 @@ const App: React.FC = () => {
             collections: nextCollections
           };
           updatedCards.push(updated);
+          removedCollectionIds.push(...(card.collections || []).filter(id => !nextCollections.includes(id)));
           return updated;
         }
         return card;
-      }));
+      });
+
+      setCards(nextCards);
+      adjustCollectionItemCounts(removedCollectionIds, -1);
       setIsSelectionMode(false);
       setSelectedCardIds(new Set());
 
@@ -1328,7 +1378,7 @@ const App: React.FC = () => {
       return;
     }
     const updatedCards: KnowledgeCard[] = [];
-    setCards(prevCards => prevCards.map(card => {
+    const nextCards = cardsRef.current.map(card => {
       if (selectedCardIds.has(card.id)) {
         if (!userCanMutate(card.ownerId)) return card;
         const currentCollections = card.collections || [];
@@ -1339,7 +1389,12 @@ const App: React.FC = () => {
         }
       }
       return card;
-    }));
+    });
+
+    setCards(nextCards);
+    if (updatedCards.length > 0) {
+      adjustCollectionItemCounts([targetCollectionId], updatedCards.length);
+    }
     setIsAddToCollectionModalOpen(false);
     setIsSelectionMode(false);
     setSelectedCardIds(new Set());
@@ -1471,9 +1526,6 @@ const App: React.FC = () => {
 
           <div className="space-y-3">
             {displayCollections.map(col => {
-              // Calculate dynamic count
-              const realItemCount = cards.filter(c => isCardInCollection(c, col.id)).length;
-
               return (
                 <div
                   key={col.id}
@@ -1488,7 +1540,7 @@ const App: React.FC = () => {
                       {col.name}
                     </h4>
                     <span className="text-[10px] text-gray-500 font-medium">
-                      {realItemCount} 条
+                      {col.itemCount} 条
                     </span>
                   </div>
 
