@@ -27,13 +27,13 @@ import {
 } from './shared/xiaohongshuUrls.js';
 import { removeAliasIdsFromCollections } from './shared/collectionAliases.js';
 import { normalizeCollectionName, shouldSubmitCollectionName } from './shared/collectionCreation.js';
-import { getSettledValue } from './shared/settledLoad.js';
-import { withTimeout } from './shared/asyncTimeout.js';
+import { withTimeout, withTimeoutResult } from './shared/asyncTimeout.js';
 import { resolveLoadFallback } from './shared/loadFallback.js';
 import { shouldReloadOnAuthEvent } from './shared/authEvents.js';
 import { resolveCurrentAuthUser } from './shared/authState.js';
 import { readStoredSnapshot, shouldPersistSnapshot, writeStoredSnapshot } from './shared/dataSnapshot.js';
 import { mergeLoadedSnapshot } from './shared/loadMerge.js';
+import { resolveLoadNotice } from './shared/loadNotice.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 
@@ -51,6 +51,48 @@ type LoadedSnapshot = {
   trending: KnowledgeCard[];
   collections: Collection[];
   tasks: TrackingTask[];
+};
+
+type LoadResult<T> = {
+  ok: boolean;
+  value: T;
+  reason: unknown;
+};
+
+const snapshotHasAnyData = (snapshot: LoadedSnapshot | null | undefined) =>
+  Boolean(
+    snapshot &&
+    (
+      snapshot.cards.length > 0 ||
+      snapshot.trending.length > 0 ||
+      snapshot.collections.length > 0 ||
+      snapshot.tasks.length > 0
+    )
+  );
+
+const getLoadResult = <T,>(
+  result: PromiseSettledResult<LoadResult<T>>,
+  fallbackValue: T,
+  label: string
+): LoadResult<T> => {
+  if (result.status === 'fulfilled') {
+    if (!result.value.ok) {
+      console.error(`${label} failed:`, result.value.reason);
+    }
+    return result.value;
+  }
+
+  console.error(`${label} failed:`, result.reason);
+  return { ok: false, value: fallbackValue, reason: result.reason };
+};
+
+const preserveOnFailedLoad = <T,>(
+  result: LoadResult<T>,
+  nextValue: T,
+  hasPreviousData: boolean
+): T | undefined => {
+  if (result.ok || !hasPreviousData) return nextValue;
+  return undefined;
 };
 
 const toOfflinePublicCard = (card: KnowledgeCard): KnowledgeCard => ({
@@ -150,15 +192,20 @@ const App: React.FC = () => {
         };
         const baselineSnapshot = lastSuccessfulDataRef.current || storedSnapshot || liveSnapshot;
 
+        const hasBaselineData = snapshotHasAnyData(baselineSnapshot);
+
         const [cardsResult, trendingResult] = await Promise.allSettled([
-          withTimeout(db.getKnowledgeCards(), DATA_LOAD_TIMEOUT_MS, []),
-          withTimeout(db.getTrendingCards(), DATA_LOAD_TIMEOUT_MS, []),
+          withTimeoutResult(db.getKnowledgeCards(), DATA_LOAD_TIMEOUT_MS, []),
+          withTimeoutResult(db.getTrendingCards(), DATA_LOAD_TIMEOUT_MS, []),
         ]);
 
         if (requestId !== loadRequestIdRef.current) return;
 
-        const dbCards = getSettledValue(cardsResult, [], 'Loading knowledge cards');
-        const dbTrending = getSettledValue(trendingResult, [], 'Loading trending cards');
+        const cardsLoad = getLoadResult(cardsResult, [], 'Loading knowledge cards');
+        const trendingLoad = getLoadResult(trendingResult, [], 'Loading trending cards');
+        const dbCards = cardsLoad.value;
+        const dbTrending = trendingLoad.value;
+        const primaryHadFailure = !cardsLoad.ok || !trendingLoad.ok;
         const primaryResolved = resolveLoadFallback({
           cards: dbCards,
           trending: dbTrending,
@@ -170,8 +217,8 @@ const App: React.FC = () => {
           storedSnapshot,
         });
         const primarySnapshot = mergeLoadedSnapshot(baselineSnapshot, {
-          cards: primaryResolved.cards,
-          trending: primaryResolved.trending,
+          cards: preserveOnFailedLoad(cardsLoad, primaryResolved.cards, hasBaselineData),
+          trending: preserveOnFailedLoad(trendingLoad, primaryResolved.trending, hasBaselineData),
         });
 
         setCards(primarySnapshot.cards);
@@ -188,32 +235,44 @@ const App: React.FC = () => {
         hasCompletedInitialLoadRef.current = true;
         if (showOverlay) setIsLoading(false);
 
-        if (primaryResolved.usedFallback && isSupabaseConnected()) {
-          setLoadNotice(
-            lastSuccessfulDataRef.current || storedSnapshot
-              ? '部分云端数据加载超时，当前继续显示最近一次成功加载的数据。可以稍后刷新重试。'
-              : authUser
-                ? '部分云端数据加载超时，当前未能加载你的私有知识卡片。请稍后刷新重试。'
-                : '部分云端数据加载超时，当前已回退到内置公开内容。可以稍后刷新重试。'
-          );
-        }
+        const cachedSnapshotAvailable = Boolean(lastSuccessfulDataRef.current || storedSnapshot);
+        const primaryNotice = resolveLoadNotice({
+          phase: 'primary',
+          hadFailure: primaryHadFailure,
+          hasCachedSnapshot: cachedSnapshotAvailable,
+          authUser,
+        });
+        if (primaryNotice) setLoadNotice(primaryNotice);
 
         const [collectionsResult, tasksResult] = await Promise.allSettled([
-          withTimeout(db.getCollections(), DATA_LOAD_TIMEOUT_MS, []),
-          withTimeout(authUser ? db.getTasks() : Promise.resolve([]), DATA_LOAD_TIMEOUT_MS, []),
+          withTimeoutResult(db.getCollections(), DATA_LOAD_TIMEOUT_MS, []),
+          withTimeoutResult(authUser ? db.getTasks() : Promise.resolve([]), DATA_LOAD_TIMEOUT_MS, []),
         ]);
 
         if (requestId !== loadRequestIdRef.current) return;
 
-        const dbCollections = getSettledValue(collectionsResult, [], 'Loading collections');
-        const dbTasks = getSettledValue(tasksResult, [], 'Loading tasks');
+        const collectionsLoad = getLoadResult(collectionsResult, [], 'Loading collections');
+        const tasksLoad = getLoadResult(tasksResult, [], 'Loading tasks');
+        const dbCollections = collectionsLoad.value;
+        const dbTasks = tasksLoad.value;
+        const secondaryHadFailure = !collectionsLoad.ok || !tasksLoad.ok;
         const secondarySnapshot = mergeLoadedSnapshot(primarySnapshot, {
-          collections: dbCollections,
-          tasks: dbTasks,
+          collections: collectionsLoad.ok ? dbCollections : undefined,
+          tasks: tasksLoad.ok ? dbTasks : undefined,
         });
 
         setCollections(secondarySnapshot.collections);
         setTasks(secondarySnapshot.tasks);
+
+        if (secondaryHadFailure) {
+          const secondaryNotice = resolveLoadNotice({
+            phase: 'secondary',
+            hadFailure: secondaryHadFailure,
+            hasCachedSnapshot: cachedSnapshotAvailable,
+            authUser,
+          });
+          if (secondaryNotice) setLoadNotice(secondaryNotice);
+        }
 
         if (
           secondarySnapshot.cards.length > 0 ||

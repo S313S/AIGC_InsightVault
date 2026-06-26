@@ -197,7 +197,7 @@ const dbToCollection = (row: any): Collection => ({
     isPublic: Boolean(row.is_public),
     name: row.name,
     coverImage: row.cover_image || '',
-    itemCount: 0, // 将在获取后计算
+    itemCount: 0,
 });
 
 const collectionToDb = (collection: Collection, skipId: boolean = false) => {
@@ -511,39 +511,7 @@ export const getCollections = async (): Promise<Collection[]> => {
         return [];
     }
 
-    // 计算每个合集的项目数
-    const collections = (data || []).map(dbToCollection);
-
-    // 获取所有卡片来计算 itemCount
-    const { data: cards } = await supabase
-        .from('knowledge_cards')
-        .select('collections,source_url,title,author,platform,raw_content')
-        .eq('is_trending', false);
-
-    if (cards) {
-        const dedupedCollectionRefs = new Map<string, Set<string>>();
-
-        for (const row of cards) {
-            const normalizedUrl = normalizeSourceUrl(row.source_url || '');
-        const dedupeKey = normalizedUrl
-                ? `owner:${normalizeText(row.owner_id || 'public')}|url:${normalizedUrl}`
-                : `owner:${normalizeText(row.owner_id || 'public')}|meta:${normalizeText(row.platform || '')}|${normalizeText(row.title || '')}|${normalizeText(row.author || '')}|${normalizeText(row.raw_content || '').slice(0, 120)}`;
-
-            const existingRefs = dedupedCollectionRefs.get(dedupeKey) || new Set<string>();
-            for (const cid of toArray(row.collections)) {
-                if (cid) existingRefs.add(cid);
-            }
-            dedupedCollectionRefs.set(dedupeKey, existingRefs);
-        }
-
-        const dedupedCards = Array.from(dedupedCollectionRefs.values()).map(refs => Array.from(refs));
-
-        collections.forEach(col => {
-            col.itemCount = dedupedCards.filter(refs => refs.includes(col.id)).length;
-        });
-    }
-
-    return collections;
+    return (data || []).map(dbToCollection);
 };
 
 export const saveCollection = async (collection: Collection): Promise<string | null> => {

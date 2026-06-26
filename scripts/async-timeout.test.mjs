@@ -21,3 +21,14 @@ test('withTimeout returns fallback when work rejects', async () => {
   const result = await withTimeout(Promise.reject(new Error('boom')), 50, 'fallback');
   assert.equal(result, 'fallback');
 });
+
+test('withTimeoutResult reports timeout without pretending fallback is live data', async () => {
+  const { withTimeoutResult } = await import('../shared/asyncTimeout.js');
+  const never = new Promise(() => {});
+
+  const result = await withTimeoutResult(never, 20, []);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'timeout');
+  assert.deepEqual(result.value, []);
+});

@@ -36,3 +36,26 @@ test('mergeLoadedSnapshot falls back to empty arrays when previous snapshot is m
     tasks: [],
   });
 });
+
+test('mergeLoadedSnapshot preserves previous slices when a load result is omitted', () => {
+  const previous = {
+    cards: [{ id: 'old-card' }],
+    trending: [{ id: 'old-trending' }],
+    collections: [{ id: 'old-collection' }],
+    tasks: [{ id: 'old-task' }],
+  };
+
+  const merged = mergeLoadedSnapshot(previous, {
+    cards: [{ id: 'new-card' }],
+    trending: [{ id: 'new-trending' }],
+    collections: undefined,
+    tasks: undefined,
+  });
+
+  assert.deepEqual(merged, {
+    cards: [{ id: 'new-card' }],
+    trending: [{ id: 'new-trending' }],
+    collections: [{ id: 'old-collection' }],
+    tasks: [{ id: 'old-task' }],
+  });
+});
