@@ -12,6 +12,7 @@
 ![看板](docs/dashboard.png)
 -->
 - **热门数据抓取方式**
+
 1）手动导入
 <img width="2904" height="1600" alt="CleanShot 2026-08-07 at 18 34 56@2x" src="https://github.com/user-attachments/assets/c961fddf-1d6a-4f76-b8fc-81ac2fa4541e" />
       
