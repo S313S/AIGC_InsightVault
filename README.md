@@ -1,4 +1,4 @@
-# AIGC InsightVault
+<img width="2940" height="1606" alt="CleanShot 2026-08-07 at 18 32 31@2x" src="https://github.com/user-attachments/assets/f69d5d93-6652-40c6-bd47-9e47d24f0415" /># AIGC InsightVault
 
 **追踪小红书和 X 上真正在热的 AI 内容 —— 谁在说、说了什么、数据多少。**
 
@@ -13,6 +13,9 @@
      放好后把这段注释删掉。
 ![看板](docs/dashboard.png)
 -->
+
+<img width="2940" height="1606" alt="CleanShot 2026-08-07 at 18 32 31@2x" src="https://github.com/user-attachments/assets/83ffc2f3-329c-4b5d-947e-2c368bc1b454" />
+
 
 ## 它做什么
 
