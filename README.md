@@ -11,7 +11,14 @@
      放好后把这段注释删掉。
 ![看板](docs/dashboard.png)
 -->
+- **热门数据抓取方式**
+1）手动导入
+<img width="2904" height="1600" alt="CleanShot 2026-08-07 at 18 34 56@2x" src="https://github.com/user-attachments/assets/c961fddf-1d6a-4f76-b8fc-81ac2fa4541e" />
+      
+2）自动抓取
+<img width="2940" height="1602" alt="CleanShot 2026-08-07 at 18 36 44@2x" src="https://github.com/user-attachments/assets/ddb313a0-4fd0-49d9-8582-d17316a2bdfd" />
 
+- **保存有价值的帖子**
 <img width="2940" height="1606" alt="CleanShot 2026-08-07 at 18 32 31@2x" src="https://github.com/user-attachments/assets/83ffc2f3-329c-4b5d-947e-2c368bc1b454" />
 
 
