@@ -37,6 +37,7 @@ import { resolveLoadNotice } from './shared/loadNotice.js';
 import { applyCollectionCounts } from './shared/collectionCounts.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
+type CollectionLoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
 // Updated categories
 const POPULAR_TOPICS = ['All', 'Image Gen', 'Video Gen', 'Vibe Coding'];
@@ -156,6 +157,10 @@ const App: React.FC = () => {
   // Collection Selection State
   const [currentCollectionId, setCurrentCollectionId] = useState<string | null>(null);
   const [activeCollectionMenuId, setActiveCollectionMenuId] = useState<string | null>(null);
+  const [collectionCards, setCollectionCards] = useState<KnowledgeCard[]>([]);
+  const [collectionLoadStatus, setCollectionLoadStatus] = useState<CollectionLoadStatus>('idle');
+  const [collectionLoadError, setCollectionLoadError] = useState('');
+  const collectionLoadRequestIdRef = useRef(0);
 
   // Collection Creation State (Inline UI)
   const [isCreatingCollection, setIsCreatingCollection] = useState(false);
@@ -758,6 +763,37 @@ const App: React.FC = () => {
     return collectionAliasMap[collectionId] || [collectionId];
   };
 
+  const loadCollectionCards = async (collectionId: string) => {
+    const requestId = ++collectionLoadRequestIdRef.current;
+    const aliasIds = getCollectionAliasIds(collectionId);
+    setCollectionCards([]);
+    setCollectionLoadError('');
+    setCollectionLoadStatus('loading');
+
+    try {
+      const loadedCards = isSupabaseConnected()
+        ? await db.getKnowledgeCardsByCollectionIds(aliasIds)
+        : cardsRef.current.filter(card => card.collections?.some(id => aliasIds.includes(id)));
+
+      if (requestId !== collectionLoadRequestIdRef.current) return;
+      setCollectionCards(loadedCards);
+      setCollectionLoadStatus('loaded');
+    } catch (error) {
+      if (requestId !== collectionLoadRequestIdRef.current) return;
+      console.error('Failed to load collection cards:', error);
+      setCollectionLoadError('收藏夹内容加载失败，请稍后重试。');
+      setCollectionLoadStatus('error');
+    }
+  };
+
+  const closeCollectionView = () => {
+    collectionLoadRequestIdRef.current += 1;
+    setCurrentCollectionId(null);
+    setCollectionCards([]);
+    setCollectionLoadStatus('idle');
+    setCollectionLoadError('');
+  };
+
   const adjustCollectionItemCounts = (collectionIds: string[] | undefined, delta: number) => {
     const ids = new Set((collectionIds || []).filter(Boolean));
     if (ids.size === 0 || delta === 0) return;
@@ -896,7 +932,8 @@ const App: React.FC = () => {
 
   // Derived filtered data
   const filteredCards = useMemo(() => {
-    return cards.filter(card => {
+    const sourceCards = currentCollectionId ? collectionCards : cards;
+    return sourceCards.filter(card => {
       // 1. Search Filter
       const matchesSearch = card.title.toLowerCase().includes(filters.searchQuery.toLowerCase()) ||
         card.tags.some(t => t.toLowerCase().includes(filters.searchQuery.toLowerCase()));
@@ -913,7 +950,7 @@ const App: React.FC = () => {
 
       return matchesSearch && matchesTopic && matchesCollection;
     });
-  }, [cards, filters, currentCollectionId]);
+  }, [cards, collectionCards, filters, currentCollectionId]);
 
   // Delete Card Handler
   const handleDeleteCard = async (cardId: string) => {
@@ -1165,6 +1202,7 @@ const App: React.FC = () => {
   const handleCollectionClick = (collectionId: string) => {
     setActiveView('grid');
     setCurrentCollectionId(collectionId);
+    void loadCollectionCards(collectionId);
     setFilters(prev => ({ ...prev, selectedTopic: 'All' })); // Reset topic when switching collection
     setIsSidebarOpen(false);
 
@@ -1184,7 +1222,7 @@ const App: React.FC = () => {
       setChatScope({ cards, title: '全部知识库' });
     }
 
-    setCurrentCollectionId(null); // Reset collection when navigating via main menu
+    closeCollectionView(); // Reset collection when navigating via main menu
     setIsSidebarOpen(false);
     setIsSelectionMode(false);
     setSelectedCardIds(new Set());
@@ -1255,7 +1293,7 @@ const App: React.FC = () => {
     if (window.confirm("确定要删除这个收藏夹吗？其中内容不会被删除。")) {
       setCollections(prev => prev.filter(c => !aliasIds.includes(c.id)));
       if (currentCollectionId && aliasIds.includes(currentCollectionId)) {
-        setCurrentCollectionId(null);
+        closeCollectionView();
       }
 
       if (isSupabaseConnected()) {
@@ -1293,9 +1331,6 @@ const App: React.FC = () => {
   const handleChatWithCollection = (collectionId: string) => {
     const collection = displayCollections.find(c => c.id === collectionId);
     if (!collection) return;
-
-    // Filter cards belonging to this collection
-    const collectionCards = cards.filter(c => isCardInCollection(c, collectionId));
 
     // Set scope and navigate
     setChatScope({
@@ -1791,6 +1826,7 @@ const App: React.FC = () => {
                     {/* CHAT WITH COLLECTION BUTTON */}
                     <button
                       onClick={() => handleChatWithCollection(currentCollectionId)}
+                      disabled={collectionLoadStatus !== 'loaded'}
                       className="px-3 py-1.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg text-xs font-medium hover:bg-amber-500/30 flex items-center gap-1.5 transition-colors"
                     >
                       <Sparkles size={14} className="text-amber-400" />
@@ -1832,7 +1868,7 @@ const App: React.FC = () => {
                     {canManageData && <div className="w-px h-6 bg-[#1e3a5f]/50 mx-1"></div>}
 
                     <button
-                      onClick={() => setCurrentCollectionId(null)}
+                      onClick={closeCollectionView}
                       className="p-2 hover:bg-white/5 rounded-full text-gray-500 hover:text-gray-300 transition-colors"
                       title="关闭收藏夹视图"
                     >
@@ -1897,7 +1933,23 @@ const App: React.FC = () => {
               )}
 
               {/* Grid */}
-              {filteredCards.length > 0 ? (
+              {currentCollectionId && collectionLoadStatus === 'loading' ? (
+                <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                  <Loader2 className="mb-3 animate-spin text-indigo-400" size={28} />
+                  <p className="text-sm">正在加载收藏夹内容...</p>
+                </div>
+              ) : currentCollectionId && collectionLoadStatus === 'error' ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <h3 className="text-lg font-medium text-gray-200">收藏夹内容加载失败</h3>
+                  <p className="mt-2 text-sm text-gray-500">{collectionLoadError}</p>
+                  <button
+                    onClick={() => void loadCollectionCards(currentCollectionId)}
+                    className="mt-4 rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-4 py-2 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20"
+                  >
+                    重新加载
+                  </button>
+                </div>
+              ) : filteredCards.length > 0 ? (
                 <div className="pb-12">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {filteredCards.map(card => (
@@ -1911,7 +1963,7 @@ const App: React.FC = () => {
                       />
                     ))}
                   </div>
-                  {hasMoreCards && (
+                  {!currentCollectionId && hasMoreCards && (
                     <div className="mt-8 flex justify-center">
                       <button
                         onClick={handleLoadMoreCards}
@@ -1930,7 +1982,9 @@ const App: React.FC = () => {
                   </div>
                   <h3 className="text-lg font-medium text-gray-200">未找到结果</h3>
                   <p className="text-gray-500 mt-1">
-                    {currentCollectionId ? "这个收藏夹暂时为空。" : "试试调整搜索词或筛选条件。"}
+                    {currentCollectionId && collectionLoadStatus === 'loaded' && collectionCards.length === 0
+                      ? "这个收藏夹暂时为空。"
+                      : "试试调整搜索词或筛选条件。"}
                   </p>
                 </div>
               )}
