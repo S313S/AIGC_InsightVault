@@ -19,6 +19,7 @@ import { countCollectionItems } from '../shared/collectionCounts.js';
 // ============ 类型转换工具 ============
 
 const CARD_LIST_LIMIT = 60;
+const COLLECTION_CARD_PAGE_SIZE = 1000;
 const COLLECTION_COUNT_PAGE_SIZE = 1000;
 const CARD_LIST_SELECT_FIELDS = [
     'id',
@@ -352,6 +353,36 @@ export const getKnowledgeCards = async (options: CardListOptions = {}): Promise<
     }
 
     return dedupeCards((data || []).map(row => dbToCard(row, { isDetailLoaded: false })));
+};
+
+export const getKnowledgeCardsByCollectionIds = async (
+    rawCollectionIds: string[]
+): Promise<KnowledgeCard[]> => {
+    if (!isSupabaseConnected() || !supabase) return [];
+    const collectionIds = uniqStrings(rawCollectionIds);
+    if (collectionIds.length === 0) return [];
+
+    const rows: any[] = [];
+    let offset = 0;
+
+    while (true) {
+        const { data, error } = await supabase
+            .from('knowledge_cards')
+            .select(CARD_LIST_SELECT_FIELDS)
+            .eq('is_trending', false)
+            .overlaps('collections', collectionIds)
+            .order('created_at', { ascending: false })
+            .range(offset, offset + COLLECTION_CARD_PAGE_SIZE - 1);
+
+        if (error) throw error;
+
+        const page = data || [];
+        rows.push(...page);
+        if (page.length < COLLECTION_CARD_PAGE_SIZE) break;
+        offset += COLLECTION_CARD_PAGE_SIZE;
+    }
+
+    return dedupeCards(rows.map(row => dbToCard(row, { isDetailLoaded: false })));
 };
 
 export const getTrendingCards = async (): Promise<KnowledgeCard[]> => {
