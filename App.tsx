@@ -696,6 +696,7 @@ const App: React.FC = () => {
   const syncLoadedCard = (loadedCard: KnowledgeCard) => {
     setSelectedCard(prev => (prev?.id === loadedCard.id ? loadedCard : prev));
     setCards(prev => prev.map(card => (card.id === loadedCard.id ? loadedCard : card)));
+    setCollectionCards(prev => prev.map(card => (card.id === loadedCard.id ? loadedCard : card)));
     setTrending(prev => prev.map(card => (card.id === loadedCard.id ? loadedCard : card)));
     setChatScope(prev => ({
       ...prev,
@@ -954,7 +955,10 @@ const App: React.FC = () => {
 
   // Delete Card Handler
   const handleDeleteCard = async (cardId: string) => {
-    const target = cards.find(c => c.id === cardId) || trending.find(c => c.id === cardId) || selectedCard;
+    const target = cards.find(c => c.id === cardId)
+      || collectionCards.find(c => c.id === cardId)
+      || trending.find(c => c.id === cardId)
+      || selectedCard;
     if (!userCanMutate(target?.ownerId)) {
       window.alert(isAuthenticated ? '只能删除你自己的内容。' : '请先登录后再操作。');
       if (!isAuthenticated) openLoginModal();
@@ -965,6 +969,7 @@ const App: React.FC = () => {
       const success = await db.deleteCard(cardId);
       if (success) {
         setCards(prev => prev.filter(c => c.id !== cardId));
+        setCollectionCards(prev => prev.filter(c => c.id !== cardId));
         adjustCollectionItemCounts(target?.collections, -1);
         setChatScope(prev => ({ ...prev, cards: prev.cards.filter(c => c.id !== cardId) }));
         setIsDetailLoading(false);
@@ -974,6 +979,7 @@ const App: React.FC = () => {
     } else {
       // Offline mode deletion
       setCards(prev => prev.filter(c => c.id !== cardId));
+      setCollectionCards(prev => prev.filter(c => c.id !== cardId));
       adjustCollectionItemCounts(target?.collections, -1);
       setChatScope(prev => ({ ...prev, cards: prev.cards.filter(c => c.id !== cardId) }));
       setIsDetailLoading(false);
@@ -1181,18 +1187,11 @@ const App: React.FC = () => {
     }
 
     const previousCard = cards.find(c => c.id === updatedCard.id)
+      || collectionCards.find(c => c.id === updatedCard.id)
       || trending.find(c => c.id === updatedCard.id)
       || selectedCard;
     syncCollectionItemCountDiff(previousCard?.collections, updatedCard.collections);
-
-    // Update selected card state
-    setSelectedCard(updatedCard);
-
-    // Update if it's in the main vault
-    setCards(prev => prev.map(c => c.id === updatedCard.id ? updatedCard : c));
-
-    // Update if it's in the trending list
-    setTrending(prev => prev.map(c => c.id === updatedCard.id ? updatedCard : c));
+    syncLoadedCard(updatedCard);
 
     if (isSupabaseConnected()) {
       await db.updateCard(updatedCard);
@@ -1352,7 +1351,8 @@ const App: React.FC = () => {
   };
 
   const toggleCardSelection = (cardId: string) => {
-    const target = cards.find(card => card.id === cardId);
+    const target = collectionCards.find(card => card.id === cardId)
+      || cards.find(card => card.id === cardId);
     if (target && !userCanMutate(target.ownerId)) {
       return;
     }
@@ -1376,8 +1376,8 @@ const App: React.FC = () => {
     if (window.confirm(`确定从当前收藏夹移除 ${selectedCardIds.size} 条内容吗？`)) {
       const selectedIds = new Set(selectedCardIds);
       const updatedCards: KnowledgeCard[] = [];
-      const removedCollectionIds: string[] = [];
-      const nextCards = cardsRef.current.map(card => {
+      const updatedById = new Map<string, KnowledgeCard>();
+      const nextCollectionCards = collectionCards.map(card => {
         if (selectedIds.has(card.id)) {
           const nextCollections = removeAliasIdsFromCollections(card.collections || [], aliasIds);
           if (nextCollections.length === (card.collections || []).length) {
@@ -1388,14 +1388,20 @@ const App: React.FC = () => {
             collections: nextCollections
           };
           updatedCards.push(updated);
-          removedCollectionIds.push(...(card.collections || []).filter(id => !nextCollections.includes(id)));
+          updatedById.set(card.id, updated);
           return updated;
         }
         return card;
-      });
+      }).filter(card => !selectedIds.has(card.id));
 
-      setCards(nextCards);
-      adjustCollectionItemCounts(removedCollectionIds, -1);
+      setCollectionCards(nextCollectionCards);
+      setCards(prev => prev.map(card => updatedById.get(card.id) || card));
+      for (const updatedCard of updatedCards) {
+        const previousCard = collectionCards.find(card => card.id === updatedCard.id);
+        const removedIds = (previousCard?.collections || [])
+          .filter(id => !updatedCard.collections.includes(id));
+        adjustCollectionItemCounts(removedIds, -1);
+      }
       setIsSelectionMode(false);
       setSelectedCardIds(new Set());
 

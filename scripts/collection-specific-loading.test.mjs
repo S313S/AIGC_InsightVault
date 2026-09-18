@@ -12,6 +12,14 @@ const extractFunctionBody = (source, functionName) => {
   return source.slice(start, nextExport === -1 ? source.length : nextExport);
 };
 
+const extractBetween = (source, startMarker, endMarker) => {
+  const start = source.indexOf(startMarker);
+  assert.notEqual(start, -1, `${startMarker} should exist`);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  assert.notEqual(end, -1, `${endMarker} should exist after ${startMarker}`);
+  return source.slice(start, end);
+};
+
 test('collection card loading queries every alias independently of the home page', () => {
   const body = extractFunctionBody(serviceSource, 'getKnowledgeCardsByCollectionIds');
 
@@ -48,4 +56,24 @@ test('collection filtering uses independently loaded collection cards', () => {
   assert.match(appSource, /const sourceCards = currentCollectionId \? collectionCards : cards/);
   assert.match(appSource, /return sourceCards\.filter\(card =>/);
   assert.match(appSource, /!currentCollectionId && hasMoreCards/);
+});
+
+test('single-card interactions synchronize the active collection state', () => {
+  const syncLoadedCardBody = extractBetween(appSource, '  const syncLoadedCard =', '  const handleOpenCard =');
+  const handleDeleteCardBody = extractBetween(appSource, '  const handleDeleteCard =', '  const handleAddCard =');
+  const handleUpdateCardBody = extractBetween(appSource, '  const handleUpdateCard =', '  const handleCollectionClick =');
+
+  assert.match(syncLoadedCardBody, /setCollectionCards/);
+  assert.match(handleDeleteCardBody, /setCollectionCards/);
+  assert.match(handleUpdateCardBody, /syncLoadedCard\(updatedCard\)/);
+});
+
+test('collection selection and bulk removal use independently loaded cards', () => {
+  const toggleSelectionBody = extractBetween(appSource, '  const toggleCardSelection =', '  const handleRemoveSelectedFromCollection =');
+  const removeSelectedBody = extractBetween(appSource, '  const handleRemoveSelectedFromCollection =', '  const handleBatchAddToCollection =');
+
+  assert.match(toggleSelectionBody, /collectionCards\.find/);
+  assert.match(removeSelectedBody, /collectionCards\.map/);
+  assert.match(removeSelectedBody, /setCollectionCards/);
+  assert.match(removeSelectedBody, /setCards/);
 });
