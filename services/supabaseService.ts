@@ -40,6 +40,7 @@ const CARD_LIST_SELECT_FIELDS = [
 type CardListOptions = {
     limit?: number;
     offset?: number;
+    signal?: AbortSignal;
 };
 
 // 将数据库行转换为前端 KnowledgeCard 类型
@@ -338,35 +339,42 @@ export const getKnowledgeCards = async (options: CardListOptions = {}): Promise<
     if (!isSupabaseConnected() || !supabase) return [];
     const limit = options.limit || CARD_LIST_LIMIT;
     const offset = options.offset || 0;
+    const signal = options.signal;
 
-    const { data, error } = await supabase
+    let query = supabase
         .from('knowledge_cards')
         .select(CARD_LIST_SELECT_FIELDS)
         .eq('is_trending', false)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
+    if (signal) query = query.abortSignal(signal);
+
+    const { data, error } = await query;
 
     if (error) {
         console.error('Error fetching cards:', error);
-        return [];
+        throw error;
     }
 
     return dedupeCards((data || []).map(row => dbToCard(row, { isDetailLoaded: false })));
 };
 
-export const getTrendingCards = async (): Promise<KnowledgeCard[]> => {
+export const getTrendingCards = async (signal?: AbortSignal): Promise<KnowledgeCard[]> => {
     if (!isSupabaseConnected() || !supabase) return [];
 
-    const { data, error } = await supabase
+    let query = supabase
         .from('knowledge_cards')
         .select(CARD_LIST_SELECT_FIELDS)
         .eq('is_trending', true)
         .order('created_at', { ascending: false })
         .limit(CARD_LIST_LIMIT);
+    if (signal) query = query.abortSignal(signal);
+
+    const { data, error } = await query;
 
     if (error) {
         console.error('Error fetching trending cards:', error);
-        return [];
+        throw error;
     }
 
     const cards = dedupeCards((data || []).map(row => dbToCard(row, { isDetailLoaded: false })));
@@ -548,38 +556,44 @@ export const moveTrendingToVault = async (card: KnowledgeCard): Promise<boolean>
 
 // ============ 收藏集 CRUD ============
 
-export const getCollections = async (): Promise<Collection[]> => {
+export const getCollections = async (signal?: AbortSignal): Promise<Collection[]> => {
     if (!isSupabaseConnected() || !supabase) return [];
 
-    const { data, error } = await supabase
+    let query = supabase
         .from('collections')
         .select('*')
         .order('created_at', { ascending: false });
+    if (signal) query = query.abortSignal(signal);
+
+    const { data, error } = await query;
 
     if (error) {
         console.error('Error fetching collections:', error);
-        return [];
+        throw error;
     }
 
     return (data || []).map(dbToCollection);
 };
 
-export const getCollectionItemCounts = async (): Promise<Record<string, number>> => {
+export const getCollectionItemCounts = async (signal?: AbortSignal): Promise<Record<string, number>> => {
     if (!isSupabaseConnected() || !supabase) return {};
 
     const rows: { collections?: string[] | null }[] = [];
     let offset = 0;
 
     while (true) {
-        const { data, error } = await supabase
+        let query = supabase
             .from('knowledge_cards')
             .select('collections')
             .eq('is_trending', false)
             .range(offset, offset + COLLECTION_COUNT_PAGE_SIZE - 1);
+        if (signal) query = query.abortSignal(signal);
+
+        const { data, error } = await query;
 
         if (error) {
             console.error('Error fetching collection item counts:', error);
-            return {};
+            throw error;
         }
 
         const page = data || [];
@@ -644,17 +658,20 @@ export const deleteCollection = async (collectionId: string): Promise<boolean> =
 
 // ============ 监控任务 CRUD ============
 
-export const getTasks = async (): Promise<TrackingTask[]> => {
+export const getTasks = async (signal?: AbortSignal): Promise<TrackingTask[]> => {
     if (!isSupabaseConnected() || !supabase) return [];
 
-    const { data, error } = await supabase
+    let query = supabase
         .from('tracking_tasks')
         .select('*')
         .order('created_at', { ascending: false });
+    if (signal) query = query.abortSignal(signal);
+
+    const { data, error } = await query;
 
     if (error) {
         console.error('Error fetching tasks:', error);
-        return [];
+        throw error;
     }
 
     return (data || []).map(dbToTask);

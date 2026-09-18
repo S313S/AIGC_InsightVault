@@ -55,3 +55,19 @@ test('database writes omit detail fields when a card detail has not been loaded'
   assert.equal(body.includes('dbRow.ai_analysis = card.aiAnalysis'), true);
   assert.equal(body.includes('dbRow.user_notes = card.userNotes'), true);
 });
+
+test('initial card, trending, collection, and task reads forward cancellation', () => {
+  for (const name of ['getKnowledgeCards', 'getTrendingCards', 'getCollections', 'getTasks']) {
+    const body = extractFunctionBody(name);
+    assert.equal(body.includes('signal'), true, `${name} should accept a signal`);
+    assert.equal(body.includes('.abortSignal(signal)'), true, `${name} should forward the signal`);
+  }
+});
+
+test('initial reads throw Supabase errors so the retry layer can recover', () => {
+  for (const name of ['getKnowledgeCards', 'getTrendingCards', 'getCollections', 'getTasks']) {
+    const body = extractFunctionBody(name);
+    const errorBranch = body.match(/if \(error\) \{([\s\S]*?)\n\s*\}/)?.[1] || '';
+    assert.equal(errorBranch.includes('throw error'), true, `${name} should throw read errors`);
+  }
+});
