@@ -64,8 +64,16 @@ test('single-card interactions synchronize the active collection state', () => {
   const handleUpdateCardBody = extractBetween(appSource, '  const handleUpdateCard =', '  const handleCollectionClick =');
 
   assert.match(syncLoadedCardBody, /setCollectionCards/);
+  assert.match(syncLoadedCardBody, /!isCardInCollection\(loadedCard, currentCollectionId\)/);
   assert.match(handleDeleteCardBody, /setCollectionCards/);
   assert.match(handleUpdateCardBody, /syncLoadedCard\(updatedCard\)/);
+});
+
+test('collection header keeps a truthful total while content is loading', () => {
+  assert.match(appSource, /const activeCollectionItemCount =/);
+  assert.match(appSource, /collectionLoadStatus === 'loaded'/);
+  assert.match(appSource, /共 \{activeCollectionItemCount\} 条/);
+  assert.doesNotMatch(appSource, /共 \{filteredCards\.length\} 条/);
 });
 
 test('collection selection and bulk removal use independently loaded cards', () => {

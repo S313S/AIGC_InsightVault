@@ -696,7 +696,12 @@ const App: React.FC = () => {
   const syncLoadedCard = (loadedCard: KnowledgeCard) => {
     setSelectedCard(prev => (prev?.id === loadedCard.id ? loadedCard : prev));
     setCards(prev => prev.map(card => (card.id === loadedCard.id ? loadedCard : card)));
-    setCollectionCards(prev => prev.map(card => (card.id === loadedCard.id ? loadedCard : card)));
+    setCollectionCards(prev => {
+      if (currentCollectionId && !isCardInCollection(loadedCard, currentCollectionId)) {
+        return prev.filter(card => card.id !== loadedCard.id);
+      }
+      return prev.map(card => (card.id === loadedCard.id ? loadedCard : card));
+    });
     setTrending(prev => prev.map(card => (card.id === loadedCard.id ? loadedCard : card)));
     setChatScope(prev => ({
       ...prev,
@@ -1448,9 +1453,13 @@ const App: React.FC = () => {
     }
   };
 
-  const activeCollectionName = useMemo(() => {
-    return displayCollections.find(c => c.id === currentCollectionId)?.name;
+  const activeCollection = useMemo(() => {
+    return displayCollections.find(c => c.id === currentCollectionId);
   }, [currentCollectionId, displayCollections]);
+  const activeCollectionName = activeCollection?.name;
+  const activeCollectionItemCount = collectionLoadStatus === 'loaded'
+    ? collectionCards.length
+    : activeCollection?.itemCount || 0;
 
   // Click outside listener to close dropdowns
   useEffect(() => {
@@ -1824,7 +1833,7 @@ const App: React.FC = () => {
                     </div>
                     <div>
                       <h2 className="text-lg font-bold text-gray-100">{activeCollectionName}</h2>
-                      <p className="text-xs text-gray-500">共 {filteredCards.length} 条</p>
+                      <p className="text-xs text-gray-500">共 {activeCollectionItemCount} 条</p>
                     </div>
                   </div>
 
