@@ -21,14 +21,18 @@ test('getCollections does not scan knowledge_cards while loading the sidebar col
   );
 });
 
-test('getCollectionItemCounts reads only lightweight collection membership fields', () => {
+test('getCollectionItemCounts reads only lightweight identity and membership fields', () => {
   const body = extractFunctionBody('getCollectionItemCounts');
 
   assert.equal(
-    body.includes(".select('collections')"),
+    body.includes('.select(COLLECTION_COUNT_SELECT_FIELDS)'),
     true,
-    'collection counts should read only the collection membership column'
+    'collection counts should use the lightweight identity field list'
   );
+  assert.equal(source.includes("'source_url'"), true, 'identity fields should include source URL');
+  assert.equal(source.includes("'title'"), true, 'identity fields should include title');
+  assert.equal(source.includes("'author'"), true, 'identity fields should include author');
+  assert.equal(source.includes("'date'"), true, 'identity fields should include publication date');
   assert.equal(body.includes(".select('*')"), false, 'collection counts must not select full card rows');
   assert.equal(body.includes('raw_content'), false, 'collection counts must not load raw content');
   assert.equal(body.includes('user_notes'), false, 'collection counts must not load user notes');

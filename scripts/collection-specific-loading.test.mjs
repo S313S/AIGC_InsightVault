@@ -37,6 +37,13 @@ test('collection card loading cleans aliases and handles empty input', () => {
   assert.equal(body.includes('if (collectionIds.length === 0) return []'), true);
 });
 
+test('collection counts start after collections resolve while tasks stay parallel', () => {
+  assert.match(appSource, /const collectionsPromise = runCloudRead/);
+  assert.match(appSource, /const tasksPromise = runCloudRead/);
+  assert.match(appSource, /const collectionCountsPromise = collectionsPromise\.then/);
+  assert.match(appSource, /db\.getCollectionItemCounts\(collectionsResult\.value, signal\)/);
+});
+
 test('collection card loading participates in cancellation and retry recovery', () => {
   const serviceBody = extractFunctionBody(serviceSource, 'getKnowledgeCardsByCollectionIds');
   const appBody = extractBetween(appSource, '  const loadCollectionCards =', '  const closeCollectionView =');

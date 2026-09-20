@@ -14,7 +14,7 @@ import {
 } from '../types';
 import { normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
 import { normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
-import { countCollectionItems } from '../shared/collectionCounts.js';
+import { buildCardIdentityKey, countCollectionItems } from '../shared/collectionCounts.js';
 
 // ============ 类型转换工具 ============
 
@@ -35,6 +35,16 @@ const CARD_LIST_SELECT_FIELDS = [
     'content_type',
     'ai_analysis',
     'tags',
+    'collections',
+].join(',');
+const COLLECTION_COUNT_SELECT_FIELDS = [
+    'id',
+    'owner_id',
+    'title',
+    'source_url',
+    'platform',
+    'author',
+    'date',
     'collections',
 ].join(',');
 
@@ -91,7 +101,6 @@ const normalizeSourceUrl = (url: string): string => {
     }
 };
 
-const normalizeText = (value: string): string => (value || '').trim().toLowerCase();
 const isSnapshotTag = (tag: unknown): tag is string =>
     typeof tag === 'string' && tag.startsWith('snapshot:');
 
@@ -99,14 +108,6 @@ const pickLatestSnapshotTag = (tags: unknown[]): string => {
     const snapshots = (Array.isArray(tags) ? tags : []).filter(isSnapshotTag);
     if (snapshots.length === 0) return 'snapshot:legacy';
     return [...snapshots].sort((a, b) => (a > b ? -1 : a < b ? 1 : 0))[0];
-};
-
-const buildCardDedupKey = (card: KnowledgeCard): string => {
-    const ownerKey = normalizeText(card.ownerId || 'public');
-    const normalizedUrl = normalizeSourceUrl(card.sourceUrl);
-    if (normalizedUrl) return `owner:${ownerKey}|url:${normalizedUrl}`;
-
-    return `owner:${ownerKey}|meta:${normalizeText(card.platform)}|${normalizeText(card.title)}|${normalizeText(card.author)}|${normalizeText(card.rawContent).slice(0, 120)}`;
 };
 
 const mergeAiAnalysis = (base: KnowledgeCard['aiAnalysis'], incoming: KnowledgeCard['aiAnalysis']) => {
@@ -172,7 +173,7 @@ const dedupeCards = (cards: KnowledgeCard[]): KnowledgeCard[] => {
     const grouped = new Map<string, KnowledgeCard>();
 
     for (const card of cards) {
-        const key = buildCardDedupKey(card);
+        const key = buildCardIdentityKey(card);
         const existing = grouped.get(key);
         if (!existing) {
             grouped.set(key, {
@@ -610,16 +611,20 @@ export const getCollections = async (signal?: AbortSignal): Promise<Collection[]
     return (data || []).map(dbToCollection);
 };
 
-export const getCollectionItemCounts = async (signal?: AbortSignal): Promise<Record<string, number>> => {
+export const getCollectionItemCounts = async (
+    collections: Collection[],
+    signal?: AbortSignal
+): Promise<Record<string, number>> => {
     if (!isSupabaseConnected() || !supabase) return {};
+    if (collections.length === 0) return {};
 
-    const rows: { collections?: string[] | null }[] = [];
+    const rows: any[] = [];
     let offset = 0;
 
     while (true) {
         let query = supabase
             .from('knowledge_cards')
-            .select('collections')
+            .select(COLLECTION_COUNT_SELECT_FIELDS)
             .eq('is_trending', false)
             .range(offset, offset + COLLECTION_COUNT_PAGE_SIZE - 1);
         if (signal) query = query.abortSignal(signal);
@@ -638,7 +643,7 @@ export const getCollectionItemCounts = async (signal?: AbortSignal): Promise<Rec
         offset += COLLECTION_COUNT_PAGE_SIZE;
     }
 
-    return countCollectionItems(rows);
+    return countCollectionItems(rows, collections);
 };
 
 export const saveCollection = async (collection: Collection): Promise<string | null> => {

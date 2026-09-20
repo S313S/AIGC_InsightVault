@@ -334,10 +334,31 @@ const App: React.FC = () => {
         });
         if (primaryNotice) setLoadNotice(primaryNotice);
 
+        const collectionsPromise = runCloudRead(signal => db.getCollections(signal), []);
+        const tasksPromise = runCloudRead(
+          signal => authUser ? db.getTasks(signal) : Promise.resolve([]),
+          []
+        );
+        const collectionCountsPromise = collectionsPromise.then(collectionsResult => {
+          if (!collectionsResult.ok) {
+            return {
+              ok: false,
+              value: {},
+              reason: 'collections-unavailable',
+              attempts: collectionsResult.attempts,
+              elapsedMs: collectionsResult.elapsedMs,
+            };
+          }
+
+          return runCloudRead(
+            signal => db.getCollectionItemCounts(collectionsResult.value, signal),
+            {}
+          );
+        });
         const [collectionsResult, collectionCountsResult, tasksResult] = await Promise.allSettled([
-          runCloudRead(signal => db.getCollections(signal), []),
-          runCloudRead(signal => db.getCollectionItemCounts(signal), {}),
-          runCloudRead(signal => authUser ? db.getTasks(signal) : Promise.resolve([]), []),
+          collectionsPromise,
+          collectionCountsPromise,
+          tasksPromise,
         ]);
 
         if (requestId !== loadRequestIdRef.current) return false;
