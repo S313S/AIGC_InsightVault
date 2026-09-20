@@ -24,6 +24,7 @@ type CategoryType = 'image_gen' | 'video_gen' | 'vibe_coding';
 
 interface SettingsModalProps {
   onClose: () => void;
+  onRefreshHomepage: () => Promise<boolean>;
   xhsMissingTokenItems?: XhsMissingTokenItem[];
   onApplyXhsTokenConfig?: (config: XhsTokenConfig) => Promise<void> | void;
 }
@@ -89,6 +90,7 @@ const summarizeFailureReasonZh = (message: string) => {
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
+  onRefreshHomepage,
   xhsMissingTokenItems = [],
   onApplyXhsTokenConfig
 }) => {
@@ -124,6 +126,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [cronRunLogs, setCronRunLogs] = useState<CronRunLog[]>([]);
   const [isLoadingCronLogs, setIsLoadingCronLogs] = useState(false);
   const [isRunningCron, setIsRunningCron] = useState(false);
+  const [isRefreshingHomepage, setIsRefreshingHomepage] = useState(false);
   const [cronRunSummary, setCronRunSummary] = useState('');
   const [traceConfig, setTraceConfig] = useState(DEFAULT_TRACE_CONFIG);
 
@@ -433,6 +436,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setCronRunLogs(prev => [localLog, ...prev].slice(0, 30));
   };
 
+  const refreshHomepageTrending = async ({ announce = true }: { announce?: boolean } = {}) => {
+    setIsRefreshingHomepage(true);
+    try {
+      const refreshed = await onRefreshHomepage();
+      if (announce) {
+        flashMessage(refreshed ? '首页热点已更新' : '首页热点更新失败，请稍后重试');
+      }
+      return refreshed;
+    } catch (err: any) {
+      console.error('Failed to refresh homepage trending data:', err);
+      if (announce) flashMessage('首页热点更新失败，请稍后重试');
+      return false;
+    } finally {
+      setIsRefreshingHomepage(false);
+    }
+  };
+
   const handleRunCronNow = async () => {
     setIsRunningCron(true);
     setCronRunSummary('');
@@ -469,8 +489,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const candidates = Number(payload?.candidates || 0);
       const runtimeMs = Number(payload?.runtimeMs || 0);
       const errors = Array.isArray(payload?.platformErrors) ? payload.platformErrors.length : 0;
-      setCronRunSummary(`完成：候选 ${candidates}，新增 ${inserted}，耗时 ${runtimeMs}ms，错误 ${errors}`);
-      flashMessage('热点抓取执行完成');
+      const homepageRefreshed = await refreshHomepageTrending({ announce: false });
+      const homepageStatus = homepageRefreshed ? '，首页已更新' : '，首页更新失败，请手动重试';
+      setCronRunSummary(`完成：候选 ${candidates}，新增 ${inserted}，耗时 ${runtimeMs}ms，错误 ${errors}${homepageStatus}`);
+      flashMessage(homepageRefreshed ? '热点抓取完成，首页已更新' : '热点抓取完成，请手动更新首页');
       await refreshCronRunLogs();
     } catch (err: any) {
       const msg = err?.message || '执行失败';
@@ -863,11 +885,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <button
+            type="button"
             onClick={handleRunCronNow}
-            disabled={isRunningCron}
+            disabled={isRunningCron || isRefreshingHomepage}
             className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-sm font-medium text-white disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isRunningCron ? '执行中...' : '启动热点抓取'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void refreshHomepageTrending()}
+            disabled={isRunningCron || isRefreshingHomepage}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-indigo-500/50 bg-indigo-500/10 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {isRefreshingHomepage ? '更新中...' : '更新首页热点'}
           </button>
           <button
             type="button"

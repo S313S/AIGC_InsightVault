@@ -196,7 +196,7 @@ const App: React.FC = () => {
   const loadData = async (
     authUser: AuthUser | null,
     options: { showOverlay?: boolean; preserveNotice?: boolean } = {}
-  ) => {
+  ): Promise<boolean> => {
     const { showOverlay = !hasCompletedInitialLoadRef.current, preserveNotice = false } = options;
     const requestId = ++loadRequestIdRef.current;
     activeLoadControllerRef.current?.abort();
@@ -254,7 +254,7 @@ const App: React.FC = () => {
           runCloudRead(signal => db.getTrendingCards(signal), []),
         ]);
 
-        if (requestId !== loadRequestIdRef.current) return;
+        if (requestId !== loadRequestIdRef.current) return false;
 
         const cardsLoad = getLoadResult(cardsResult, [], 'Loading knowledge cards');
         const trendingLoad = getLoadResult(trendingResult, [], 'Loading trending cards');
@@ -304,7 +304,7 @@ const App: React.FC = () => {
           runCloudRead(signal => authUser ? db.getTasks(signal) : Promise.resolve([]), []),
         ]);
 
-        if (requestId !== loadRequestIdRef.current) return;
+        if (requestId !== loadRequestIdRef.current) return false;
 
         const collectionsLoad = getLoadResult(collectionsResult, [], 'Loading collections');
         const collectionCountsLoad = getLoadResult(collectionCountsResult, {}, 'Loading collection item counts');
@@ -346,7 +346,7 @@ const App: React.FC = () => {
           lastSuccessfulDataRef.current = secondarySnapshot;
           writeStoredSnapshot(authUser?.id || null, secondarySnapshot);
         }
-        return;
+        return trendingLoad.ok;
       }
 
       const offlineCards = INITIAL_DATA.map(toOfflinePublicCard);
@@ -363,6 +363,7 @@ const App: React.FC = () => {
         tasks: [],
       };
       writeStoredSnapshot(null, lastSuccessfulDataRef.current);
+      return true;
     } catch (error) {
       console.error('Failed to load app data:', error);
       setLoadNotice('云端数据加载失败，当前已回退为空状态。请稍后刷新重试。');
@@ -372,6 +373,7 @@ const App: React.FC = () => {
       setTasks([]);
       setHasMoreCards(false);
       setChatScope({ cards: [], title: '全部知识库' });
+      return false;
     } finally {
       hasCompletedInitialLoadRef.current = true;
       if (showOverlay) setIsLoading(false);
@@ -2129,6 +2131,7 @@ const App: React.FC = () => {
       {showSettings && canManageData && (
         <SettingsModal
           onClose={() => setShowSettings(false)}
+          onRefreshHomepage={() => loadData(currentUserRef.current, { showOverlay: false, preserveNotice: true })}
           xhsMissingTokenItems={xhsMissingTokenItems}
           onApplyXhsTokenConfig={handleApplyXhsTokenConfig}
         />
