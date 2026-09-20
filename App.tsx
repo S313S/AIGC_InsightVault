@@ -27,7 +27,7 @@ import {
 } from './shared/xiaohongshuUrls.js';
 import { removeAliasIdsFromCollections } from './shared/collectionAliases.js';
 import { normalizeCollectionName, shouldSubmitCollectionName } from './shared/collectionCreation.js';
-import { withTimeout, withTimeoutResult } from './shared/asyncTimeout.js';
+import { withTimeout, withTimeoutRetryResult } from './shared/asyncTimeout.js';
 import { resolveLoadFallback } from './shared/loadFallback.js';
 import { shouldReloadOnAuthEvent } from './shared/authEvents.js';
 import { resolveCurrentAuthUser } from './shared/authState.js';
@@ -59,6 +59,8 @@ type LoadResult<T> = {
   ok: boolean;
   value: T;
   reason: unknown;
+  attempts?: number;
+  elapsedMs?: number;
 };
 
 const snapshotHasAnyData = (snapshot: LoadedSnapshot | null | undefined) =>
@@ -79,7 +81,10 @@ const getLoadResult = <T,>(
 ): LoadResult<T> => {
   if (result.status === 'fulfilled') {
     if (!result.value.ok) {
-      console.error(`${label} failed:`, result.value.reason);
+      console.error(
+        `${label} failed after ${result.value.attempts || 1} attempt(s) in ${result.value.elapsedMs || 0}ms:`,
+        result.value.reason
+      );
     }
     return result.value;
   }
@@ -134,6 +139,7 @@ const App: React.FC = () => {
 
   // Loading State
   const [isLoading, setIsLoading] = useState(true);
+  const [isRetryingLoad, setIsRetryingLoad] = useState(false);
   const [isLoadingMoreCards, setIsLoadingMoreCards] = useState(false);
   const [hasMoreCards, setHasMoreCards] = useState(false);
   const autoMonitoringRef = useRef(false);
@@ -145,6 +151,7 @@ const App: React.FC = () => {
   const hasCompletedInitialLoadRef = useRef(false);
   const currentUserRef = useRef<AuthUser | null>(null);
   const loadRequestIdRef = useRef(0);
+  const activeLoadControllerRef = useRef<AbortController | null>(null);
   const detailRequestIdRef = useRef(0);
 
   // Chat Context State
@@ -186,6 +193,21 @@ const App: React.FC = () => {
   ) => {
     const { showOverlay = !hasCompletedInitialLoadRef.current, preserveNotice = false } = options;
     const requestId = ++loadRequestIdRef.current;
+    activeLoadControllerRef.current?.abort();
+    const loadController = new AbortController();
+    activeLoadControllerRef.current = loadController;
+    const runCloudRead = <T,>(
+      operation: (signal: AbortSignal) => Promise<T>,
+      fallbackValue: T
+    ) => withTimeoutRetryResult(
+      operation,
+      {
+        attemptTimeouts: [12000, 18000],
+        retryDelayMs: 500,
+        signal: loadController.signal,
+      },
+      fallbackValue
+    );
 
     if (showOverlay) setIsLoading(true);
     if (!preserveNotice) setLoadNotice('');
@@ -222,8 +244,8 @@ const App: React.FC = () => {
         }
 
         const [cardsResult, trendingResult] = await Promise.allSettled([
-          withTimeoutResult(db.getKnowledgeCards(), DATA_LOAD_TIMEOUT_MS, []),
-          withTimeoutResult(db.getTrendingCards(), DATA_LOAD_TIMEOUT_MS, []),
+          runCloudRead(signal => db.getKnowledgeCards({ signal }), []),
+          runCloudRead(signal => db.getTrendingCards(signal), []),
         ]);
 
         if (requestId !== loadRequestIdRef.current) return;
@@ -271,9 +293,9 @@ const App: React.FC = () => {
         if (primaryNotice) setLoadNotice(primaryNotice);
 
         const [collectionsResult, collectionCountsResult, tasksResult] = await Promise.allSettled([
-          withTimeoutResult(db.getCollections(), DATA_LOAD_TIMEOUT_MS, []),
-          withTimeoutResult(db.getCollectionItemCounts(), DATA_LOAD_TIMEOUT_MS, {}),
-          withTimeoutResult(authUser ? db.getTasks() : Promise.resolve([]), DATA_LOAD_TIMEOUT_MS, []),
+          runCloudRead(signal => db.getCollections(signal), []),
+          runCloudRead(signal => db.getCollectionItemCounts(signal), {}),
+          runCloudRead(signal => authUser ? db.getTasks(signal) : Promise.resolve([]), []),
         ]);
 
         if (requestId !== loadRequestIdRef.current) return;
@@ -287,7 +309,7 @@ const App: React.FC = () => {
           primarySnapshot.collections
         );
         const dbTasks = tasksLoad.value;
-        const secondaryHadFailure = !collectionsLoad.ok || !tasksLoad.ok;
+        const secondaryHadFailure = !collectionsLoad.ok || !collectionCountsLoad.ok || !tasksLoad.ok;
         const secondarySnapshot = mergeLoadedSnapshot(primarySnapshot, {
           collections: collectionsLoad.ok ? dbCollections : undefined,
           tasks: tasksLoad.ok ? dbTasks : undefined,
@@ -304,6 +326,10 @@ const App: React.FC = () => {
             authUser,
           });
           if (secondaryNotice) setLoadNotice(secondaryNotice);
+        }
+
+        if (!primaryHadFailure && !secondaryHadFailure) {
+          setLoadNotice('');
         }
 
         if (
@@ -343,6 +369,19 @@ const App: React.FC = () => {
     } finally {
       hasCompletedInitialLoadRef.current = true;
       if (showOverlay) setIsLoading(false);
+      if (activeLoadControllerRef.current === loadController) {
+        activeLoadControllerRef.current = null;
+      }
+    }
+  };
+
+  const handleRetryCloudLoad = async () => {
+    if (isRetryingLoad) return;
+    setIsRetryingLoad(true);
+    try {
+      await loadData(currentUserRef.current, { showOverlay: false, preserveNotice: true });
+    } finally {
+      setIsRetryingLoad(false);
     }
   };
 
@@ -381,7 +420,11 @@ const App: React.FC = () => {
     hydrate();
 
     const subscription = auth.onAuthStateChange(async (event, session) => {
-      if (!shouldReloadOnAuthEvent(event)) return;
+      if (!shouldReloadOnAuthEvent(event, {
+        currentUserId: currentUserRef.current?.id || null,
+        nextUserId: session?.user?.id || null,
+        hasCompletedInitialLoad: hasCompletedInitialLoadRef.current,
+      })) return;
 
       const authUser = resolveCurrentAuthUser({
         session,
@@ -409,6 +452,7 @@ const App: React.FC = () => {
 
     return () => {
       active = false;
+      activeLoadControllerRef.current?.abort();
       subscription.unsubscribe();
     };
   }, []);
@@ -1437,8 +1481,26 @@ const App: React.FC = () => {
       )}
 
       {loadNotice && !isLoading && (
-        <div className="fixed top-4 left-1/2 z-[90] -translate-x-1/2 rounded-xl border border-amber-400/20 bg-amber-500/10 px-4 py-2 text-sm text-amber-100 backdrop-blur">
-          {loadNotice}
+        <div className="fixed top-4 left-1/2 z-[90] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-xl border border-amber-400/20 bg-[#2a2417]/95 px-4 py-2 text-sm text-amber-100 shadow-lg backdrop-blur">
+          <span>{loadNotice}</span>
+          <button
+            type="button"
+            onClick={handleRetryCloudLoad}
+            disabled={isRetryingLoad}
+            className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 font-medium text-amber-200 transition-colors hover:bg-amber-400/10 hover:text-amber-100 disabled:cursor-wait disabled:opacity-60"
+          >
+            {isRetryingLoad && <Loader2 size={13} className="animate-spin" />}
+            {isRetryingLoad ? '重试中' : '立即重试'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setLoadNotice('')}
+            aria-label="关闭加载提示"
+            title="关闭"
+            className="shrink-0 rounded-md p-1 text-amber-200/70 transition-colors hover:bg-amber-400/10 hover:text-amber-100"
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
 
