@@ -1908,6 +1908,10 @@ const App: React.FC = () => {
               <DashboardView
                 tasks={tasks}
                 trendingItems={trending}
+                isInitialLoading={isLoading}
+                isSyncing={isSyncing}
+                lastSyncedAt={lastSyncedAt}
+                newItemsCount={newTrendingCount}
                 onNavigateToMonitoring={() => handleMainNavigation('monitoring')}
                 onNavigateToVault={() => handleMainNavigation('grid')}
                 onSaveToVault={handleSaveTrendingToVault}

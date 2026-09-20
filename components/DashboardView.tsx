@@ -5,10 +5,15 @@ import { hasPromptEvidence } from '../shared/promptTagging.js';
 import { fallbackCoverFromSeed, isRenderableCoverUrl, normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
 import { hasXiaohongshuXsecToken, isXiaohongshuUrl, normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
 import { getSourceUrlOpenBlockReason, resolveOpenableSourceUrl } from '../shared/sourceUrls.js';
+import { getSyncLabel } from '../shared/syncFreshness.js';
 
 interface DashboardViewProps {
     tasks: TrackingTask[];
     trendingItems: KnowledgeCard[];
+    isInitialLoading: boolean;
+    isSyncing: boolean;
+    lastSyncedAt: string | null;
+    newItemsCount: number;
     onNavigateToMonitoring: () => void;
     onNavigateToVault: () => void;
     onSaveToVault: (card: KnowledgeCard) => void;
@@ -21,6 +26,10 @@ interface DashboardViewProps {
 export const DashboardView: React.FC<DashboardViewProps> = ({
     tasks,
     trendingItems,
+    isInitialLoading,
+    isSyncing,
+    lastSyncedAt,
+    newItemsCount,
     onNavigateToMonitoring,
     onNavigateToVault,
     onSaveToVault,
@@ -31,6 +40,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 }) => {
 
     const totalItemsFound = trendingItems.length;
+    const syncLabel = getSyncLabel({ isSyncing, lastSyncedAt });
     const [showAllTrending, setShowAllTrending] = useState(false);
     const [repairingCardId, setRepairingCardId] = useState<string | null>(null);
 
@@ -248,9 +258,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </div>
                     <div className="flex items-baseline gap-2 mb-1">
                         <span className="text-4xl font-bold text-gray-100">{totalItemsFound}</span>
-                        <span className="text-sm text-green-400 font-medium bg-green-500/20 px-2 py-0.5 rounded-full">今日 +124</span>
+                        {newItemsCount > 0 && (
+                            <span className="text-sm text-green-400 font-medium bg-green-500/20 px-2 py-0.5 rounded-full">
+                                新增 {newItemsCount} 条
+                            </span>
+                        )}
                     </div>
-                    <p className="text-sm text-gray-500">本月已处理洞察</p>
+                    <p className="text-sm text-gray-500" aria-live="polite">{syncLabel}</p>
                 </div>
             </div>
 
@@ -272,7 +286,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
 
                 {/* 2x3 Grid using vertical cards to match 'Picture 1' style */}
-                {hotPicks.length === 0 ? (
+                {isInitialLoading ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" aria-label="正在加载近期热点">
+                        {Array.from({ length: 6 }, (_, index) => (
+                            <div
+                                key={index}
+                                className="h-72 animate-pulse rounded-xl border border-[#1e3a5f]/40 bg-[#0d1526]/60"
+                            >
+                                <div className="h-40 bg-[#1e3a5f]/30" />
+                                <div className="space-y-3 p-4">
+                                    <div className="h-3 w-20 rounded bg-[#1e3a5f]/50" />
+                                    <div className="h-4 w-4/5 rounded bg-[#1e3a5f]/60" />
+                                    <div className="h-3 w-full rounded bg-[#1e3a5f]/40" />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : hotPicks.length === 0 ? (
                     <div className="rounded-xl border border-[#1e3a5f]/40 bg-[#0d1526]/40 p-8 text-center">
                         <p className="text-gray-300 text-sm">当前暂无热点内容</p>
                         <p className="text-gray-500 text-xs mt-2">请先触发 /api/cron-monitor，或到「热点搜索」导入内容</p>
@@ -396,7 +426,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             <div className="w-1 h-5 bg-indigo-500 rounded-full"></div>
                             <h3 className="font-bold text-gray-100">Image Gen · 热门精选</h3>
                         </div>
-                        <span className="text-xs text-gray-500">实时</span>
+                        <span className="text-xs text-gray-500">按热度</span>
                     </div>
 
                     <div className="space-y-1">
@@ -414,7 +444,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             <div className="w-1 h-5 bg-purple-500 rounded-full"></div>
                             <h3 className="font-bold text-gray-100">Video Gen · 热门精选</h3>
                         </div>
-                        <span className="text-xs text-gray-500">实时</span>
+                        <span className="text-xs text-gray-500">按热度</span>
                     </div>
 
                     <div className="space-y-1">
@@ -432,7 +462,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             <div className="w-1 h-5 bg-emerald-500 rounded-full"></div>
                             <h3 className="font-bold text-gray-100">Vibe Coding · 热门精选</h3>
                         </div>
-                        <span className="text-xs text-gray-500">实时</span>
+                        <span className="text-xs text-gray-500">按热度</span>
                     </div>
 
                     <div className="space-y-1">
