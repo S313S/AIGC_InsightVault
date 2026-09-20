@@ -167,3 +167,16 @@ test('legacy snapshots remain readable without metadata', () => {
     syncedAt: null,
   });
 });
+
+test('snapshot helpers stay usable when browser storage is blocked', () => {
+  global.window = {
+    get localStorage() {
+      throw new DOMException('Access denied', 'SecurityError');
+    },
+  };
+
+  assert.doesNotThrow(() => writeStoredSnapshot('user-1', snapshot('private-card')));
+  assert.doesNotThrow(() => clearActiveSnapshotOwner());
+  assert.equal(readStoredSnapshotRecord('user-1'), null);
+  assert.equal(readBootstrapSnapshot(), null);
+});

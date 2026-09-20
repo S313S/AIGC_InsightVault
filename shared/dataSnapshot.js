@@ -6,6 +6,16 @@ export const buildSnapshotMetaStorageKey = (userId) =>
 
 export const ACTIVE_SNAPSHOT_OWNER_KEY = 'insight-vault:active-snapshot-owner';
 
+const getBrowserStorage = () => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+};
+
 export const serializeSnapshot = (snapshot) => JSON.stringify(snapshot);
 
 export const deserializeSnapshot = (value) => {
@@ -55,16 +65,23 @@ export const shouldPersistSnapshot = ({
 };
 
 export const readStoredSnapshot = (userId) => {
-  if (typeof window === 'undefined') return null;
-  return deserializeSnapshot(window.localStorage.getItem(buildSnapshotStorageKey(userId)));
+  const storage = getBrowserStorage();
+  if (!storage) return null;
+
+  try {
+    return deserializeSnapshot(storage.getItem(buildSnapshotStorageKey(userId)));
+  } catch {
+    return null;
+  }
 };
 
 const readStoredSnapshotMetadata = (userId) => {
-  if (typeof window === 'undefined') return null;
+  const storage = getBrowserStorage();
+  if (!storage) return null;
 
   try {
     const parsed = JSON.parse(
-      window.localStorage.getItem(buildSnapshotMetaStorageKey(userId)) || 'null'
+      storage.getItem(buildSnapshotMetaStorageKey(userId)) || 'null'
     );
     if (!parsed || parsed.ownerId !== (userId || null)) return null;
     return {
@@ -91,8 +108,15 @@ export const readStoredSnapshotRecord = (userId) => {
 };
 
 export const readBootstrapSnapshot = () => {
-  if (typeof window === 'undefined') return null;
-  const activeOwnerId = window.localStorage.getItem(ACTIVE_SNAPSHOT_OWNER_KEY);
+  const storage = getBrowserStorage();
+  if (!storage) return null;
+
+  let activeOwnerId = null;
+  try {
+    activeOwnerId = storage.getItem(ACTIVE_SNAPSHOT_OWNER_KEY);
+  } catch {
+    return null;
+  }
   if (activeOwnerId) {
     const activeRecord = readStoredSnapshotRecord(activeOwnerId);
     if (activeRecord) return activeRecord;
@@ -101,12 +125,19 @@ export const readBootstrapSnapshot = () => {
 };
 
 export const clearActiveSnapshotOwner = () => {
-  if (typeof window === 'undefined') return;
-  window.localStorage.removeItem(ACTIVE_SNAPSHOT_OWNER_KEY);
+  const storage = getBrowserStorage();
+  if (!storage) return;
+
+  try {
+    storage.removeItem(ACTIVE_SNAPSHOT_OWNER_KEY);
+  } catch {
+    // Storage access is optional. Signing out must still complete when blocked.
+  }
 };
 
 export const writeStoredSnapshot = (userId, snapshot, options = {}) => {
-  if (typeof window === 'undefined') return;
+  const storage = getBrowserStorage();
+  if (!storage) return;
   const ownerId = userId || null;
   const previousMetadata = readStoredSnapshotMetadata(userId);
   const savedAt = (options.now || (() => new Date().toISOString()))();
@@ -114,13 +145,17 @@ export const writeStoredSnapshot = (userId, snapshot, options = {}) => {
     ? previousMetadata?.syncedAt || null
     : options.syncedAt;
 
-  window.localStorage.setItem(buildSnapshotStorageKey(userId), serializeSnapshot(snapshot));
-  window.localStorage.setItem(buildSnapshotMetaStorageKey(userId), JSON.stringify({
-    ownerId,
-    savedAt,
-    syncedAt,
-  }));
-  if (userId) {
-    window.localStorage.setItem(ACTIVE_SNAPSHOT_OWNER_KEY, userId);
+  try {
+    storage.setItem(buildSnapshotStorageKey(userId), serializeSnapshot(snapshot));
+    storage.setItem(buildSnapshotMetaStorageKey(userId), JSON.stringify({
+      ownerId,
+      savedAt,
+      syncedAt,
+    }));
+    if (userId) {
+      storage.setItem(ACTIVE_SNAPSHOT_OWNER_KEY, userId);
+    }
+  } catch {
+    // Cached startup is a performance enhancement; storage failure cannot block the app.
   }
 };
