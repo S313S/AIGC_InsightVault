@@ -31,10 +31,17 @@ import { withTimeout, withTimeoutRetryResult } from './shared/asyncTimeout.js';
 import { resolveLoadFallback } from './shared/loadFallback.js';
 import { shouldReloadOnAuthEvent } from './shared/authEvents.js';
 import { resolveCurrentAuthUser } from './shared/authState.js';
-import { readStoredSnapshot, shouldPersistSnapshot, writeStoredSnapshot } from './shared/dataSnapshot.js';
+import {
+  clearActiveSnapshotOwner,
+  readBootstrapSnapshot,
+  readStoredSnapshotRecord,
+  shouldPersistSnapshot,
+  writeStoredSnapshot,
+} from './shared/dataSnapshot.js';
 import { mergeLoadedSnapshot } from './shared/loadMerge.js';
 import { resolveLoadNotice } from './shared/loadNotice.js';
 import { applyCollectionCounts } from './shared/collectionCounts.js';
+import { countNewItemIds } from './shared/syncFreshness.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 type CollectionLoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
@@ -54,6 +61,13 @@ type LoadedSnapshot = {
   trending: KnowledgeCard[];
   collections: Collection[];
   tasks: TrackingTask[];
+};
+
+const EMPTY_SNAPSHOT: LoadedSnapshot = {
+  cards: [],
+  trending: [],
+  collections: [],
+  tasks: [],
 };
 
 type LoadResult<T> = {
@@ -103,13 +117,6 @@ const preserveOnFailedLoad = <T,>(
   return undefined;
 };
 
-const showCachedSnapshotImmediately = (
-  snapshot: LoadedSnapshot,
-  applySnapshot: (snapshot: LoadedSnapshot) => void
-) => {
-  applySnapshot(snapshot);
-};
-
 const toOfflinePublicCard = (card: KnowledgeCard): KnowledgeCard => ({
   ...card,
   ownerId: OFFLINE_PUBLIC_OWNER_ID,
@@ -123,10 +130,13 @@ const toOfflinePublicCollection = (collection: Collection): Collection => ({
 });
 
 const App: React.FC = () => {
-  const [cards, setCards] = useState<KnowledgeCard[]>([]);
-  const [tasks, setTasks] = useState<TrackingTask[]>([]);
-  const [trending, setTrending] = useState<KnowledgeCard[]>([]);
-  const [collections, setCollections] = useState<Collection[]>([]);
+  const [bootstrapRecord] = useState(() => readBootstrapSnapshot());
+  const bootstrapSnapshot: LoadedSnapshot = bootstrapRecord?.snapshot || EMPTY_SNAPSHOT;
+  const bootstrapHasData = snapshotHasAnyData(bootstrapSnapshot);
+  const [cards, setCards] = useState<KnowledgeCard[]>(bootstrapSnapshot.cards);
+  const [tasks, setTasks] = useState<TrackingTask[]>(bootstrapSnapshot.tasks);
+  const [trending, setTrending] = useState<KnowledgeCard[]>(bootstrapSnapshot.trending);
+  const [collections, setCollections] = useState<Collection[]>(bootstrapSnapshot.collections);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [selectedCard, setSelectedCard] = useState<KnowledgeCard | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -139,17 +149,21 @@ const App: React.FC = () => {
   const [detailError, setDetailError] = useState('');
 
   // Loading State
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!snapshotHasAnyData(bootstrapSnapshot));
+  const [isSyncing, setIsSyncing] = useState(isSupabaseConnected());
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(bootstrapRecord?.syncedAt || null);
+  const [newTrendingCount, setNewTrendingCount] = useState(0);
   const [isRetryingLoad, setIsRetryingLoad] = useState(false);
   const [isLoadingMoreCards, setIsLoadingMoreCards] = useState(false);
   const [hasMoreCards, setHasMoreCards] = useState(false);
   const autoMonitoringRef = useRef(false);
-  const tasksRef = useRef<TrackingTask[]>([]);
-  const cardsRef = useRef<KnowledgeCard[]>([]);
-  const trendingRef = useRef<KnowledgeCard[]>([]);
-  const collectionsRef = useRef<Collection[]>([]);
-  const lastSuccessfulDataRef = useRef<LoadedSnapshot | null>(null);
-  const hasCompletedInitialLoadRef = useRef(false);
+  const tasksRef = useRef<TrackingTask[]>(bootstrapSnapshot.tasks);
+  const cardsRef = useRef<KnowledgeCard[]>(bootstrapSnapshot.cards);
+  const trendingRef = useRef<KnowledgeCard[]>(bootstrapSnapshot.trending);
+  const collectionsRef = useRef<Collection[]>(bootstrapSnapshot.collections);
+  const lastSuccessfulDataRef = useRef<LoadedSnapshot | null>(bootstrapHasData ? bootstrapSnapshot : null);
+  const hasCompletedInitialLoadRef = useRef(bootstrapHasData);
+  const loadedOwnerIdRef = useRef<string | null>(bootstrapRecord?.ownerId || null);
   const currentUserRef = useRef<AuthUser | null>(null);
   const loadRequestIdRef = useRef(0);
   const activeLoadControllerRef = useRef<AbortController | null>(null);
@@ -157,7 +171,7 @@ const App: React.FC = () => {
 
   // Chat Context State
   const [chatScope, setChatScope] = useState<{ cards: KnowledgeCard[], title: string }>({
-    cards: [],
+    cards: bootstrapSnapshot.cards,
     title: '全部知识库'
   });
 
@@ -198,10 +212,12 @@ const App: React.FC = () => {
     options: { showOverlay?: boolean; preserveNotice?: boolean } = {}
   ): Promise<boolean> => {
     const { showOverlay = !hasCompletedInitialLoadRef.current, preserveNotice = false } = options;
+    const targetOwnerId = authUser?.id || null;
     const requestId = ++loadRequestIdRef.current;
     activeLoadControllerRef.current?.abort();
     const loadController = new AbortController();
     activeLoadControllerRef.current = loadController;
+    setIsSyncing(true);
     const runCloudRead = <T,>(
       operation: (signal: AbortSignal) => Promise<T>,
       fallbackValue: T
@@ -225,17 +241,25 @@ const App: React.FC = () => {
           collections: INITIAL_COLLECTIONS.map(toOfflinePublicCollection),
           tasks: [],
         };
-        const storedSnapshot = readStoredSnapshot(authUser?.id || null);
+        const storedRecord = readStoredSnapshotRecord(targetOwnerId);
+        const storedSnapshot = storedRecord?.snapshot || null;
+        const isSameOwner = loadedOwnerIdRef.current === targetOwnerId;
         const liveSnapshot = {
           cards: cardsRef.current,
           trending: trendingRef.current,
           collections: collectionsRef.current,
           tasks: tasksRef.current,
         };
-        const baselineSnapshot = lastSuccessfulDataRef.current || storedSnapshot || liveSnapshot;
+        const baselineSnapshot = isSameOwner
+          ? lastSuccessfulDataRef.current || storedSnapshot || liveSnapshot
+          : storedSnapshot || EMPTY_SNAPSHOT;
 
         const hasBaselineData = snapshotHasAnyData(baselineSnapshot);
         const applyLoadedSnapshot = (snapshot: LoadedSnapshot) => {
+          cardsRef.current = snapshot.cards;
+          trendingRef.current = snapshot.trending;
+          collectionsRef.current = snapshot.collections;
+          tasksRef.current = snapshot.tasks;
           setCards(snapshot.cards);
           setTrending(snapshot.trending);
           setCollections(snapshot.collections);
@@ -243,8 +267,15 @@ const App: React.FC = () => {
           setChatScope({ cards: snapshot.cards, title: '全部知识库' });
         };
 
-        if (showOverlay && hasBaselineData && baselineSnapshot) {
-          showCachedSnapshotImmediately(baselineSnapshot, applyLoadedSnapshot);
+        if (!isSameOwner || (showOverlay && hasBaselineData)) {
+          applyLoadedSnapshot(baselineSnapshot);
+          loadedOwnerIdRef.current = targetOwnerId;
+          lastSuccessfulDataRef.current = hasBaselineData ? baselineSnapshot : null;
+          setLastSyncedAt(storedRecord?.syncedAt || null);
+          setNewTrendingCount(0);
+        }
+
+        if (hasBaselineData) {
           hasCompletedInitialLoadRef.current = true;
           setIsLoading(false);
         }
@@ -261,6 +292,11 @@ const App: React.FC = () => {
         const dbCards = cardsLoad.value;
         const dbTrending = trendingLoad.value;
         const primaryHadFailure = !cardsLoad.ok || !trendingLoad.ok;
+        if (trendingLoad.ok) {
+          setNewTrendingCount(
+            hasBaselineData ? countNewItemIds(baselineSnapshot.trending, dbTrending) : 0
+          );
+        }
         if (cardsLoad.ok) {
           setHasMoreCards(dbCards.length >= CARD_PAGE_SIZE);
         }
@@ -283,7 +319,7 @@ const App: React.FC = () => {
 
         if (!primaryResolved.usedFallback) {
           lastSuccessfulDataRef.current = primarySnapshot;
-          writeStoredSnapshot(authUser?.id || null, lastSuccessfulDataRef.current);
+          writeStoredSnapshot(targetOwnerId, lastSuccessfulDataRef.current);
         }
 
         hasCompletedInitialLoadRef.current = true;
@@ -336,6 +372,9 @@ const App: React.FC = () => {
 
         if (!primaryHadFailure && !secondaryHadFailure) {
           setLoadNotice('');
+          const syncedAt = new Date().toISOString();
+          setLastSyncedAt(syncedAt);
+          writeStoredSnapshot(targetOwnerId, secondarySnapshot, { syncedAt });
         }
 
         if (
@@ -344,7 +383,9 @@ const App: React.FC = () => {
           secondarySnapshot.collections.length > 0
         ) {
           lastSuccessfulDataRef.current = secondarySnapshot;
-          writeStoredSnapshot(authUser?.id || null, secondarySnapshot);
+          if (primaryHadFailure || secondaryHadFailure) {
+            writeStoredSnapshot(targetOwnerId, secondarySnapshot);
+          }
         }
         return trendingLoad.ok;
       }
@@ -362,23 +403,23 @@ const App: React.FC = () => {
         collections: INITIAL_COLLECTIONS.map(toOfflinePublicCollection),
         tasks: [],
       };
+      loadedOwnerIdRef.current = null;
       writeStoredSnapshot(null, lastSuccessfulDataRef.current);
       return true;
     } catch (error) {
       console.error('Failed to load app data:', error);
-      setLoadNotice('云端数据加载失败，当前已回退为空状态。请稍后刷新重试。');
-      setCards([]);
-      setTrending([]);
-      setCollections([]);
-      setTasks([]);
-      setHasMoreCards(false);
-      setChatScope({ cards: [], title: '全部知识库' });
+      setLoadNotice(
+        snapshotHasAnyData(lastSuccessfulDataRef.current)
+          ? '云端数据加载失败，当前继续显示上次内容。请稍后重试。'
+          : '云端数据加载失败，当前暂无可用缓存。请稍后重试。'
+      );
       return false;
     } finally {
       hasCompletedInitialLoadRef.current = true;
-      if (showOverlay) setIsLoading(false);
       if (activeLoadControllerRef.current === loadController) {
         activeLoadControllerRef.current = null;
+        setIsLoading(false);
+        setIsSyncing(false);
       }
     }
   };
@@ -409,7 +450,7 @@ const App: React.FC = () => {
       if (!active) return;
       setCurrentUser(authUser);
       currentUserRef.current = authUser;
-      await loadData(authUser, { showOverlay: true, preserveNotice: true });
+      await loadData(authUser, { showOverlay: false, preserveNotice: true });
 
       if (!session?.user) return;
 
@@ -724,6 +765,7 @@ const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
+    clearActiveSnapshotOwner();
     await auth.signOut();
     setCurrentUser(null);
     currentUserRef.current = null;
@@ -737,6 +779,7 @@ const App: React.FC = () => {
   };
 
   const handleClearLocalAuthState = () => {
+    clearActiveSnapshotOwner();
     auth.clearLocalAuthState();
     setCurrentUser(null);
   };
@@ -1553,15 +1596,7 @@ const App: React.FC = () => {
         <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-indigo-500/10 rounded-full blur-[120px]"></div>
       </div>
 
-      {/* Loading Overlay */}
-      {isLoading && (
-        <div className="fixed inset-0 z-[100] bg-[#0a0f1a]/95 flex flex-col items-center justify-center">
-          <Loader2 className="w-10 h-10 text-indigo-400 animate-spin mb-4" />
-          <p className="text-gray-400 text-sm">正在加载你的知识库...</p>
-        </div>
-      )}
-
-      {loadNotice && !isLoading && (
+      {loadNotice && (
         <div className="fixed top-4 left-1/2 z-[90] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-xl border border-amber-400/20 bg-[#2a2417]/95 px-4 py-2 text-sm text-amber-100 shadow-lg backdrop-blur">
           <span>{loadNotice}</span>
           <button

@@ -4,8 +4,12 @@ import { readFileSync } from 'node:fs';
 
 const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
 
-test('initial load renders a cached snapshot before waiting for cloud data', () => {
-  assert.equal(appSource.includes('showCachedSnapshotImmediately'), true);
-  assert.equal(appSource.includes('showOverlay && hasBaselineData'), true);
-  assert.equal(appSource.includes('setIsLoading(false);'), true);
+test('initial render reads a cached snapshot before auth hydration starts', () => {
+  const bootstrapIndex = appSource.indexOf('readBootstrapSnapshot()');
+  const hydrateIndex = appSource.indexOf('const hydrate = async () =>');
+
+  assert.ok(bootstrapIndex >= 0);
+  assert.ok(hydrateIndex >= 0);
+  assert.ok(bootstrapIndex < hydrateIndex);
+  assert.match(appSource, /useState\(!snapshotHasAnyData\(bootstrapSnapshot\)\)/);
 });
