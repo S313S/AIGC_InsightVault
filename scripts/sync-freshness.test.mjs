@@ -60,15 +60,15 @@ test('reports a missing or invalid sync time honestly', () => {
   assert.equal(getSyncLabel({ isSyncing: false, lastSyncedAt: 'bad-date' }), '尚未同步');
 });
 
-test('app derives collection time only from a successful trending response', () => {
-  assert.match(appSource, /import \{ getLatestCollectionAt \} from '\.\/shared\/collectionFreshness\.js'/);
+test('app resolves trending cards and collection time independently from knowledge cards', () => {
+  assert.match(appSource, /import \{ getLatestCollectionAt, resolveTrendingSnapshot \} from '\.\/shared\/collectionFreshness\.js'/);
   assert.match(
     appSource,
-    /const collectedAt = trendingLoad\.ok\s*\? getLatestCollectionAt\(dbTrending\)\s*:\s*undefined;/s
+    /const trendingSnapshot = resolveTrendingSnapshot\(\{[\s\S]*?ok:\s*trendingLoad\.ok,[\s\S]*?cards:\s*dbTrending,[\s\S]*?previousCards:\s*baselineSnapshot\.trending,[\s\S]*?previousCollectedAt:\s*baselineCollectedAt,[\s\S]*?\}\);/
   );
   assert.match(
     appSource,
-    /if \(collectedAt !== undefined\) \{\s*setLastCollectedAt\(collectedAt\);\s*\}/s
+    /trending:\s*preserveOnFailedLoad\(trendingLoad, trendingSnapshot\.cards, hasBaselineData\)/
   );
   assert.doesNotMatch(appSource, /setLastCollectedAt\(new Date\(\)\.toISOString\(\)\)/);
 });

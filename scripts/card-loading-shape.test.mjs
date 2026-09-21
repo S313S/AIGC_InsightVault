@@ -39,6 +39,14 @@ test('trending card list loading avoids full-row select star', () => {
   assert.equal(body.includes('images'), false);
 });
 
+test('trending card loading delegates snapshot batch selection to the shared rules', () => {
+  const body = extractFunctionBody('getTrendingCards');
+
+  assert.equal(source.includes("import { selectLatestSnapshotCards } from '../shared/collectionFreshness.js';"), true);
+  assert.equal(body.includes('return selectLatestSnapshotCards(cards);'), true);
+  assert.equal(body.includes('pickLatestSnapshotTag'), false);
+});
+
 test('full card detail can be loaded by id separately from the list', () => {
   const body = extractFunctionBody('getKnowledgeCardById');
 

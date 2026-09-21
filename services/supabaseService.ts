@@ -15,6 +15,7 @@ import {
 import { normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
 import { normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
 import { buildCardIdentityKey, countCollectionItems } from '../shared/collectionCounts.js';
+import { selectLatestSnapshotCards } from '../shared/collectionFreshness.js';
 
 // ============ 类型转换工具 ============
 
@@ -99,15 +100,6 @@ const normalizeSourceUrl = (url: string): string => {
     } catch {
         return raw.split('?')[0].trim();
     }
-};
-
-const isSnapshotTag = (tag: unknown): tag is string =>
-    typeof tag === 'string' && tag.startsWith('snapshot:');
-
-const pickLatestSnapshotTag = (tags: unknown[]): string => {
-    const snapshots = (Array.isArray(tags) ? tags : []).filter(isSnapshotTag);
-    if (snapshots.length === 0) return 'snapshot:legacy';
-    return [...snapshots].sort((a, b) => (a > b ? -1 : a < b ? 1 : 0))[0];
 };
 
 const mergeAiAnalysis = (base: KnowledgeCard['aiAnalysis'], incoming: KnowledgeCard['aiAnalysis']) => {
@@ -415,15 +407,7 @@ export const getTrendingCards = async (signal?: AbortSignal): Promise<KnowledgeC
     }
 
     const cards = dedupeCards((data || []).map(row => dbToCard(row, { isDetailLoaded: false })));
-    const snapshotTags = cards
-        .map(c => pickLatestSnapshotTag(c.tags || []))
-        .filter(Boolean)
-        .sort((a, b) => (a > b ? -1 : a < b ? 1 : 0));
-
-    if (snapshotTags.length === 0) return cards;
-
-    const latest = snapshotTags[0];
-    return cards.filter(c => pickLatestSnapshotTag(c.tags || []) === latest);
+    return selectLatestSnapshotCards(cards);
 };
 
 export const getKnowledgeCardById = async (cardId: string): Promise<KnowledgeCard | null> => {

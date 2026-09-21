@@ -41,7 +41,7 @@ import {
 import { mergeLoadedSnapshot } from './shared/loadMerge.js';
 import { resolveLoadNotice } from './shared/loadNotice.js';
 import { applyCollectionCounts } from './shared/collectionCounts.js';
-import { getLatestCollectionAt } from './shared/collectionFreshness.js';
+import { getLatestCollectionAt, resolveTrendingSnapshot } from './shared/collectionFreshness.js';
 import { countNewItemIds } from './shared/syncFreshness.js';
 import {
   buildCollectionCardCacheKey,
@@ -170,6 +170,7 @@ const App: React.FC = () => {
   const tasksRef = useRef<TrackingTask[]>(bootstrapSnapshot.tasks);
   const cardsRef = useRef<KnowledgeCard[]>(bootstrapSnapshot.cards);
   const trendingRef = useRef<KnowledgeCard[]>(bootstrapSnapshot.trending);
+  const lastCollectedAtRef = useRef<string | null>(bootstrapRecord?.collectedAt || null);
   const collectionsRef = useRef<Collection[]>(bootstrapSnapshot.collections);
   const lastSuccessfulDataRef = useRef<LoadedSnapshot | null>(bootstrapHasData ? bootstrapSnapshot : null);
   const hasCompletedInitialLoadRef = useRef(bootstrapHasData);
@@ -265,6 +266,9 @@ const App: React.FC = () => {
         const baselineSnapshot = isSameOwner
           ? lastSuccessfulDataRef.current || storedSnapshot || liveSnapshot
           : storedSnapshot || EMPTY_SNAPSHOT;
+        const baselineCollectedAt = isSameOwner
+          ? lastCollectedAtRef.current
+          : storedRecord?.collectedAt || null;
 
         const hasBaselineData = snapshotHasAnyData(baselineSnapshot);
         const applyLoadedSnapshot = (snapshot: LoadedSnapshot) => {
@@ -283,7 +287,8 @@ const App: React.FC = () => {
           applyLoadedSnapshot(baselineSnapshot);
           loadedOwnerIdRef.current = targetOwnerId;
           lastSuccessfulDataRef.current = hasBaselineData ? baselineSnapshot : null;
-          setLastCollectedAt(storedRecord?.collectedAt || null);
+          lastCollectedAtRef.current = baselineCollectedAt;
+          setLastCollectedAt(baselineCollectedAt);
           setLastSyncedAt(storedRecord?.syncedAt || null);
           setNewTrendingCount(0);
         }
@@ -304,14 +309,17 @@ const App: React.FC = () => {
         const trendingLoad = getLoadResult(trendingResult, [], 'Loading trending cards');
         const dbCards = cardsLoad.value;
         const dbTrending = trendingLoad.value;
-        const collectedAt = trendingLoad.ok
-          ? getLatestCollectionAt(dbTrending)
-          : undefined;
+        const trendingSnapshot = resolveTrendingSnapshot({
+          ok: trendingLoad.ok,
+          cards: dbTrending,
+          previousCards: baselineSnapshot.trending,
+          previousCollectedAt: baselineCollectedAt,
+        });
+        const collectedAt = trendingSnapshot.collectedAt;
         const primaryHadFailure = !cardsLoad.ok || !trendingLoad.ok;
-        if (collectedAt !== undefined) {
-          setLastCollectedAt(collectedAt);
-        }
         if (trendingLoad.ok) {
+          lastCollectedAtRef.current = collectedAt;
+          setLastCollectedAt(collectedAt);
           setNewTrendingCount(
             hasBaselineData ? countNewItemIds(baselineSnapshot.trending, dbTrending) : 0
           );
@@ -331,7 +339,7 @@ const App: React.FC = () => {
         });
         const primarySnapshot = mergeLoadedSnapshot(baselineSnapshot, {
           cards: preserveOnFailedLoad(cardsLoad, primaryResolved.cards, hasBaselineData),
-          trending: preserveOnFailedLoad(trendingLoad, primaryResolved.trending, hasBaselineData),
+          trending: preserveOnFailedLoad(trendingLoad, trendingSnapshot.cards, hasBaselineData),
         });
 
         applyLoadedSnapshot(primarySnapshot);
@@ -439,6 +447,7 @@ const App: React.FC = () => {
       setTrending(offlineTrending);
       setCollections(INITIAL_COLLECTIONS.map(toOfflinePublicCollection));
       setTasks([]);
+      lastCollectedAtRef.current = collectedAt;
       setLastCollectedAt(collectedAt);
       setLastSyncedAt(null);
       setHasMoreCards(false);

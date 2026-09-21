@@ -27,6 +27,46 @@ test('returns null when cards contain no valid snapshot timestamp', async () => 
   ]), null);
 });
 
+test('selects the newest real snapshot batch over legacy and invalid tags', async () => {
+  const { selectLatestSnapshotCards } = await loadFreshnessHelpers();
+  const cards = [
+    { id: 'legacy', tags: ['snapshot:legacy'] },
+    { id: 'invalid', tags: ['snapshot:not-a-date'] },
+    { id: 'older', tags: ['snapshot:2026-09-20T01:00:00.000Z'] },
+    { id: 'latest-a', tags: ['snapshot:2026-09-21T01:00:00.000Z'] },
+    { id: 'latest-b', tags: ['ai', 'snapshot:2026-09-21T01:00:00.000Z'] },
+  ];
+
+  assert.deepEqual(
+    selectLatestSnapshotCards(cards).map(card => card.id),
+    ['latest-a', 'latest-b']
+  );
+});
+
+test('keeps legacy cards when no valid timestamp batch exists', async () => {
+  const { selectLatestSnapshotCards } = await loadFreshnessHelpers();
+  const cards = [
+    { id: 'legacy', tags: ['snapshot:legacy'] },
+    { id: 'untagged', tags: ['ai'] },
+    { id: 'invalid', tags: ['snapshot:not-a-date'] },
+  ];
+
+  assert.deepEqual(
+    selectLatestSnapshotCards(cards).map(card => card.id),
+    ['legacy', 'untagged']
+  );
+});
+
+test('returns all unclassifiable cards instead of letting an invalid tag win', async () => {
+  const { selectLatestSnapshotCards } = await loadFreshnessHelpers();
+  const cards = [
+    { id: 'invalid-a', tags: ['snapshot:not-a-date'] },
+    { id: 'invalid-b', tags: ['snapshot:tomorrow-ish'] },
+  ];
+
+  assert.deepEqual(selectLatestSnapshotCards(cards), cards);
+});
+
 test('rejects calendar-invalid snapshot timestamps', async () => {
   const { getLatestCollectionAt } = await loadFreshnessHelpers();
 
@@ -79,6 +119,67 @@ test('marks a collection stale after the freshness window', async () => {
   }), {
     status: 'stale',
     ageMs: 3 * 24 * 60 * 60 * 1000,
+  });
+});
+
+test('changes from fresh to stale exactly at the freshness boundary', async () => {
+  const { getCollectionFreshness } = await loadFreshnessHelpers();
+  const collectedAt = '2026-09-20T00:00:00.000Z';
+  const staleAfterMs = 36 * 60 * 60 * 1000;
+
+  assert.equal(getCollectionFreshness({
+    collectedAt,
+    now: Date.parse(collectedAt) + staleAfterMs - 1,
+    staleAfterMs,
+  }).status, 'fresh');
+  assert.equal(getCollectionFreshness({
+    collectedAt,
+    now: Date.parse(collectedAt) + staleAfterMs,
+    staleAfterMs,
+  }).status, 'stale');
+});
+
+test('successful empty trending keeps the last good snapshot and collection time', async () => {
+  const { resolveTrendingSnapshot } = await loadFreshnessHelpers();
+  const previousCards = [{ id: 'old', tags: ['snapshot:2026-09-19T01:00:00.000Z'] }];
+
+  assert.deepEqual(resolveTrendingSnapshot({
+    ok: true,
+    cards: [],
+    previousCards,
+    previousCollectedAt: '2026-09-19T01:00:00.000Z',
+  }), {
+    cards: previousCards,
+    collectedAt: '2026-09-19T01:00:00.000Z',
+  });
+});
+
+test('successful empty trending without a baseline remains empty and unknown', async () => {
+  const { resolveTrendingSnapshot } = await loadFreshnessHelpers();
+
+  assert.deepEqual(resolveTrendingSnapshot({
+    ok: true,
+    cards: [],
+    previousCards: [],
+    previousCollectedAt: null,
+  }), {
+    cards: [],
+    collectedAt: null,
+  });
+});
+
+test('failed trending load preserves the previous snapshot metadata', async () => {
+  const { resolveTrendingSnapshot } = await loadFreshnessHelpers();
+  const previousCards = [{ id: 'old', tags: ['snapshot:2026-09-19T01:00:00.000Z'] }];
+
+  assert.deepEqual(resolveTrendingSnapshot({
+    ok: false,
+    cards: [],
+    previousCards,
+    previousCollectedAt: '2026-09-19T01:00:00.000Z',
+  }), {
+    cards: previousCards,
+    collectedAt: '2026-09-19T01:00:00.000Z',
   });
 });
 

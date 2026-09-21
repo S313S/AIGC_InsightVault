@@ -47,6 +47,41 @@ const parseIsoTimestamp = (value) => {
   return Number.isFinite(timestamp) ? timestamp : null;
 };
 
+const getValidSnapshotTimestamps = (card) => {
+  const timestamps = [];
+  for (const tag of Array.isArray(card?.tags) ? card.tags : []) {
+    if (typeof tag !== 'string' || !tag.startsWith(SNAPSHOT_PREFIX)) continue;
+    const timestamp = parseIsoTimestamp(tag.slice(SNAPSHOT_PREFIX.length));
+    if (timestamp !== null) timestamps.push(timestamp);
+  }
+  return timestamps;
+};
+
+export const selectLatestSnapshotCards = (cards = []) => {
+  const availableCards = Array.isArray(cards) ? cards : [];
+  let latestTimestamp = -Infinity;
+
+  for (const card of availableCards) {
+    for (const timestamp of getValidSnapshotTimestamps(card)) {
+      latestTimestamp = Math.max(latestTimestamp, timestamp);
+    }
+  }
+
+  if (Number.isFinite(latestTimestamp)) {
+    return availableCards.filter(card =>
+      getValidSnapshotTimestamps(card).includes(latestTimestamp)
+    );
+  }
+
+  const legacyCards = availableCards.filter(card => {
+    const snapshotTags = (Array.isArray(card?.tags) ? card.tags : [])
+      .filter(tag => typeof tag === 'string' && tag.startsWith(SNAPSHOT_PREFIX));
+    return snapshotTags.length === 0 || snapshotTags.includes(`${SNAPSHOT_PREFIX}legacy`);
+  });
+
+  return legacyCards.length > 0 ? legacyCards : availableCards;
+};
+
 export const getLatestCollectionAt = (cards = []) => {
   let latestValue = null;
   let latestTimestamp = -Infinity;
@@ -64,6 +99,28 @@ export const getLatestCollectionAt = (cards = []) => {
   }
 
   return latestValue;
+};
+
+export const resolveTrendingSnapshot = ({
+  ok,
+  cards = [],
+  previousCards = [],
+  previousCollectedAt = null,
+} = {}) => {
+  const nextCards = Array.isArray(cards) ? cards : [];
+  const lastGoodCards = Array.isArray(previousCards) ? previousCards : [];
+
+  if (!ok || (nextCards.length === 0 && lastGoodCards.length > 0)) {
+    return {
+      cards: lastGoodCards,
+      collectedAt: previousCollectedAt || null,
+    };
+  }
+
+  return {
+    cards: nextCards,
+    collectedAt: getLatestCollectionAt(nextCards),
+  };
 };
 
 export const getCollectionFreshness = ({

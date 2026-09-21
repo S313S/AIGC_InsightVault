@@ -46,3 +46,12 @@ test('dashboard renders a visible stale warning with the last collection time', 
   assert.match(dashboardSource, /role="alert"/);
   assert.match(dashboardSource, /\{collectionLabel\}/);
 });
+
+test('dashboard refreshes freshness time while the page remains open', () => {
+  assert.match(dashboardSource, /useEffect/);
+  assert.match(dashboardSource, /const \[freshnessNow, setFreshnessNow\] = useState\(\(\) => Date\.now\(\)\)/);
+  assert.match(dashboardSource, /setInterval\([\s\S]*?setFreshnessNow\(Date\.now\(\)\)[\s\S]*?60_000/);
+  assert.match(dashboardSource, /clearInterval\(timer\)/);
+  assert.match(dashboardSource, /getCollectionFreshness\(\{ collectedAt: lastCollectedAt, now: freshnessNow \}\)/);
+  assert.match(dashboardSource, /getCollectionLabel\(\{[\s\S]*?now:\s*freshnessNow/);
+});

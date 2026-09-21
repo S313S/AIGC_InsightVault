@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { KnowledgeCard, TrackingTask, Platform, TaskStatus } from '../types';
 import { Flame, ArrowRight, Save, ExternalLink, Activity, LayoutGrid, Clock, Heart, TrendingUp, Bookmark, Sparkles } from './Icons';
 import { hasPromptEvidence } from '../shared/promptTagging.js';
@@ -43,14 +43,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 }) => {
 
     const totalItemsFound = trendingItems.length;
-    const collectionFreshness = getCollectionFreshness({ collectedAt: lastCollectedAt });
+    const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
+    const collectionFreshness = getCollectionFreshness({ collectedAt: lastCollectedAt, now: freshnessNow });
     const collectionLabel = getCollectionLabel({
         collectedAt: lastCollectedAt,
+        now: freshnessNow,
         status: collectionFreshness.status,
     });
     const syncLabel = getSyncLabel({ isSyncing, lastSyncedAt });
     const [showAllTrending, setShowAllTrending] = useState(false);
     const [repairingCardId, setRepairingCardId] = useState<string | null>(null);
+
+    useEffect(() => {
+        const timer = window.setInterval(() => {
+            setFreshnessNow(Date.now());
+        }, 60_000);
+        return () => window.clearInterval(timer);
+    }, []);
 
     const normalizeSourceUrl = (url: string) => {
         if (!url) return '';
