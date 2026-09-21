@@ -343,12 +343,37 @@ test('generateTopicBrief requests Gemini JSON mode and accepts response.text str
 
   assert.equal(request.model, 'gemini-2.5-flash');
   assert.equal(request.config.responseMimeType, 'application/json');
+  assert.equal(request.config.httpOptions.timeout, 9000);
+  assert.equal(request.config.abortSignal instanceof AbortSignal, true);
   assert.equal(typeof request.contents, 'string');
   assert.deepEqual(result, {
     brief: validBrief,
     generationStatus: 'generated',
     errorKind: null,
   });
+});
+
+test('generateTopicBrief aborts the injected provider when its timeout expires', async () => {
+  let observedSignal;
+  let aborted = false;
+  const result = await generateTopicBrief(cluster, {
+    timeoutMs: 5,
+    generateContent: async (request) => {
+      observedSignal = request.config.abortSignal;
+      return new Promise((resolve, reject) => {
+        observedSignal.addEventListener('abort', () => {
+          aborted = true;
+          reject(observedSignal.reason);
+        }, { once: true });
+      });
+    },
+  });
+
+  assert.equal(observedSignal instanceof AbortSignal, true);
+  assert.equal(aborted, true);
+  assert.equal(observedSignal.aborted, true);
+  assert.equal(result.generationStatus, 'fallback');
+  assert.equal(result.errorKind, 'timeout');
 });
 
 test('generateTopicBrief accepts async text() response shape', async () => {

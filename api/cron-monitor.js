@@ -30,7 +30,9 @@ const MAX_TASKS_PER_RUN = 3;
 const XHS_DELAY_MS = 1000;
 const XHS_RETRIES = 2;
 const TWITTER_REQUIRE_TERMS = ['Claude', 'GPT', 'LLM', 'OpenAI', 'Anthropic', 'Gemini'];
-const SOFT_TIMEOUT_GUARD_MS = 260000;
+const MAX_RUNTIME_MS = 300000;
+const RUNTIME_SAFETY_MARGIN_MS = 40000;
+const SOFT_TIMEOUT_GUARD_MS = MAX_RUNTIME_MS - RUNTIME_SAFETY_MARGIN_MS;
 const HIGH_ENGAGEMENT_QUALITY_BYPASS = 5000;
 const QUALITY_FALLBACK_POSITIVE = [
   'tutorial', 'workflow', 'tips', 'how to', 'step by step', 'guide', 'setup', 'build',
@@ -913,11 +915,11 @@ export default async function handler(req, res) {
         throw new Error(refreshError.message || 'Failed to reload trending cards');
       }
 
-      snapshotCleanup = await cleanupOldTrendingSnapshots({
-        supabase,
-        ownerId,
-        keepCount: 5
-      });
+      snapshotCleanup = {
+        ...snapshotCleanup,
+        skipped: true,
+        reason: 'topic_projection_not_run'
+      };
 
       return res.status(200).json({
         mode: 'rebuild',
@@ -1664,30 +1666,22 @@ export default async function handler(req, res) {
       }
     }
 
-    // Keep only old, unreferenced snapshots; the helper pages the complete
-    // owner-scoped inventory and fails closed if reference reads are incomplete.
-    snapshotCleanup = await cleanupOldTrendingSnapshots({
-      supabase,
-      ownerId,
-      keepCount: 5
-    });
-    if (snapshotCleanup.errors.length > 0 || snapshotCleanup.truncated) {
-      platformErrors = [...platformErrors, {
-        platform: 'topic_radar',
-        error: 'Snapshot cleanup was incomplete; referenced evidence was preserved'
-      }];
-    }
-
     // Cards have already been committed at this point. Topic persistence is a
     // downstream projection: its failure is observable but never rolls back or
     // hides a successful collection run.
+    let topicProjectionComplete = false;
     try {
       topicRadar = await rebuildTopicRadar({
         supabase,
         ownerId,
         now: new Date().toISOString(),
-        currentSnapshotTag: snapshotTag
+        currentSnapshotTag: snapshotTag,
+        pipelineDeadlineMs: Math.max(
+          0,
+          MAX_RUNTIME_MS - RUNTIME_SAFETY_MARGIN_MS - (Date.now() - runStartedAt)
+        )
       });
+      topicProjectionComplete = topicRadar.status !== 'skipped' && topicRadar.reason !== 'read_truncated';
       if (topicRadar.status === 'partial_failure') {
         platformErrors = [...platformErrors, {
           platform: 'topic_radar',
@@ -1699,12 +1693,51 @@ export default async function handler(req, res) {
       topicRadar = {
         ...topicRadar,
         status: 'failed',
-        reason: null,
+        reason: 'topic_pipeline_failed',
         errors: [{ stage, errorKind: 'database_failure' }]
       };
       platformErrors = [...platformErrors, {
         platform: 'topic_radar',
         error: `Topic radar failed during ${stage}`
+      }];
+    }
+
+    if (topicProjectionComplete) {
+      try {
+        // Evidence links now exist, so cleanup can safely remove only cards
+        // proven unreferenced by the owner-scoped topic projection.
+        snapshotCleanup = await cleanupOldTrendingSnapshots({
+          supabase,
+          ownerId,
+          keepCount: 5
+        });
+      } catch {
+        snapshotCleanup = {
+          ...snapshotCleanup,
+          skipped: true,
+          reason: 'snapshot_cleanup_failed',
+          errors: [{ stage: 'snapshot_cleanup', errorKind: 'database_failure' }]
+        };
+      }
+      if (snapshotCleanup.errors.length > 0 || snapshotCleanup.truncated) {
+        platformErrors = [...platformErrors, {
+          platform: 'topic_radar',
+          error: 'Snapshot cleanup was incomplete; referenced evidence was preserved'
+        }];
+      }
+    } else {
+      snapshotCleanup = {
+        ...snapshotCleanup,
+        skipped: true,
+        reason: topicRadar.reason === 'read_truncated'
+          ? 'topic_projection_read_truncated'
+          : topicRadar.status === 'skipped'
+            ? 'topic_projection_skipped'
+            : 'topic_pipeline_failed'
+      };
+      platformErrors = [...platformErrors, {
+        platform: 'topic_radar',
+        error: 'Snapshot cleanup skipped because topic projection was incomplete'
       }];
     }
 

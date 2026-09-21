@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 
 import { clusterTopicCandidates } from '../shared/topicClustering.js';
+import { cleanupOldTrendingSnapshots } from '../server/trendingSnapshotCleanup.js';
 import {
   anchorRelativePublicationTime,
   buildSourceBaselines,
@@ -542,6 +543,55 @@ test('relative publication time is anchored to stable observation time, not proc
   assert.equal(firstDb.tables.topics[0].latest_evidence_at, secondDb.tables.topics[0].latest_evidence_at);
 });
 
+test('relative publication prefers the newest valid snapshot observation over old created_at', () => {
+  const relative = card({
+    date: '2小时前',
+    created_at: '2026-01-01T08:00:00.000Z',
+    tags: [
+      'snapshot:not-a-date',
+      'snapshot:2026-09-20T08:00:00.000Z',
+      'snapshot:2026-09-21T08:00:00.000Z',
+    ],
+  });
+
+  const first = anchorRelativePublicationTime({
+    ...relative,
+    sourceUrl: relative.source_url,
+    createdAt: relative.created_at,
+  });
+  const rerun = anchorRelativePublicationTime({
+    ...relative,
+    sourceUrl: relative.source_url,
+    createdAt: relative.created_at,
+  });
+
+  assert.equal(first.publishedAt, '2026-09-21T06:00:00.000Z');
+  assert.equal(rerun.publishedAt, first.publishedAt);
+});
+
+test('first projection links an old snapshot card before cleanup can remove it', async () => {
+  const cards = Array.from({ length: 6 }, (_, index) => card({
+    id: `first-run-${index}`,
+    source_url: `https://x.com/builder/status/${500 + index}`,
+    tags: ['Claude Code', `snapshot:2026-09-${String(21 - index).padStart(2, '0')}T08:00:00.000Z`],
+  }));
+  const supabase = new FakeSupabase({ knowledge_cards: cards });
+
+  const topicResult = await run(supabase);
+  const cleanupResult = await cleanupOldTrendingSnapshots({
+    supabase,
+    ownerId: OWNER,
+    trendRows: cards,
+    keepCount: 5,
+  });
+
+  assert.equal(topicResult.topicsInserted, 1);
+  assert.equal(supabase.tables.topic_sources.some((source) => source.card_id === 'first-run-5'), true);
+  assert.equal(cleanupResult.protectedCount, 1);
+  assert.equal(cleanupResult.deletedCount, 0);
+  assert.equal(supabase.tables.knowledge_cards.some((value) => value.id === 'first-run-5'), true);
+});
+
 test('existing source and card paging restores more than one page and batch', async () => {
   const current = card({ id: 'current-card' });
   const old = existingTopic({ source_count: 121, platform_count: 1 });
@@ -646,7 +696,7 @@ test('pipeline caps model calls for 30 topics while persisting every fallback', 
   assert.equal(result.errors.filter((value) => value.errorKind === 'model_budget_exhausted').length, 18);
 });
 
-test('one timed-out model call falls back and later topics still run', async () => {
+test('one timed-out model call aborts and prevents later overlapping model calls', async () => {
   const cards = [
     card({ id: 'timeout-a', source_url: 'https://x.com/a/status/1', title: 'TimeoutAlpha 2 正式发布', raw_content: 'TimeoutAlpha 2 正式发布。', tags: ['TimeoutAlpha'], ai_analysis: { summary: 'TimeoutAlpha 2' } }),
     card({ id: 'timeout-b', source_url: 'https://x.com/b/status/2', title: 'TimeoutBeta 2 正式发布', raw_content: 'TimeoutBeta 2 正式发布。', tags: ['TimeoutBeta'], ai_analysis: { summary: 'TimeoutBeta 2' } }),
@@ -656,18 +706,48 @@ test('one timed-out model call falls back and later topics still run', async () 
   const result = await run(supabase, {
     maxModelCalls: 2,
     modelTimeoutMs: 5,
-    generateContent: async () => {
+    pipelineDeadlineMs: 100,
+    generateContent: async (request) => {
       modelCalls += 1;
-      if (modelCalls === 1) return new Promise(() => {});
-      return { text: JSON.stringify(validBrief('超时后的后续成功')) };
+      return new Promise((resolve, reject) => {
+        request.config.abortSignal.addEventListener('abort', () => reject(request.config.abortSignal.reason), { once: true });
+      });
     },
   });
 
-  assert.equal(modelCalls, 2);
-  assert.equal(result.briefsFallback, 1);
-  assert.equal(result.briefsGenerated, 1);
+  assert.equal(modelCalls, 1);
+  assert.equal(result.briefsFallback, 2);
+  assert.equal(result.briefsGenerated, 0);
   assert.equal(result.errors.some((value) => value.errorKind === 'timeout'), true);
+  assert.equal(result.errors.some((value) => value.errorKind === 'provider_overlap_guard'), true);
   assert.equal(supabase.tables.topics.length, 2);
+});
+
+test('per-call timeout is capped by the remaining pipeline deadline', async () => {
+  const cards = [
+    card({ id: 'deadline-a', source_url: 'https://x.com/a/status/10', title: 'DeadlineAlpha 2 正式发布', raw_content: 'DeadlineAlpha 2 正式发布。', tags: ['DeadlineAlpha'] }),
+    card({ id: 'deadline-b', source_url: 'https://x.com/b/status/20', title: 'DeadlineBeta 2 正式发布', raw_content: 'DeadlineBeta 2 正式发布。', tags: ['DeadlineBeta'] }),
+  ];
+  const supabase = new FakeSupabase({ knowledge_cards: cards });
+  const observedTimeouts = [];
+  let calls = 0;
+  const result = await run(supabase, {
+    maxModelCalls: 2,
+    modelTimeoutMs: 1000,
+    pipelineDeadlineMs: 8,
+    generateContent: async (request) => {
+      calls += 1;
+      observedTimeouts.push(request.config.httpOptions.timeout);
+      return new Promise((resolve, reject) => {
+        request.config.abortSignal.addEventListener('abort', () => reject(request.config.abortSignal.reason), { once: true });
+      });
+    },
+  });
+
+  assert.equal(calls, 1);
+  assert.equal(observedTimeouts.length, 1);
+  assert.ok(observedTimeouts[0] <= 8);
+  assert.equal(result.briefsFallback, 2);
 });
 
 test('old topics are retained and repeated runs are idempotent', async () => {
@@ -721,6 +801,13 @@ test('cron runs topic persistence after card collection and reports failures as 
   assert.match(source, /responsePayload\s*=\s*\{[\s\S]{0,700}?topicRadar/);
   assert.match(source, /resultSummary\s*=\s*\{[\s\S]{0,500}?topicRadar/);
   const pipelineCall = source.indexOf('await rebuildTopicRadar({');
+  const normalCleanupCall = source.lastIndexOf('await cleanupOldTrendingSnapshots({');
   const cardInsert = source.indexOf(".from('knowledge_cards')\n        .insert(toInsert)");
   assert.ok(cardInsert >= 0 && pipelineCall > cardInsert, 'topic pipeline must run after collected cards are committed');
+  assert.ok(normalCleanupCall > pipelineCall, 'snapshot cleanup must run only after topic evidence links are projected');
+  assert.match(source, /reason:\s*'topic_pipeline_failed'/);
+  assert.match(source, /Snapshot cleanup skipped because topic projection was incomplete/);
+  assert.match(source, /pipelineDeadlineMs:\s*Math\.max\(\s*0,[\s\S]{0,180}?runStartedAt/);
+  const rebuildBlock = source.slice(source.indexOf('if (rebuildOnly)'), source.indexOf("if ((!justOneToken"));
+  assert.doesNotMatch(rebuildBlock, /cleanupOldTrendingSnapshots/);
 });

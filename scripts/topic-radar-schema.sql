@@ -55,14 +55,22 @@ create table if not exists public.topic_sources (
   id uuid primary key default gen_random_uuid(),
   -- Deleting a topic removes its links, never its evidence cards.
   topic_id uuid not null references public.topics (id) on delete cascade,
-  -- Deleting an evidence card removes its links, never their topics.
-  card_id uuid not null references public.knowledge_cards (id) on delete cascade,
+  -- Evidence cards referenced by a topic cannot be deleted.
+  card_id uuid not null references public.knowledge_cards (id) on delete restrict,
   evidence_role text not null check (btrim(evidence_role) <> ''),
   source_type text not null check (btrim(source_type) <> ''),
   relevance smallint not null default 0 check (relevance between 0 and 100),
   created_at timestamptz not null default now(),
   unique (topic_id, card_id)
 );
+
+-- Upgrade an existing Task 4 installation from CASCADE to the same race-safe
+-- behavior used by fresh installations.
+alter table public.topic_sources
+  drop constraint if exists topic_sources_card_id_fkey;
+alter table public.topic_sources
+  add constraint topic_sources_card_id_fkey
+  foreign key (card_id) references public.knowledge_cards (id) on delete restrict;
 
 create table if not exists public.topic_feedback (
   id uuid primary key default gen_random_uuid(),

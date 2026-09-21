@@ -32,6 +32,8 @@ class Query {
       columns: this.columns,
       filters: structuredClone(this.filters),
     });
+    const failure = this.client.failures.get(`${this.table}:${this.operation}`);
+    if (failure) return { data: null, error: { message: failure } };
     if (this.operation === 'delete') {
       const before = this.client.tables[this.table];
       const removed = before.filter((row) => this.matches(row));
@@ -45,9 +47,10 @@ class Query {
 }
 
 class FakeSupabase {
-  constructor(tables) {
+  constructor(tables, failures = {}) {
     this.tables = structuredClone(tables);
     this.calls = [];
+    this.failures = new Map(Object.entries(failures));
   }
   from(table) { return new Query(this, table); }
 }
@@ -95,6 +98,29 @@ test('snapshot cleanup protects referenced cards and deletes only old unreferenc
   assert.equal(deletes.length, 1);
   assert.ok(deletes.every((call) => call.filters.find((filter) => filter.kind === 'in').values.length <= 1));
   assert.ok(supabase.calls.filter((call) => call.table === 'topic_sources').length >= 2);
+});
+
+test('snapshot cleanup reports a concurrent RESTRICT conflict without deleting evidence', async () => {
+  const trendRows = [
+    { id: 'new', tags: ['snapshot:2026-09-21T08:00:00.000Z'] },
+    { id: 'old', tags: ['snapshot:2026-09-20T08:00:00.000Z'] },
+  ];
+  const supabase = new FakeSupabase({
+    topics: [],
+    topic_sources: [],
+    knowledge_cards: trendRows.map((row) => ({ ...row, owner_id: OWNER })),
+  }, { 'knowledge_cards:delete': 'foreign key restrict conflict' });
+
+  const result = await cleanupOldTrendingSnapshots({
+    supabase,
+    ownerId: OWNER,
+    trendRows,
+    keepCount: 1,
+  });
+
+  assert.equal(result.deletedCount, 0);
+  assert.equal(result.errors.some((error) => error.stage === 'snapshot_cleanup_delete'), true);
+  assert.equal(supabase.tables.knowledge_cards.some((row) => row.id === 'old'), true);
 });
 
 test('snapshot cleanup fails closed when reference pagination reaches its safety limit', async () => {

@@ -377,9 +377,10 @@ const defaultGenerateContent = (apiKey) => async (request) => {
   return ai.models.generateContent(request);
 };
 
-const withProviderTimeout = async (work, timeoutMs) => {
+const withProviderTimeout = async (work, timeoutMs, controller) => {
   const duration = Math.max(1, Math.trunc(Number(timeoutMs) || DEFAULT_TOPIC_BRIEF_TIMEOUT_MS));
   let timer;
+  let timeoutError = null;
   try {
     return await Promise.race([
       Promise.resolve().then(work),
@@ -387,10 +388,15 @@ const withProviderTimeout = async (work, timeoutMs) => {
         timer = setTimeout(() => {
           const error = new Error('Topic brief provider timed out');
           error.code = 'TOPIC_BRIEF_TIMEOUT';
+          timeoutError = error;
+          controller.abort(error);
           reject(error);
         }, duration);
       }),
     ]);
+  } catch (error) {
+    if (timeoutError) throw timeoutError;
+    throw error;
   } finally {
     clearTimeout(timer);
   }
@@ -413,13 +419,24 @@ export const generateTopicBrief = async (cluster, options = {}) => {
     generateContent = defaultGenerateContent(apiKey);
   }
 
+  const timeoutMs = Math.max(1, Math.trunc(Number(options?.timeoutMs) || DEFAULT_TOPIC_BRIEF_TIMEOUT_MS));
+  const controller = new AbortController();
+  const parentSignal = options?.signal;
+  const abortFromParent = () => controller.abort(parentSignal?.reason);
+  if (parentSignal?.aborted) abortFromParent();
+  else parentSignal?.addEventListener?.('abort', abortFromParent, { once: true });
+
   try {
     if (typeof generateContent !== 'function') return fallbackResult('provider_failure');
     const response = await withProviderTimeout(() => generateContent({
       model: 'gemini-2.5-flash',
       contents: buildTopicBriefPrompt(cluster),
-      config: { responseMimeType: 'application/json' },
-    }), options?.timeoutMs);
+      config: {
+        responseMimeType: 'application/json',
+        abortSignal: controller.signal,
+        httpOptions: { timeout: timeoutMs },
+      },
+    }), timeoutMs, controller);
     const parsed = parseStrictJsonObject(await readResponseText(response));
     if (!parsed || !hasCompleteBrief(parsed)) return fallbackResult('invalid_response');
     return {
@@ -429,6 +446,8 @@ export const generateTopicBrief = async (cluster, options = {}) => {
     };
   } catch (error) {
     return fallbackResult(error?.code === 'TOPIC_BRIEF_TIMEOUT' ? 'timeout' : 'provider_failure');
+  } finally {
+    parentSignal?.removeEventListener?.('abort', abortFromParent);
   }
 };
 

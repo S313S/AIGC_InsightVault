@@ -149,10 +149,18 @@ const readStableFieldTime = (card, fields) => {
   return null;
 };
 
+const latestSnapshotTime = (card) => {
+  const timestamps = asArray(card?.tags)
+    .filter((tag) => typeof tag === 'string' && tag.startsWith('snapshot:'))
+    .map((tag) => stableAbsoluteTime(tag.slice('snapshot:'.length)))
+    .filter((timestamp) => timestamp !== null);
+  return timestamps.length > 0 ? Math.max(...timestamps) : null;
+};
+
 const evidenceDiscoveryTime = (card) => readStableFieldTime(card, [
   'collectedAt', 'collected_at', 'fetchedAt', 'fetched_at',
-  'observedAt', 'observed_at', 'createdAt', 'created_at',
-]);
+  'observedAt', 'observed_at',
+]) ?? latestSnapshotTime(card) ?? readStableFieldTime(card, ['createdAt', 'created_at']);
 
 const evidenceContentTime = (card) => readStableFieldTime(card, [
   'publishedAt', 'published_at', 'publishTime', 'publish_time', 'date',
@@ -274,6 +282,11 @@ const chunkValues = (values, size) => {
 const positiveInteger = (value, fallback) => {
   const numeric = Math.trunc(Number(value));
   return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+};
+
+const nonNegativeInteger = (value, fallback) => {
+  const numeric = Math.trunc(Number(value));
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : fallback;
 };
 
 const readPaged = async ({ makeQuery, stage, pageSize, maxRows }) => {
@@ -622,23 +635,27 @@ export const rebuildTopicRadar = async ({
       })),
     { maxModelCalls, now: clock.iso }
   );
-  const deadline = pipelineStartedAt + positiveInteger(pipelineDeadlineMs, DEFAULT_PIPELINE_DEADLINE_MS);
+  const deadline = pipelineStartedAt + nonNegativeInteger(pipelineDeadlineMs, DEFAULT_PIPELINE_DEADLINE_MS);
+  let providerTimedOut = false;
 
   for (const { scored, existing } of scoredTopics) {
     const needsBrief = shouldRegenerateBrief(existing, scored.evidenceSignature);
     let brief;
     let generationStatus;
     let generatedAt;
+    const remainingDeadlineMs = deadline - Date.now();
 
     if (!needsBrief) {
       brief = existingBrief(existing);
       generationStatus = 'generated';
       generatedAt = existing.generated_at || null;
       result.briefsReused += 1;
-    } else if (!generationSelection.has(scored.fingerprint) || Date.now() >= deadline) {
-      const errorKind = generationSelection.has(scored.fingerprint)
-        ? 'pipeline_deadline_exhausted'
-        : 'model_budget_exhausted';
+    } else if (providerTimedOut || !generationSelection.has(scored.fingerprint) || remainingDeadlineMs <= 0) {
+      const errorKind = providerTimedOut
+        ? 'provider_overlap_guard'
+        : generationSelection.has(scored.fingerprint)
+          ? 'pipeline_deadline_exhausted'
+          : 'model_budget_exhausted';
       const preserveSuccessfulBrief = existing?.generation_status === 'generated' &&
         !shouldRegenerateBrief({ ...existing, evidence_signature: scored.evidenceSignature }, scored.evidenceSignature);
       brief = preserveSuccessfulBrief ? existingBrief(existing) : normalizeTopicBrief({}, scored);
@@ -649,7 +666,10 @@ export const rebuildTopicRadar = async ({
     } else {
       const generation = await generateTopicBrief(scored, {
         generateContent,
-        timeoutMs: positiveInteger(modelTimeoutMs, DEFAULT_MODEL_TIMEOUT_MS),
+        timeoutMs: Math.min(
+          positiveInteger(modelTimeoutMs, DEFAULT_MODEL_TIMEOUT_MS),
+          remainingDeadlineMs
+        ),
       });
       generationStatus = generation.generationStatus;
       if (generationStatus === 'generated') {
@@ -657,6 +677,7 @@ export const rebuildTopicRadar = async ({
         generatedAt = clock.iso;
         result.briefsGenerated += 1;
       } else {
+        if (generation.errorKind === 'timeout') providerTimedOut = true;
         const preserveSuccessfulBrief = existing?.generation_status === 'generated' &&
           !shouldRegenerateBrief({ ...existing, evidence_signature: scored.evidenceSignature }, scored.evidenceSignature);
         brief = preserveSuccessfulBrief ? existingBrief(existing) : generation.brief;

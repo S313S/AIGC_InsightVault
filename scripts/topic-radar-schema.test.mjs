@@ -76,11 +76,12 @@ test('topic radar migration constrains scores, trends, links, and feedback', () 
   assert.match(sql, /unique \(owner_id, topic_id, action\)/);
 });
 
-test('deleting either parent removes only its topic-source link', () => {
+test('topic deletion removes links while evidence-card deletion is restricted', () => {
   assert.match(schema, /-- Deleting a topic removes its links, never its evidence cards\./);
-  assert.match(schema, /-- Deleting an evidence card removes its links, never their topics\./);
+  assert.match(schema, /-- Evidence cards referenced by a topic cannot be deleted\./);
   assert.match(sql, /topic_id uuid not null references public\.topics \(id\) on delete cascade/);
-  assert.match(sql, /card_id uuid not null references public\.knowledge_cards \(id\) on delete cascade/);
+  assert.match(sql, /card_id uuid not null references public\.knowledge_cards \(id\) on delete restrict/);
+  assert.match(sql, /add constraint topic_sources_card_id_fkey foreign key \(card_id\) references public\.knowledge_cards \(id\) on delete restrict/);
 });
 
 test('topic radar migration adds query indexes and enables RLS on every topic table', () => {
