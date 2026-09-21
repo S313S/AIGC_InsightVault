@@ -263,10 +263,16 @@ export const isDistinctiveTopicToken = (token) => {
   return Boolean(normalized && !GENERIC_TOPIC_TERMS.has(normalized));
 };
 
-export const isVersionedProductToken = (token) => {
+export const parseVersionedProductToken = (token) => {
   const normalized = String(token || '').trim().toLowerCase();
-  return VERSIONED_PRODUCT_TOKENS.some((productToken) => {
-    if (!normalized.startsWith(`${productToken}_`)) return false;
-    return /^\d+(?:_\d+)*$/u.test(normalized.slice(productToken.length + 1));
-  });
+  for (const product of VERSIONED_PRODUCT_TOKENS) {
+    if (!normalized.startsWith(`${product}_`)) continue;
+    const version = normalized.slice(product.length + 1);
+    if (/^\d+(?:_\d+)*$/u.test(version)) return { product, version };
+  }
+  return null;
+};
+
+export const isVersionedProductToken = (token) => {
+  return Boolean(parseVersionedProductToken(token));
 };

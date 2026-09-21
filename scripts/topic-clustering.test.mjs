@@ -131,6 +131,20 @@ test('applies version identity consistently across protected product aliases', (
   }
 });
 
+test('compares version intersections separately for every shared product', () => {
+  const conflicting = clusterTopicCandidates([
+    card('multi-version-a', 'Sora 2 vs Veo 2 cinematic comparison benchmark', 'https://example.com/multi/a'),
+    card('multi-version-b', 'Sora 2 vs Veo 3 cinematic comparison benchmark', 'https://example.com/multi/b'),
+  ]);
+  const overlapping = clusterTopicCandidates([
+    card('overlap-a', 'Sora 2 vs Veo 2 and Veo 3 cinematic comparison benchmark', 'https://example.com/overlap/a'),
+    card('overlap-b', 'Sora 2 vs Veo 3 cinematic comparison benchmark', 'https://example.com/overlap/b'),
+  ]);
+
+  assert.equal(conflicting.length, 2);
+  assert.equal(overlapping.length, 1);
+});
+
 test('makes similarityThreshold effective at the merge boundary', () => {
   const candidates = [
     card('threshold-a', 'Sora video storyboard workflow benchmarks launch', 'https://example.com/threshold/a'),
@@ -296,13 +310,29 @@ test('keeps evidence signature stable across operational metadata changes even w
 });
 
 test('does not reconcile when multiple existing topics have an equal evidence match', () => {
-  const first = card('ambiguous-a', 'Claude Code Agent Teams parallel coding', 'https://example.com/ambiguous/a');
-  const second = card('ambiguous-b', 'Claude Code Agent Teams parallel coding', 'https://example.com/ambiguous/b');
+  const first = card('ambiguous-a', 'Claude Code Agent Teams parallel coding', 'https://example.com/ambiguous/a', {
+    date: '2026-09-21T08:00:00Z',
+  });
+  const second = card('ambiguous-b', 'Claude Code Agent Teams parallel coding', 'https://example.com/ambiguous/b', {
+    date: '2026-09-21T09:00:00Z',
+  });
   const provisional = clusterTopicCandidates([first, second])[0];
   const reconciled = clusterTopicCandidates([second, first], {
     existingTopics: [
-      { fingerprint: 'topic:existing-a', evidenceKeys: [provisional.evidenceKeys[0]], tokens: provisional.tokens },
-      { fingerprint: 'topic:existing-b', evidenceKeys: [provisional.evidenceKeys[1]], tokens: provisional.tokens },
+      {
+        fingerprint: 'topic:existing-a',
+        evidenceKeys: [provisional.evidenceKeys[0]],
+        tokens: provisional.tokens,
+        firstSeenAt: '2026-09-20T08:00:00Z',
+        lastSeenAt: '2026-09-20T12:00:00Z',
+      },
+      {
+        fingerprint: 'topic:existing-b',
+        evidenceKeys: [provisional.evidenceKeys[1]],
+        tokens: [...provisional.tokens, 'extra'],
+        firstSeenAt: '2026-09-20T08:00:00Z',
+        lastSeenAt: '2026-09-20T12:00:00Z',
+      },
     ],
   })[0];
 
@@ -310,6 +340,134 @@ test('does not reconcile when multiple existing topics have an equal evidence ma
   assert.equal(reconciled.fingerprintSource, 'provisional');
   assert.notEqual(reconciled.fingerprint, 'topic:existing-a');
   assert.notEqual(reconciled.fingerprint, 'topic:existing-b');
+});
+
+test('assigns each existing fingerprint to at most one current cluster', () => {
+  const first = card('split-a1', 'Sora 2 camera choreography workflow', 'https://example.com/split/a1');
+  const corroborating = card('split-a2', 'Sora 2 camera choreography workflow benchmark', 'https://example.com/split/a2');
+  const second = card('split-b', 'Claude Code repository migration checklist', 'https://example.com/split/b');
+  const provisional = clusterTopicCandidates([second, corroborating, first]);
+  const existingFingerprint = 'topic:previously-combined';
+  const reconciled = clusterTopicCandidates([first, second, corroborating], {
+    existingTopics: [{
+      fingerprint: existingFingerprint,
+      evidenceKeys: provisional.flatMap((cluster) => cluster.evidenceKeys),
+      tokens: [],
+    }],
+  });
+
+  assert.equal(reconciled.length, 2);
+  assert.equal(reconciled.filter((cluster) => cluster.fingerprint === existingFingerprint).length, 1);
+  assert.deepEqual(
+    reconciled.find((cluster) => cluster.fingerprint === existingFingerprint).cards.map(({ id }) => id),
+    ['split-a1', 'split-a2']
+  );
+  assert.equal(new Set(reconciled.map((cluster) => cluster.fingerprint)).size, reconciled.length);
+  assert.deepEqual(
+    reconciled.map((cluster) => cluster.fingerprintSource).sort(),
+    ['existing_evidence', 'provisional']
+  );
+});
+
+test('rejects semantic reconciliation across incompatible event windows', () => {
+  const historical = clusterTopicCandidates([
+    card('historical', 'Sora 2 January cinematic camera workflow benchmark', 'https://example.com/history/january', {
+      date: '2026-01-15T08:00:00Z',
+    }),
+  ])[0];
+  const current = clusterTopicCandidates([
+    card('current', 'Sora 2 September cinematic camera workflow benchmark', 'https://example.com/current/september', {
+      date: '2026-09-15T08:00:00Z',
+    }),
+  ], {
+    existingTopics: [{
+      fingerprint: 'topic:sora-january',
+      evidenceKeys: historical.evidenceKeys,
+      tokens: historical.tokens,
+      firstSeenAt: '2026-01-15T08:00:00Z',
+      lastSeenAt: '2026-01-16T08:00:00Z',
+    }],
+  })[0];
+
+  assert.equal(current.fingerprint, current.provisionalFingerprint);
+  assert.equal(current.fingerprintSource, 'provisional');
+});
+
+test('reuses an existing fingerprint for strong semantics inside a compatible event window', () => {
+  const historical = clusterTopicCandidates([
+    card('historical-url', 'Sora 2 cinematic camera workflow benchmark', 'https://example.com/history/sora-2', {
+      date: '2026-09-20T08:00:00Z',
+    }),
+  ])[0];
+  const current = clusterTopicCandidates([
+    card('changed-url', 'Sora 2 cinematic camera workflow benchmark', 'https://another.example/current/sora-2', {
+      date: '2026-09-21T08:00:00Z',
+    }),
+  ], {
+    existingTopics: [{
+      fingerprint: 'topic:sora-compatible-window',
+      evidenceKeys: historical.evidenceKeys,
+      tokens: historical.tokens,
+      firstSeenAt: '2026-09-20T08:00:00Z',
+      lastSeenAt: '2026-09-20T12:00:00Z',
+    }],
+  })[0];
+
+  assert.equal(current.fingerprint, 'topic:sora-compatible-window');
+  assert.equal(current.fingerprintSource, 'existing_semantic');
+});
+
+test('honors an injected zero-width semantic event window', () => {
+  const historical = clusterTopicCandidates([
+    card('zero-window-old', 'Sora 2 cinematic camera workflow benchmark', 'https://example.com/history/zero-window', {
+      date: '2026-09-20T08:00:00Z',
+    }),
+  ])[0];
+  const current = clusterTopicCandidates([
+    card('zero-window-new', 'Sora 2 cinematic camera workflow benchmark', 'https://another.example/current/zero-window', {
+      date: '2026-09-21T08:00:00Z',
+    }),
+  ], {
+    existingTopics: [{
+      fingerprint: 'topic:zero-width-window',
+      evidenceKeys: historical.evidenceKeys,
+      tokens: historical.tokens,
+      firstSeenAt: '2026-09-20T08:00:00Z',
+      lastSeenAt: '2026-09-20T08:00:00Z',
+    }],
+    semanticTimeWindowMs: 0,
+  })[0];
+
+  assert.equal(current.fingerprint, current.provisionalFingerprint);
+  assert.equal(current.fingerprintSource, 'provisional');
+});
+
+test('requires a minimum semantic margin between the top two existing topics', () => {
+  const current = clusterTopicCandidates([
+    card('margin', 'Sora 2 cinematic camera workflow benchmark methods', 'https://example.com/current/margin', {
+      date: '2026-09-21T08:00:00Z',
+    }),
+  ], {
+    existingTopics: [
+      {
+        fingerprint: 'topic:semantic-a',
+        evidenceKeys: ['url:https://example.com/old/a'],
+        tokens: ['sora_2', 'cinematic', 'camera', 'workflow', 'benchmark', 'methods'],
+        firstSeenAt: '2026-09-20T08:00:00Z',
+        lastSeenAt: '2026-09-20T12:00:00Z',
+      },
+      {
+        fingerprint: 'topic:semantic-b',
+        evidenceKeys: ['url:https://example.com/old/b'],
+        tokens: ['sora_2', 'cinematic', 'camera', 'workflow', 'benchmark', 'methods', 'evaluation'],
+        firstSeenAt: '2026-09-20T08:00:00Z',
+        lastSeenAt: '2026-09-20T12:00:00Z',
+      },
+    ],
+  })[0];
+
+  assert.equal(current.fingerprint, current.provisionalFingerprint);
+  assert.equal(current.fingerprintSource, 'provisional');
 });
 
 test('uses a wide digest instead of the known 32-bit FNV collision', () => {
