@@ -1,6 +1,8 @@
 import { GoogleGenAI } from '@google/genai';
 
 export const TOPIC_BRIEF_PROMPT_MAX_CHARS = 12_000;
+export const TOPIC_BRIEF_MAX_EVIDENCE_ITEMS = 24;
+export const TOPIC_BRIEF_RAW_FIELD_MAX_CHARS = 8_000;
 
 export const TOPIC_BRIEF_FIELD_LIMITS = Object.freeze({
   title: 80,
@@ -25,6 +27,14 @@ const ownValue = (value, key) => isRecord(value) && hasOwn(value, key)
   ? value[key]
   : undefined;
 
+// Runtime/domain objects use camelCase, while raw Supabase rows use snake_case.
+// If both are present, camelCase is authoritative even when it is invalid.
+const persistedValue = (value, camelKey, snakeKey) => (
+  isRecord(value) && hasOwn(value, camelKey)
+    ? value[camelKey]
+    : ownValue(value, snakeKey)
+);
+
 const cleanText = (value, limit) => {
   if (typeof value !== 'string') return '';
   return value
@@ -36,22 +46,44 @@ const cleanText = (value, limit) => {
     .trim();
 };
 
-const evidenceCards = (cluster) => {
-  const values = Array.isArray(cluster?.evidence) && cluster.evidence.length > 0
+const evidenceValues = (cluster) => (
+  Array.isArray(cluster?.evidence) && cluster.evidence.length > 0
     ? cluster.evidence
     : Array.isArray(cluster?.cards) && cluster.cards.length > 0
       ? cluster.cards
       : cluster?.representativeCard
         ? [cluster.representativeCard]
-        : [];
-  return values.filter(isRecord);
+        : []
+);
+
+const evidenceCards = (cluster) => {
+  const values = evidenceValues(cluster);
+  const cards = [];
+  const limit = Math.min(values.length, TOPIC_BRIEF_MAX_EVIDENCE_ITEMS);
+  for (let index = 0; index < limit; index += 1) {
+    if (isRecord(values[index])) cards.push(values[index]);
+  }
+  return cards;
 };
 
-const stripEmbeddedMedia = (value) => String(value ?? '')
+const stripEmbeddedMedia = (value) => value
   .replace(/data:image\/[a-z0-9.+-]+(?:;[a-z0-9=.+-]+)*(?:;base64)?,[a-z0-9+/_=-]+/giu, '[已移除内嵌图片]')
   .replace(/[a-z0-9+/_=-]{512,}/giu, '[已移除疑似二进制内容]');
 
-const promptText = (value, limit) => cleanText(stripEmbeddedMedia(value), limit);
+const EVIDENCE_START = '--- 不可信证据开始 ---';
+const EVIDENCE_END = '--- 不可信证据结束 ---';
+const EVIDENCE_BOUNDARY_PATTERN = /---\s*不可信证据(?:开始|结束)\s*---/gu;
+
+const promptText = (value, limit) => {
+  if (typeof value !== 'string') return '';
+  // Slice before normalization or regex work so one hostile field cannot make
+  // preprocessing proportional to its full size.
+  return cleanText(
+    stripEmbeddedMedia(value.slice(0, TOPIC_BRIEF_RAW_FIELD_MAX_CHARS))
+      .replace(EVIDENCE_BOUNDARY_PATTERN, '[已转义证据边界]'),
+    Math.min(limit, TOPIC_BRIEF_RAW_FIELD_MAX_CHARS)
+  );
+};
 
 const fallbackBrief = (cluster) => {
   const cards = evidenceCards(cluster);
@@ -148,22 +180,38 @@ export const normalizeTopicBrief = (value, cluster) => {
   };
 };
 
-const evidenceText = (cluster) => evidenceCards(cluster)
-  .map((card, index) => {
+const evidenceText = (cluster, maxChars) => {
+  const values = evidenceValues(cluster);
+  const limit = Math.min(values.length, TOPIC_BRIEF_MAX_EVIDENCE_ITEMS);
+  let result = '';
+  let emitted = 0;
+
+  for (let index = 0; index < limit && result.length < maxChars; index += 1) {
+    const card = values[index];
+    if (!isRecord(card)) continue;
+    const record = {};
     const fields = [
-      ['平台', card.platform],
-      ['作者', card.author ?? card.account ?? card.handle],
-      ['标题', card.title],
-      ['正文', card.rawContent ?? card.raw_content ?? card.summary],
+      ['platform', () => card.platform],
+      ['author', () => card.author ?? card.account ?? card.handle],
+      ['title', () => card.title],
+      ['body', () => card.rawContent ?? card.raw_content ?? card.summary],
     ];
-    const lines = fields
-      .map(([label, value]) => [label, promptText(value, 4_000)])
-      .filter(([, value]) => value)
-      .map(([label, value]) => `${label}: ${value}`);
-    return lines.length > 0 ? `证据 ${index + 1}\n${lines.join('\n')}` : '';
-  })
-  .filter(Boolean)
-  .join('\n\n');
+    for (const [key, readValue] of fields) {
+      const remaining = maxChars - result.length;
+      if (remaining <= 0) break;
+      const normalized = promptText(readValue(), Math.min(4_000, remaining));
+      if (normalized) record[key] = normalized;
+    }
+    if (Object.keys(record).length === 0) continue;
+
+    emitted += 1;
+    const separator = result ? '\n' : '';
+    const line = `${separator}${JSON.stringify({ evidence: emitted, ...record })}`;
+    result += line.slice(0, maxChars - result.length);
+  }
+
+  return result;
+};
 
 /** Build a text-only, bounded prompt. Evidence is explicitly treated as data. */
 export const buildTopicBriefPrompt = (cluster) => {
@@ -176,11 +224,11 @@ export const buildTopicBriefPrompt = (cluster) => {
 
 要求：事实与判断分开；不补写证据没有的信息；三个内容角度必须分别适合快讯、观点和教程；长期知识只保留可复用的方法、限制或原理。
 
---- 不可信证据开始 ---
+${EVIDENCE_START}
 `;
-  const suffix = '\n--- 不可信证据结束 ---';
+  const suffix = `\n${EVIDENCE_END}`;
   const available = Math.max(0, TOPIC_BRIEF_PROMPT_MAX_CHARS - instructions.length - suffix.length);
-  return `${instructions}${evidenceText(cluster).slice(0, available)}${suffix}`
+  return `${instructions}${evidenceText(cluster, available)}${suffix}`
     .slice(0, TOPIC_BRIEF_PROMPT_MAX_CHARS);
 };
 
@@ -195,15 +243,18 @@ const hasCompleteBrief = (topic) => {
   if (!isRecord(topic)) return false;
   if (!isBoundedRequiredString(ownValue(topic, 'title'), TOPIC_BRIEF_FIELD_LIMITS.title)) return false;
   if (!isBoundedRequiredString(ownValue(topic, 'summary'), TOPIC_BRIEF_FIELD_LIMITS.summary)) return false;
-  if (!isBoundedRequiredString(ownValue(topic, 'whyNow'), TOPIC_BRIEF_FIELD_LIMITS.whyNow)) return false;
+  if (!isBoundedRequiredString(
+    persistedValue(topic, 'whyNow', 'why_now'),
+    TOPIC_BRIEF_FIELD_LIMITS.whyNow
+  )) return false;
 
-  const angles = ownValue(topic, 'contentAngles');
+  const angles = persistedValue(topic, 'contentAngles', 'content_angles');
   if (!isRecord(angles) || Object.keys(angles).length !== ANGLE_KEYS.length) return false;
   if (!ANGLE_KEYS.every((key) => (
     hasOwn(angles, key) && isBoundedRequiredString(angles[key], TOPIC_BRIEF_FIELD_LIMITS.angle)
   ))) return false;
 
-  const knowledge = ownValue(topic, 'durableKnowledge');
+  const knowledge = persistedValue(topic, 'durableKnowledge', 'durable_knowledge');
   return Array.isArray(knowledge) &&
     knowledge.length > 0 &&
     knowledge.length <= TOPIC_BRIEF_FIELD_LIMITS.durableKnowledgeItems &&
@@ -214,8 +265,7 @@ const hasCompleteBrief = (topic) => {
 
 /** Return false only when both cached evidence and cached brief are reusable. */
 export const shouldRegenerateBrief = (existingTopic, evidenceSignature) => {
-  const cachedSignature = ownValue(existingTopic, 'evidenceSignature') ??
-    ownValue(existingTopic, 'evidence_signature');
+  const cachedSignature = persistedValue(existingTopic, 'evidenceSignature', 'evidence_signature');
   return typeof evidenceSignature !== 'string' ||
     evidenceSignature.length === 0 ||
     cachedSignature !== evidenceSignature ||
@@ -269,4 +319,3 @@ export const generateTopicBrief = async (cluster, { generateContent = defaultGen
 };
 
 export const TOPIC_BRIEF_SCHEMA_KEYS = Object.freeze([...BRIEF_KEYS]);
-
