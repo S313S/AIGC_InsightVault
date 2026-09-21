@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 
 import { scoreTopicCluster, selectTopicLanes } from '../shared/topicScoring.js';
 
@@ -143,6 +144,42 @@ test('source identity cannot turn identical low-value content into momentum', ()
   assert.ok(repository.confidenceScore > social.confidenceScore);
 });
 
+test('adding official or repository facts does not manufacture social momentum', () => {
+  const socialCard = evidence('attention-1', 'Claude Code Agent Teams 正式发布实测', {
+    sourceType: 'social',
+    sourceUrl: 'https://x.com/example/status/1',
+    rawContent: 'Launch demo shows multiple agents collaborating on a coding task.',
+  });
+  const officialCard = evidence('fact-official', 'Claude Code Agent Teams changelog', {
+    platform: 'OfficialBlog',
+    sourceType: 'official',
+    sourceUrl: 'https://example.com/changelog/agent-teams',
+    date: '刚刚',
+    rawContent: 'Official changelog documents availability, API parameters, rollout regions, and model limits.',
+    metrics: { likes: 9_000_000, bookmarks: 1_000_000, comments: 500_000, shares: 300_000 },
+  });
+  const repositoryCard = evidence('fact-repo', 'Claude Code Agent Teams repository release', {
+    platform: 'GitHub',
+    sourceType: 'repository',
+    sourceUrl: 'https://github.com/example/agent-teams/releases/tag/v3.1',
+    date: '刚刚',
+    rawContent: 'Release notes include implementation details and benchmark fixtures.',
+    metrics: { likes: 8_000_000, bookmarks: 800_000, comments: 400_000, shares: 200_000 },
+  });
+  const social = scoreTopicCluster(cluster('attention-base', [socialCard]), {
+    now: NOW,
+    sourceBaselines: baselines,
+  });
+  const withFacts = scoreTopicCluster(cluster('attention-facts', [socialCard, officialCard, repositoryCard]), {
+    now: NOW,
+    sourceBaselines: baselines,
+  });
+
+  assert.equal(withFacts.breakingScore, social.breakingScore);
+  assert.equal(withFacts.laneEligibility.breaking, social.laneEligibility.breaking);
+  assert.ok(withFacts.confidenceScore > social.confidenceScore);
+});
+
 test('uses per-source percentiles instead of absolute engagement dominance', () => {
   const sourceBaselines = {
     Twitter: { engagement: [200_000, 500_000, 1_000_000, 2_000_000] },
@@ -167,6 +204,42 @@ test('uses per-source percentiles instead of absolute engagement dominance', () 
     large: largeAccount.breakingScore,
     small: smallAccount.breakingScore,
   });
+});
+
+test('prefers account baselines within a platform and supports author and handle fields', () => {
+  // Contract: a platform baseline may expose `accounts`, `authors`, `handles`,
+  // or `byAccount`; account values use the same `{ engagement: number[] }`
+  // shape as platform fallback. Flat `platform:account` keys are also valid.
+  const sourceBaselines = {
+    Twitter: {
+      engagement: [10, 100, 1_000, 10_000, 100_000, 1_000_000],
+      accounts: {
+        mega: { engagement: [200_000, 500_000, 1_000_000, 2_000_000] },
+        practitioner: { engagement: [5, 15, 30, 60] },
+      },
+    },
+  };
+  const largeAccount = scoreTopicCluster(cluster('same-platform-large', [
+    evidence('same-platform-large-1', 'Sora 3 发布实测', {
+      author: '@mega',
+      rawContent: 'Sora 3 launch demo and hands-on test.',
+      metrics: { likes: 100_000, bookmarks: 10_000, comments: 5_000, shares: 2_000 },
+    }),
+  ]), { now: NOW, sourceBaselines });
+  const smallAccount = scoreTopicCluster(cluster('same-platform-small', [
+    evidence('same-platform-small-1', 'Sora 3 发布实测', {
+      author: 'Practitioner Display Name',
+      handle: '@practitioner',
+      rawContent: 'Sora 3 launch demo and hands-on test.',
+      metrics: { likes: 35, bookmarks: 10, comments: 5, shares: 2 },
+    }),
+  ]), { now: NOW, sourceBaselines });
+
+  assert.ok(smallAccount.breakingScore > largeAccount.breakingScore, {
+    large: largeAccount.breakingScore,
+    small: smallAccount.breakingScore,
+  });
+  assert.ok(smallAccount.breakingScore >= 90, smallAccount.breakingScore);
 });
 
 test('official or repository evidence raises confidence without directly raising momentum', () => {
@@ -233,6 +306,94 @@ test('parses supported relative and short publication formats deterministically'
 
     assert.equal(result.laneEligibility.breaking, true, date);
   }
+});
+
+test('uses an explicit source timezone independent of the host timezone', () => {
+  const program = `
+    import { scoreTopicCluster } from './shared/topicScoring.js';
+    const makeCluster = (dateField) => ({
+      fingerprint: 'topic:timezone',
+      title: 'Veo 4 正式发布实测',
+      evidence: [{
+        id: 'timezone-card', title: 'Veo 4 正式发布实测', platform: 'Twitter',
+        author: 'tester', rawContent: 'Launch demo and benchmark.', tags: [],
+        metrics: { likes: 10, bookmarks: 2, comments: 1, shares: 0 },
+        ...dateField,
+      }],
+    });
+    const options = {
+      now: '2026-09-21T00:30:00+08:00', timezoneOffsetMinutes: 480,
+      sourceBaselines: { Twitter: { engagement: [1, 5, 10, 20] } },
+    };
+    const short = scoreTopicCluster(makeCluster({ date: '09-21' }), options);
+    const unzoned = scoreTopicCluster(makeCluster({ publishedAt: '2026-09-21T00:00:00' }), options);
+    const future = scoreTopicCluster(makeCluster({ publishedAt: '2026-09-21T01:00:00' }), options);
+    console.log(JSON.stringify({
+      short: [short.latestPublishedAt, short.laneEligibility.breaking],
+      unzoned: [unzoned.latestPublishedAt, unzoned.laneEligibility.breaking],
+      future: [future.latestPublishedAt, future.laneEligibility.breaking],
+    }));
+  `;
+  const run = (tz) => spawnSync(process.execPath, ['--input-type=module', '-e', program], {
+    cwd: process.cwd(),
+    env: { ...process.env, TZ: tz },
+    encoding: 'utf8',
+  });
+  const utc = run('UTC');
+  const shanghai = run('Asia/Shanghai');
+
+  assert.equal(utc.status, 0, utc.stderr);
+  assert.equal(shanghai.status, 0, shanghai.stderr);
+  assert.equal(utc.stdout, shanghai.stdout);
+  const result = JSON.parse(utc.stdout);
+  assert.deepEqual(result.short, ['2026-09-20T16:00:00.000Z', true]);
+  assert.deepEqual(result.unzoned, ['2026-09-20T16:00:00.000Z', true]);
+  assert.deepEqual(result.future, [null, false]);
+});
+
+test('does not let one broad comparison or code word wash low-value entertainment', () => {
+  for (const [name, title, rawContent] of [
+    ['comparison', 'Sora 3 发布前后搞笑对比', '纯娱乐段子和表情包合集，围观抽奖。'],
+    ['opinion', '关于 Sora 3 发布的爆笑观点', '娱乐吃瓜和抽奖，没有事实或方法。'],
+    ['code', 'Sora 3 发布后的搞笑代码', '一个 meme 代码梗和表情包抽奖。'],
+    ['workflow', 'Sora 3 发布后的爆笑工作流', '纯娱乐流程段子，围观抽奖。'],
+  ]) {
+    const result = scoreTopicCluster(cluster(`broad-${name}`, [
+      evidence(`broad-${name}-1`, title, {
+        rawContent,
+        metrics: { likes: 2_000_000, bookmarks: 50_000, comments: 90_000, shares: 40_000 },
+      }),
+    ]), { now: NOW, sourceBaselines: baselines });
+
+    assert.ok(result.writeScore < 40, `${name}: ${result.writeScore}`);
+    assert.ok(result.breakingScore < 60, `${name}: ${result.breakingScore}`);
+    assert.equal(result.laneEligibility.write, false, name);
+    assert.equal(result.laneEligibility.breaking, false, name);
+  }
+});
+
+test('deduplicates raw cards by stable evidence identity before counting reach or engagement', () => {
+  const canonical = evidence('canonical', 'Claude Code Agent Teams 正式发布实测', {
+    sourceUrl: 'https://x.com/example/status/42',
+    rawContent: 'Launch demo with an implementation benchmark.',
+  });
+  const one = scoreTopicCluster(cluster('one-evidence', [canonical], {
+    evidenceKeys: ['evidence:canonical'],
+  }), { now: NOW, sourceBaselines: baselines });
+  const repeatedCards = Array.from({ length: 4 }, (_, index) => ({
+    ...structuredClone(canonical),
+    id: `duplicate-${index}`,
+    platform: index % 2 === 0 ? 'Twitter' : 'Xiaohongshu',
+  }));
+  const repeated = scoreTopicCluster(cluster('repeated-evidence', repeatedCards, {
+    evidenceKeys: ['evidence:canonical'],
+  }), { now: NOW, sourceBaselines: baselines });
+
+  assert.equal(repeated.writeScore, one.writeScore);
+  assert.equal(repeated.studyScore, one.studyScore);
+  assert.equal(repeated.breakingScore, one.breakingScore);
+  assert.equal(repeated.confidenceScore, one.confidenceScore);
+  assert.deepEqual(repeated.laneEligibility, one.laneEligibility);
 });
 
 test('clamps every score and remains deterministic without mutating inputs', () => {
