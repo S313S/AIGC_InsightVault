@@ -29,6 +29,10 @@ const ANALYSIS_PATTERNS = [
   /\b(?:analysis|comparison|versus|vs\.?|trade-?offs?|why|impact|architecture)\b/iu,
   /(?:分析|对比|争议|影响|原因|观点|架构|取舍)/u,
 ];
+const FACTUAL_RELEASE_PATTERNS = [
+  /\b(?:changelog|release\s+notes?|api\s+(?:docs?|documentation|parameters?)|documentation|availability|rollout\s+(?:date|regions?)|version\s*\d|access\s+scope|model\s+limits?|rate\s+limits?)\b/iu,
+  /(?:更新日志|变更日志|发布说明|接口文档|API\s*文档|可用性|开放地区|上线地区|版本号|开放范围|访问范围|接口参数|模型限制|速率限制)/iu,
+];
 const PRACTICAL_SIGNAL_PATTERNS = Object.freeze({
   tutorial: /\b(?:tutorial|guide|how\s+to|walkthrough)\b|(?:教程|指南|教学)/iu,
   code: /\b(?:code|coding|script|snippet|implementation)\b|(?:代码|编程|实现)/iu,
@@ -201,7 +205,9 @@ const engagementTotal = (card) => {
 
 const findBaseline = (sourceBaselines, card) => {
   if (!sourceBaselines || typeof sourceBaselines !== 'object') return null;
-  const keys = [card?.platform, card?.source, card?.sourceName, card?.source_type, card?.sourceType]
+  // Evidence role (official/repository/social) is a confidence signal, not an
+  // attention-source baseline. Only the actual platform/source participates.
+  const keys = [card?.platform, card?.source, card?.sourceName]
     .map(normalizeText)
     .filter(Boolean);
   for (const [baselineKey, baseline] of Object.entries(sourceBaselines)) {
@@ -319,15 +325,13 @@ export const scoreTopicCluster = (
   const breakingSignal = matchesAny(text, BREAKING_PATTERNS);
   const handsOnSignal = matchesAny(text, HANDS_ON_PATTERNS);
   const analysisSignal = matchesAny(text, ANALYSIS_PATTERNS);
+  const factualReleaseSignal = matchesAny(text, FACTUAL_RELEASE_PATTERNS);
   const practical = practicalSignals(text);
   const practicalCount = Object.values(practical).filter(Boolean).length;
   const lowValue = matchesAny(text, LOW_VALUE_PATTERNS);
   const officialCount = cards.filter(isOfficialEvidence).length;
   const repositoryCount = cards.filter(isRepositoryEvidence).length;
-  const hasSubstantiveEvidence = analysisSignal ||
-    practicalCount > 0 ||
-    officialCount > 0 ||
-    repositoryCount > 0;
+  const hasSubstantiveEvidence = analysisSignal || practicalCount > 0 || factualReleaseSignal;
 
   let writeScore = 15 + collectionSizeScore(cards.length) + engagement * 0.12;
   if (breakingSignal) writeScore += 20;

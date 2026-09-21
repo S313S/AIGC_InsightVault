@@ -105,17 +105,42 @@ test('does not treat entertainment derived from a launch as substantive breaking
   });
 });
 
-test('keeps a real official release eligible even when its demo includes entertainment wording', () => {
-  const official = scoreTopicCluster(cluster('official-release', [
-    evidence('official-release-1', 'Sora 3 正式发布：官方演示包含一个爆笑名场面', {
-      sourceType: 'official',
-      rawContent: 'Official changelog records the rollout date and availability regions.',
-      tags: ['发布', '官方', 'API'],
+test('keeps a fact-rich release eligible independent of its source type', () => {
+  const release = scoreTopicCluster(cluster('fact-rich-release', [
+    evidence('fact-rich-release-1', 'Sora 3 正式发布：演示包含一个爆笑名场面', {
+      sourceType: 'social',
+      rawContent: 'Changelog and API docs record Sora 3.1 availability, rollout regions, version limits, and access scope.',
+      tags: ['发布', 'API', '版本'],
     }),
   ]), { now: NOW, sourceBaselines: baselines });
 
-  assert.ok(official.breakingScore >= 60, official.breakingScore);
-  assert.equal(official.laneEligibility.breaking, true);
+  assert.ok(release.breakingScore >= 60, release.breakingScore);
+  assert.equal(release.laneEligibility.breaking, true);
+});
+
+test('source identity cannot turn identical low-value content into momentum', () => {
+  const makeResult = (sourceType) => scoreTopicCluster(cluster(`low-value-${sourceType}`, [
+    evidence(`low-value-${sourceType}-1`, 'Sora 3 正式发布后的爆笑名场面实测', {
+      sourceType,
+      rawContent: '纯娱乐段子和表情包合集，围观抽奖。',
+      tags: ['发布', '实测', '搞笑', '娱乐'],
+      metrics: { likes: 2_000_000, bookmarks: 50_000, comments: 90_000, shares: 40_000 },
+    }),
+  ]), { now: NOW, sourceBaselines: baselines });
+  const social = makeResult('social');
+  const official = makeResult('official');
+  const repository = makeResult('repository');
+
+  assert.equal(official.breakingScore, social.breakingScore);
+  assert.equal(repository.breakingScore, social.breakingScore);
+  assert.equal(official.writeScore, social.writeScore);
+  assert.equal(repository.writeScore, social.writeScore);
+  assert.equal(official.studyScore, social.studyScore);
+  assert.equal(repository.studyScore, social.studyScore);
+  assert.equal(official.laneEligibility.breaking, false);
+  assert.equal(repository.laneEligibility.breaking, false);
+  assert.ok(official.confidenceScore > social.confidenceScore);
+  assert.ok(repository.confidenceScore > social.confidenceScore);
 });
 
 test('uses per-source percentiles instead of absolute engagement dominance', () => {
