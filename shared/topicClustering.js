@@ -200,6 +200,14 @@ const readCardEventTime = (card) => {
   return null;
 };
 
+const firstComparableTime = (values) => {
+  for (const value of values) {
+    const parsed = parseComparableTime(value);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+};
+
 const getClusterEventRange = (members) => {
   const membersByIdentity = new Map();
   for (const member of members) {
@@ -258,10 +266,15 @@ const normalizeExistingTopics = (existingTopics) => {
       const value = String(token || '').normalize('NFKC').trim().toLowerCase();
       if (value) normalized.tokens.add(value);
     }
-    for (const value of [topic?.firstSeenAt, topic?.lastSeenAt]) {
-      const parsed = parseComparableTime(value);
-      if (parsed !== null) normalized.eventTimes.push(parsed);
-    }
+    const firstSeenAt = firstComparableTime([topic?.firstSeenAt, topic?.first_seen_at]);
+    const latestEvidenceAt = firstComparableTime([
+      topic?.latestEvidenceAt,
+      topic?.latest_evidence_at,
+      topic?.lastSeenAt,
+      topic?.last_seen_at,
+    ]);
+    if (firstSeenAt !== null) normalized.eventTimes.push(firstSeenAt);
+    if (latestEvidenceAt !== null) normalized.eventTimes.push(latestEvidenceAt);
     byFingerprint.set(fingerprint, normalized);
   }
   return [...byFingerprint.values()]
@@ -473,7 +486,9 @@ const reconcileClustersGlobally = (
 
 /**
  * Forms deterministic topic clusters. Persisted `existingTopics` records use
- * `{ fingerprint, evidenceKeys, tokens, firstSeenAt, lastSeenAt }`. Direct
+ * `{ fingerprint, evidenceKeys, tokens, firstSeenAt, latestEvidenceAt }` or
+ * their snake_case database equivalents. Legacy `lastSeenAt` remains a
+ * fallback only when no latest-evidence field is available. Direct
  * evidence reconciliation is globally one-to-one; semantic reconciliation
  * additionally requires complete-link token compatibility, comparable event
  * times inside `semanticTimeWindowMs`, and `semanticMinMargin` over runner-up

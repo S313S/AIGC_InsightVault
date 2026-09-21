@@ -417,6 +417,54 @@ test('reuses an existing fingerprint for strong semantics inside a compatible ev
   assert.equal(current.fingerprintSource, 'existing_semantic');
 });
 
+test('uses persisted camelCase latest evidence time for semantic reconciliation', () => {
+  const historical = clusterTopicCandidates([
+    card('camel-history', 'Sora 2 cinematic camera workflow benchmark', 'https://example.com/history/camel', {
+      date: '2026-09-20T08:00:00Z',
+    }),
+  ])[0];
+  const current = clusterTopicCandidates([
+    card('camel-current', 'Sora 2 cinematic camera workflow benchmark', 'https://example.net/current/camel', {
+      date: '2026-09-21T08:00:00Z',
+    }),
+  ], {
+    existingTopics: [{
+      fingerprint: 'topic:camel-latest-evidence',
+      evidenceKeys: historical.evidenceKeys,
+      tokens: historical.tokens,
+      firstSeenAt: '2026-09-01T08:00:00Z',
+      latestEvidenceAt: '2026-09-20T08:00:00Z',
+    }],
+  })[0];
+
+  assert.equal(current.fingerprint, 'topic:camel-latest-evidence');
+  assert.equal(current.fingerprintSource, 'existing_semantic');
+});
+
+test('uses persisted snake_case latest evidence time for semantic reconciliation', () => {
+  const historical = clusterTopicCandidates([
+    card('snake-history', 'Sora 2 cinematic camera workflow benchmark', 'https://example.com/history/snake', {
+      date: '2026-09-20T08:00:00Z',
+    }),
+  ])[0];
+  const current = clusterTopicCandidates([
+    card('snake-current', 'Sora 2 cinematic camera workflow benchmark', 'https://example.net/current/snake', {
+      date: '2026-09-21T08:00:00Z',
+    }),
+  ], {
+    existingTopics: [{
+      fingerprint: 'topic:snake-latest-evidence',
+      evidenceKeys: historical.evidenceKeys,
+      tokens: historical.tokens,
+      first_seen_at: '2026-09-01T08:00:00Z',
+      latest_evidence_at: '2026-09-20T08:00:00Z',
+    }],
+  })[0];
+
+  assert.equal(current.fingerprint, 'topic:snake-latest-evidence');
+  assert.equal(current.fingerprintSource, 'existing_semantic');
+});
+
 test('honors an injected zero-width semantic event window', () => {
   const historical = clusterTopicCandidates([
     card('zero-window-old', 'Sora 2 cinematic camera workflow benchmark', 'https://example.com/history/zero-window', {
