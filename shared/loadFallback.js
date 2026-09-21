@@ -9,7 +9,8 @@ export const resolveLoadFallback = ({
   previousSnapshot,
   storedSnapshot,
 }) => {
-  const hasCloudData = cards.length > 0 || trending.length > 0 || collections.length > 0;
+  const hasCloudData = cards.length > 0 || trending.length > 0 ||
+    (topics?.length || 0) > 0 || collections.length > 0;
   const resolveTopics = (fallbackTopics) =>
     Array.isArray(topics) ? topics : fallbackTopics || [];
 
@@ -27,6 +28,7 @@ export const resolveLoadFallback = ({
   const hasPreviousSnapshot = previousSnapshot &&
     (previousSnapshot.cards?.length > 0 ||
       previousSnapshot.trending?.length > 0 ||
+      previousSnapshot.topics?.length > 0 ||
       previousSnapshot.collections?.length > 0);
 
   if (hasPreviousSnapshot) {
@@ -43,6 +45,7 @@ export const resolveLoadFallback = ({
   const hasStoredSnapshot = storedSnapshot &&
     (storedSnapshot.cards?.length > 0 ||
       storedSnapshot.trending?.length > 0 ||
+      storedSnapshot.topics?.length > 0 ||
       storedSnapshot.collections?.length > 0);
 
   if (hasStoredSnapshot) {

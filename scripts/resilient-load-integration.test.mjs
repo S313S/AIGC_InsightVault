@@ -35,12 +35,11 @@ test('cached topics initialize state before background network reads', () => {
 });
 
 test('topic reads settle independently and failed reads preserve last good topics', () => {
-  assert.match(
-    source,
-    /const \[cardsResult, trendingResult, topicsResult\] = await Promise\.allSettled\(\[[\s\S]*?db\.getKnowledgeCards[\s\S]*?db\.getTrendingCards[\s\S]*?db\.getEditorialTopics/
-  );
+  assert.match(source, /settlePrimaryLoadsIndependently\(\{[\s\S]*?cards:[\s\S]*?db\.getKnowledgeCards[\s\S]*?trending:[\s\S]*?db\.getTrendingCards[\s\S]*?topics:[\s\S]*?db\.getEditorialTopics/);
+  assert.match(source, /const \[cardsResult, trendingResult\] = await primarySettlements\.raw/);
+  assert.match(source, /const topicsResult = await primarySettlements\.topics/);
   assert.match(source, /const topicsLoad = getLoadResult\(topicsResult, \[\], 'Loading editorial topics'\)/);
-  assert.match(source, /primaryHadFailure = !cardsLoad\.ok \|\| !trendingLoad\.ok \|\| !topicsLoad\.ok/);
+  assert.match(source, /primaryHadFailure = rawPrimaryHadFailure \|\| !topicsLoad\.ok/);
   assert.match(
     source,
     /topics:\s*preserveOnFailedLoad\(topicsLoad, dbTopics, baselineSnapshot\.topics\.length > 0\)/
@@ -48,14 +47,36 @@ test('topic reads settle independently and failed reads preserve last good topic
   assert.match(source, /trending:\s*preserveOnFailedLoad\(trendingLoad, trendingSnapshot\.cards, hasBaselineData\)/);
 });
 
-test('stale owner requests are rejected before network topics can replace state', () => {
-  const settledIndex = source.indexOf('const [cardsResult, trendingResult, topicsResult] = await Promise.allSettled');
-  const staleGuardIndex = source.indexOf('if (requestId !== loadRequestIdRef.current) return false;', settledIndex);
-  const topicsResultIndex = source.indexOf('const topicsLoad = getLoadResult', settledIndex);
+test('raw evidence applies before a pending topic read', () => {
+  const rawSettledIndex = source.indexOf('const [cardsResult, trendingResult] = await primarySettlements.raw');
+  const rawApplyIndex = source.indexOf('applyLoadedSnapshot(rawPrimarySnapshot)', rawSettledIndex);
+  const topicsSettledIndex = source.indexOf('const topicsResult = await primarySettlements.topics', rawSettledIndex);
 
-  assert.ok(settledIndex >= 0);
-  assert.ok(staleGuardIndex > settledIndex);
-  assert.ok(topicsResultIndex > staleGuardIndex);
+  assert.ok(rawSettledIndex >= 0);
+  assert.ok(rawApplyIndex > rawSettledIndex);
+  assert.ok(topicsSettledIndex > rawApplyIndex);
+});
+
+test('stale owner requests are rejected before raw or topic results can replace state', () => {
+  const rawSettledIndex = source.indexOf('const [cardsResult, trendingResult] = await primarySettlements.raw');
+  const rawGuardIndex = source.indexOf('if (requestId !== loadRequestIdRef.current) return false;', rawSettledIndex);
+  const rawApplyIndex = source.indexOf('applyLoadedSnapshot(rawPrimarySnapshot)', rawSettledIndex);
+  const topicsSettledIndex = source.indexOf('const topicsResult = await primarySettlements.topics', rawSettledIndex);
+  const topicsGuardIndex = source.indexOf('if (requestId !== loadRequestIdRef.current) return false;', topicsSettledIndex);
+  const topicsApplyIndex = source.indexOf('setTopics(topicSnapshot.topics)', topicsSettledIndex);
+
+  assert.ok(rawGuardIndex > rawSettledIndex && rawGuardIndex < rawApplyIndex);
+  assert.ok(topicsGuardIndex > topicsSettledIndex && topicsGuardIndex < topicsApplyIndex);
+});
+
+test('offline guest loading clears owner topics in both state and its synchronous ref', () => {
+  const offlineStart = source.indexOf('const offlineCards = INITIAL_DATA.map(toOfflinePublicCard)');
+  const offlineEnd = source.indexOf('return true;', offlineStart);
+  const offlineBlock = source.slice(offlineStart, offlineEnd);
+
+  assert.match(offlineBlock, /topicsRef\.current = \[\]/);
+  assert.match(offlineBlock, /setTopics\(\[\]\)/);
+  assert.ok(offlineBlock.indexOf('topicsRef.current = []') < offlineBlock.indexOf('writeStoredSnapshot(null'));
 });
 
 test('topic loading does not participate in collection freshness updates', () => {

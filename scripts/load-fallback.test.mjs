@@ -89,7 +89,7 @@ test('resolveLoadFallback does not use offline snapshot for authenticated users 
   assert.equal(result.usedFallback, true);
 });
 
-test('resolveLoadFallback keeps a successful topic read independent from raw-data fallback', () => {
+test('resolveLoadFallback does not leak stale raw data into a topics-only cloud response', () => {
   const previousSnapshot = {
     cards: [{ id: 'cached-card' }],
     trending: [{ id: 'cached-trending' }],
@@ -109,8 +109,70 @@ test('resolveLoadFallback keeps a successful topic read independent from raw-dat
     authUser: { id: 'user-1' },
   });
 
-  assert.deepEqual(result.cards, previousSnapshot.cards);
-  assert.deepEqual(result.trending, previousSnapshot.trending);
+  assert.deepEqual(result.cards, []);
+  assert.deepEqual(result.trending, []);
   assert.deepEqual(result.topics, [{ id: 'fresh-topic' }]);
+  assert.equal(result.usedFallback, false);
+});
+
+test('resolveLoadFallback treats a topics-only cloud response as live data', () => {
+  const result = resolveLoadFallback({
+    cards: [],
+    trending: [],
+    topics: [{ id: 'cloud-topic' }],
+    collections: [],
+    tasks: [],
+    offlineSnapshot,
+    authUser: null,
+  });
+
+  assert.deepEqual(result.cards, []);
+  assert.deepEqual(result.topics, [{ id: 'cloud-topic' }]);
+  assert.equal(result.usedFallback, false);
+});
+
+test('resolveLoadFallback preserves a topics-only previous snapshot', () => {
+  const previousSnapshot = {
+    cards: [],
+    trending: [],
+    topics: [{ id: 'previous-topic' }],
+    collections: [],
+    tasks: [],
+  };
+  const result = resolveLoadFallback({
+    cards: [],
+    trending: [],
+    topics: undefined,
+    collections: [],
+    tasks: [],
+    offlineSnapshot,
+    previousSnapshot,
+    authUser: { id: 'user-1' },
+  });
+
+  assert.deepEqual(result.topics, previousSnapshot.topics);
+  assert.equal(result.usedFallback, true);
+});
+
+test('resolveLoadFallback preserves a topics-only stored snapshot', () => {
+  const storedSnapshot = {
+    cards: [],
+    trending: [],
+    topics: [{ id: 'stored-topic' }],
+    collections: [],
+    tasks: [],
+  };
+  const result = resolveLoadFallback({
+    cards: [],
+    trending: [],
+    topics: undefined,
+    collections: [],
+    tasks: [],
+    offlineSnapshot,
+    storedSnapshot,
+    authUser: { id: 'user-1' },
+  });
+
+  assert.deepEqual(result.topics, storedSnapshot.topics);
   assert.equal(result.usedFallback, true);
 });

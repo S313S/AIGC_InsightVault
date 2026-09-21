@@ -255,11 +255,18 @@ test('readBootstrapSnapshot falls back to the public guest snapshot', () => {
 
 test('clearActiveSnapshotOwner prevents private bootstrap reuse', () => {
   installStorage();
-  writeStoredSnapshot(null, snapshot('public-card'));
-  writeStoredSnapshot('user-1', snapshot('private-card'));
+  writeStoredSnapshot(null, {
+    ...snapshot('public-card'),
+    topics: [topic('public-topic')],
+  });
+  writeStoredSnapshot('user-1', {
+    ...snapshot('private-card'),
+    topics: [topic('private-topic', { ownerId: 'user-1', isPublic: false })],
+  });
   clearActiveSnapshotOwner();
 
   assert.equal(readBootstrapSnapshot().snapshot.cards[0].id, 'public-card');
+  assert.equal(readBootstrapSnapshot().snapshot.topics[0].id, 'public-topic');
 });
 
 test('legacy snapshots remain readable without metadata', () => {

@@ -76,10 +76,10 @@ test('app resolves trending cards and collection time independently from knowled
 test('app persists collection and browser sync times as separate metadata', () => {
   assert.match(
     appSource,
-    /writeStoredSnapshot\(targetOwnerId, primarySnapshot, \{ collectedAt \}\)/
+    /writeStoredSnapshot\(targetOwnerId, rawPrimarySnapshot, \{ collectedAt \}\)/
   );
   assert.match(
     appSource,
-    /writeStoredSnapshot\(targetOwnerId, secondarySnapshot, \{ syncedAt \}\)/
+    /writeStoredSnapshot\(targetOwnerId, topicSnapshot, \{ syncedAt \}\)/
   );
 });

@@ -1,7 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { mergeLoadedSnapshot } from '../shared/loadMerge.js';
+import {
+  mergeLoadedSnapshot,
+  settlePrimaryLoadsIndependently,
+} from '../shared/loadMerge.js';
+
+const deferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+};
 
 test('mergeLoadedSnapshot replaces only the provided slices', () => {
   const previous = {
@@ -85,4 +98,27 @@ test('mergeLoadedSnapshot updates topics while preserving failed trending data',
   assert.deepEqual(merged.trending, previous.trending);
   assert.deepEqual(merged.topics, [{ id: 'new-topic' }]);
   assert.deepEqual(merged.cards, [{ id: 'new-card' }]);
+});
+
+test('raw primary loads settle before an independently pending topic read', async () => {
+  const topicRead = deferred();
+  const settlements = settlePrimaryLoadsIndependently({
+    cards: Promise.resolve({ ok: true, value: [{ id: 'card' }] }),
+    trending: Promise.resolve({ ok: true, value: [{ id: 'trend' }] }),
+    topics: topicRead.promise,
+  });
+  let topicsSettled = false;
+  settlements.topics.finally(() => {
+    topicsSettled = true;
+  });
+
+  const [cardsResult, trendingResult] = await settlements.raw;
+
+  assert.equal(cardsResult.status, 'fulfilled');
+  assert.equal(trendingResult.status, 'fulfilled');
+  assert.equal(topicsSettled, false);
+
+  topicRead.resolve({ ok: true, value: [{ id: 'topic' }] });
+  const topicsResult = await settlements.topics;
+  assert.equal(topicsResult.status, 'fulfilled');
 });
