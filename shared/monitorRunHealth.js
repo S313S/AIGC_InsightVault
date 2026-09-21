@@ -53,7 +53,16 @@ export const classifyMonitorRun = ({
     };
   }
 
-  if (failed || (realErrors.length > 0 && completedPlatforms.length === 0)) {
+  if (completedPlatforms.length > 0 && (realErrors.length > 0 || failed)) {
+    return {
+      status: 'partial_failure',
+      completedPlatforms,
+      failedPlatforms,
+      explanation: '部分平台抓取完成，但运行部分失败；结果可能不完整。'
+    };
+  }
+
+  if (completedPlatforms.length === 0 && (realErrors.length > 0 || failed)) {
     return {
       status: 'failed',
       completedPlatforms,
@@ -61,15 +70,6 @@ export const classifyMonitorRun = ({
       explanation: failedPlatforms.length === intended.length && intended.length > 0
         ? '计划平台全部失败，本次未完成有效抓取。'
         : '运行失败，本次未完成有效抓取。'
-    };
-  }
-
-  if (failedPlatforms.length > 0 && completedPlatforms.length > 0) {
-    return {
-      status: 'partial_failure',
-      completedPlatforms,
-      failedPlatforms,
-      explanation: '部分平台抓取完成，部分失败；结果可能不完整。'
     };
   }
 

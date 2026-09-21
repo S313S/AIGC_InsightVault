@@ -106,6 +106,38 @@ test('ignores empty error records when classifying a completed run', () => {
   assert.deepEqual(result.failedPlatforms, []);
 });
 
+test('classifies a completed intended platform plus a system error as partial failure', () => {
+  const result = classify({
+    platformTotals: {
+      twitter: { fetched: 4, output: 2, completed: true },
+      xiaohongshu: { fetched: 0, output: 0, completed: false }
+    },
+    candidateCount: 2,
+    platformErrors: [{ platform: 'system', error: 'database write failed' }],
+    failed: false
+  });
+
+  assert.equal(result.status, 'partial_failure');
+  assert.deepEqual(result.completedPlatforms, ['twitter']);
+  assert.deepEqual(result.failedPlatforms, []);
+});
+
+test('classifies a completed intended platform plus an unscoped error as partial failure even with failed flag', () => {
+  const result = classify({
+    platformTotals: {
+      twitter: { fetched: 4, output: 2, completed: true },
+      xiaohongshu: { fetched: 0, output: 0, completed: false }
+    },
+    candidateCount: 2,
+    platformErrors: [{ error: 'database write failed' }],
+    failed: true
+  });
+
+  assert.equal(result.status, 'partial_failure');
+  assert.deepEqual(result.completedPlatforms, ['twitter']);
+  assert.deepEqual(result.failedPlatforms, []);
+});
+
 test('runtime guard takes precedence over platform completion and errors', () => {
   const result = classify({
     platformTotals: {
