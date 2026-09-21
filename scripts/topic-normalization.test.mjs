@@ -40,7 +40,7 @@ test('normalizes Twitter and X status identity across hosts and tracking queries
 
 test('removes known tracking parameters but conservatively retains resource queries', () => {
   assert.equal(
-    normalizeEvidenceUrl('https://example.com/releases?id=42&lang=zh&utm_medium=social&ref=feed#comments'),
+    normalizeEvidenceUrl('https://example.com/releases?id=42&lang=zh&utm_medium=social#comments'),
     'https://example.com/releases?id=42&lang=zh'
   );
   assert.notEqual(
@@ -49,9 +49,27 @@ test('removes known tracking parameters but conservatively retains resource quer
   );
 });
 
+test('preserves source and ref as identity parameters on unknown hosts', () => {
+  const alpha = {
+    title: 'Release notes',
+    sourceUrl: 'https://example.com/resource?source=alpha&ref=primary&utm_source=share',
+  };
+  const beta = {
+    title: 'Release notes',
+    sourceUrl: 'https://example.com/resource?source=beta&ref=primary&utm_source=share',
+  };
+
+  assert.equal(
+    normalizeEvidenceUrl(alpha.sourceUrl),
+    'https://example.com/resource?ref=primary&source=alpha'
+  );
+  assert.notEqual(normalizeEvidenceUrl(alpha.sourceUrl), normalizeEvidenceUrl(beta.sourceUrl));
+  assert.notEqual(buildEvidenceFingerprint(alpha), buildEvidenceFingerprint(beta));
+});
+
 test('produces a query-free normalized evidence key when all params are removable', () => {
   assert.equal(
-    normalizeEvidenceUrl('https://example.com/launch?utm_campaign=spring&source=twitter'),
+    normalizeEvidenceUrl('https://example.com/launch?utm_campaign=spring&gclid=click-id'),
     'https://example.com/launch'
   );
 });

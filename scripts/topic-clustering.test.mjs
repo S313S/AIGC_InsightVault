@@ -76,9 +76,27 @@ test('does not merge unrelated posts that only share generic AI terms', () => {
   assert.deepEqual(clusters.map((cluster) => cluster.cards.length), [1, 1, 1]);
 });
 
+test('does not merge competing company announcements that only share low-information launch language', () => {
+  const clusters = clusterTopicCandidates([
+    card('openai-model', 'OpenAI launches a new AI model', 'https://openai.example/model'),
+    card('anthropic-model', 'Anthropic launches a new AI model', 'https://anthropic.example/model'),
+  ]);
+
+  assert.equal(clusters.length, 2);
+});
+
+test('still merges launch coverage that shares a concrete product identity', () => {
+  const clusters = clusterTopicCandidates([
+    card('gpt-a', 'OpenAI GPT-5 launch announcement: faster coding model', 'https://example.com/gpt/a'),
+    card('gpt-b', 'GPT-5 released with a faster coding model update', 'https://another.example/gpt/b'),
+  ]);
+
+  assert.equal(clusters.length, 1);
+});
+
 test('makes similarityThreshold effective at the merge boundary', () => {
   const candidates = [
-    card('threshold-a', 'Sora video storyboard workflow launch', 'https://example.com/threshold/a'),
+    card('threshold-a', 'Sora video storyboard workflow benchmarks launch', 'https://example.com/threshold/a'),
     card('threshold-b', 'Sora video storyboard prompt guide', 'https://example.com/threshold/b'),
   ];
 
@@ -107,9 +125,37 @@ test('keeps input unchanged and returns deterministic clusters independent of in
 
 test('keeps unknown URL resources separate when their retained query identity differs', () => {
   const clusters = clusterTopicCandidates([
-    card('query-42', 'Release notes', 'https://example.com/resource?id=42'),
-    card('query-43', 'Release notes', 'https://example.com/resource?id=43'),
+    card('query-alpha', 'Release notes', 'https://example.com/resource?source=alpha'),
+    card('query-beta', 'Release notes', 'https://example.com/resource?source=beta'),
   ], { similarityThreshold: 1 });
 
   assert.equal(clusters.length, 2);
+});
+
+test('uses every card field as a deterministic final tie-breaker regardless of object key order', () => {
+  const first = card('same-id', 'Same title', 'https://example.com/same', {
+    author: 'alpha-author',
+    platform: 'Twitter',
+    date: '2026-09-20',
+    rawContent: 'alpha detail',
+    tags: ['Sora', 'video'],
+    metrics: { likes: 2, comments: 1 },
+  });
+  const second = card('same-id', 'Same title', 'https://example.com/same', {
+    author: 'zeta-author',
+    platform: 'Xiaohongshu',
+    date: '2026-09-21',
+    rawContent: 'zeta detail',
+    tags: ['Claude Code'],
+    metrics: { comments: 4, likes: 9 },
+  });
+  const reverseKeys = (value) => Object.fromEntries(Object.entries(value).reverse());
+
+  const forward = clusterTopicCandidates([first, second]);
+  const reversed = clusterTopicCandidates([reverseKeys(second), reverseKeys(first)]);
+
+  assert.deepEqual(forward, reversed);
+  assert.equal(forward[0].representativeCard.author, 'alpha-author');
+  assert.deepEqual(forward[0].cards.map((item) => item.author), ['alpha-author', 'zeta-author']);
+  assert.deepEqual(forward[0].evidence.map((item) => item.author), ['alpha-author', 'zeta-author']);
 });

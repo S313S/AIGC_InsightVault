@@ -5,13 +5,34 @@ import {
   tokenizeTopicText,
 } from './topicNormalization.js';
 
+const stableSerialize = (value) => {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (typeof value === 'number' && !Number.isFinite(value)) return `number:${String(value)}`;
+  if (typeof value !== 'object') return `${typeof value}:${JSON.stringify(value)}`;
+  if (value instanceof Date) return `date:${value.toISOString()}`;
+  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`;
+
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`)
+    .join(',')}}`;
+};
+
 const stableCardKey = (card) => [
   String(card?.id || ''),
   normalizeEvidenceUrl(card?.sourceUrl || card?.source_url),
   String(card?.title || '').normalize('NFKC').toLowerCase(),
+  stableSerialize(card),
 ].join('\u0000');
 
-const compareCards = (left, right) => stableCardKey(left).localeCompare(stableCardKey(right), 'en');
+const compareCards = (left, right) => {
+  const leftKey = stableCardKey(left);
+  const rightKey = stableCardKey(right);
+  if (leftKey < rightKey) return -1;
+  if (leftKey > rightKey) return 1;
+  return 0;
+};
 
 const clampThreshold = (value) => {
   const numeric = Number(value);

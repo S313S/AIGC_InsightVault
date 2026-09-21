@@ -2,13 +2,13 @@ const XIAOHONGSHU_HOSTS = new Set(['xiaohongshu.com', 'www.xiaohongshu.com']);
 const X_STATUS_HOSTS = new Set(['twitter.com', 'www.twitter.com', 'x.com', 'www.x.com']);
 
 const TRACKING_PARAM_NAMES = new Set([
+  'dclid',
   'fbclid',
   'gclid',
   'igshid',
-  'ref',
-  'ref_src',
-  'share_source',
-  'source',
+  'mc_cid',
+  'mc_eid',
+  'msclkid',
   'spm',
 ]);
 
@@ -23,6 +23,27 @@ const GENERIC_TOPIC_TERMS = new Set([
   'tutorials',
   'guide',
   'guides',
+  'launch',
+  'launches',
+  'launched',
+  'launching',
+  'model',
+  'models',
+  'new',
+  'release',
+  'releases',
+  'released',
+  'releasing',
+  'update',
+  'updates',
+  'updated',
+  'updating',
+  'announcement',
+  'announcements',
+  'announce',
+  'announces',
+  'announced',
+  'announcing',
   'the',
   'a',
   'an',
@@ -37,10 +58,33 @@ const GENERIC_TOPIC_TERMS = new Set([
   '人工智能',
   '教程',
   '工具',
+  '发布',
+  '上线',
+  '更新',
+  '模型',
+  '新品',
+  '新模型',
+  '官宣',
+  '宣布',
+  '公告',
 ]);
 
-const CHINESE_STOP_TERMS = ['人工智能', '教程', '工具'];
-const SHORT_CHINESE_STOP_WORDS = new Set(['与', '和', '及', '的', '了', '都']);
+const CHINESE_STOP_TERMS = [
+  '人工智能',
+  '新模型',
+  '教程',
+  '工具',
+  '发布',
+  '上线',
+  '更新',
+  '模型',
+  '新品',
+  '官宣',
+  '宣布',
+  '公告',
+  '新',
+];
+const SHORT_CHINESE_STOP_WORDS = new Set(['与', '和', '及', '的', '了', '都', '会', '正式']);
 
 const PROTECTED_PHRASES = [
   { pattern: /claude[\s\-_]+code/giu, token: 'claude_code' },
