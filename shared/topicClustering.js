@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   buildEvidenceFingerprint,
   isDistinctiveTopicToken,
+  isVersionedProductToken,
   normalizeEvidenceUrl,
   tokenizeTopicText,
 } from './topicNormalization.js';
@@ -59,11 +60,9 @@ const hasDistinctiveOverlap = (leftTokens, rightTokens) => {
   return false;
 };
 
-const VERSION_TOKEN_PATTERN = /^(?:gpt|gemini|claude)_\d/u;
-
 const hasConflictingVersionIdentity = (leftTokens, rightTokens) => {
-  const leftVersions = [...leftTokens].filter((token) => VERSION_TOKEN_PATTERN.test(token));
-  const rightVersions = [...rightTokens].filter((token) => VERSION_TOKEN_PATTERN.test(token));
+  const leftVersions = [...leftTokens].filter(isVersionedProductToken);
+  const rightVersions = [...rightTokens].filter(isVersionedProductToken);
   if (leftVersions.length === 0 || rightVersions.length === 0) return false;
   return !leftVersions.some((token) => rightTokens.has(token));
 };
@@ -85,49 +84,45 @@ const hasConflictingResourceQuery = (leftUrl, rightUrl) => {
 // This clustering pipeline runs in Node during collection; it is not a browser bundle module.
 const hashText = (value) => createHash('sha256').update(value).digest('hex');
 
-const PUBLICATION_FIELDS = [
-  'publishedAt',
-  'published_at',
-  'publishTime',
-  'publish_time',
-  'date',
-  'createdAt',
-  'created_at',
-];
+const normalizeBriefText = (value) => String(value || '')
+  .normalize('NFKC')
+  .toLowerCase()
+  .replace(/\s+/gu, ' ')
+  .trim();
 
-const parsePublicationTime = (card) => {
-  for (const field of PUBLICATION_FIELDS) {
-    const value = card?.[field];
-    if (value instanceof Date && Number.isFinite(value.getTime())) return value.getTime();
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      const milliseconds = Math.abs(value) < 1e12 ? value * 1000 : value;
-      if (Number.isFinite(new Date(milliseconds).getTime())) return milliseconds;
-    }
-    if (typeof value === 'string' && value.trim()) {
-      const parsed = Date.parse(value);
-      if (Number.isFinite(parsed)) return parsed;
-    }
+const buildEvidenceKeys = (members) => {
+  return [...new Set(members.map(({ fingerprint }) => fingerprint))].sort();
+};
+
+const buildClusterTokens = (members) => {
+  const tokensByIdentity = new Map();
+  for (const member of members) {
+    const tokens = tokensByIdentity.get(member.fingerprint) || new Set();
+    for (const token of member.reconciliationTokens) tokens.add(token);
+    tokensByIdentity.set(member.fingerprint, tokens);
   }
-  return null;
+
+  const identityTokenSets = [...tokensByIdentity.values()];
+  if (identityTokenSets.length === 0) return [];
+  return [...identityTokenSets[0]]
+    .filter((token) => identityTokenSets.every((tokens) => tokens.has(token)))
+    .sort();
 };
 
-const compareAnchorCandidates = (left, right) => {
-  const leftTime = parsePublicationTime(left.card);
-  const rightTime = parsePublicationTime(right.card);
-  if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return leftTime - rightTime;
-  if (leftTime !== null && rightTime === null) return -1;
-  if (leftTime === null && rightTime !== null) return 1;
-  return compareCards(left.card, right.card);
-};
-
-const buildTopicFingerprint = (members) => {
-  const anchor = [...members].sort(compareAnchorCandidates)[0];
-  return `topic:${hashText(`topic-anchor\n${anchor.fingerprint}`)}`;
+const buildProvisionalFingerprint = (evidenceKeys, tokens) => {
+  const material = stableSerialize({ evidenceKeys, tokens });
+  return `topic:${hashText(`topic-provisional\n${material}`)}`;
 };
 
 const buildEvidenceSignature = (members) => {
-  const evidenceKeys = members.map(({ card }) => stableCardKey(card)).sort();
-  return `evidence:${hashText(evidenceKeys.join('\n'))}`;
+  const briefEvidence = members.map(({ card, fingerprint }) => stableSerialize({
+    identity: fingerprint,
+    title: normalizeBriefText(card?.title),
+    rawContent: normalizeBriefText(card?.rawContent || card?.raw_content),
+    author: normalizeBriefText(card?.author),
+    platform: normalizeBriefText(card?.platform),
+  })).sort();
+  return `evidence:${hashText(briefEvidence.join('\n'))}`;
 };
 
 const candidatesAreCompatible = (left, right, threshold) => {
@@ -146,7 +141,94 @@ const identityGroupsAreCompatible = (leftGroup, rightGroup, threshold) => {
   ));
 };
 
-export const clusterTopicCandidates = (cards, { similarityThreshold = 0.58 } = {}) => {
+const normalizeExistingTopics = (existingTopics) => {
+  const byFingerprint = new Map();
+  for (const topic of Array.isArray(existingTopics) ? existingTopics : []) {
+    const fingerprint = String(topic?.fingerprint || '').trim();
+    if (!fingerprint) continue;
+    const normalized = byFingerprint.get(fingerprint) || {
+      fingerprint,
+      evidenceKeys: new Set(),
+      tokens: new Set(),
+    };
+    for (const key of Array.isArray(topic?.evidenceKeys) ? topic.evidenceKeys : []) {
+      const value = String(key || '').trim();
+      if (value) normalized.evidenceKeys.add(value);
+    }
+    for (const token of Array.isArray(topic?.tokens) ? topic.tokens : []) {
+      const value = String(token || '').normalize('NFKC').trim().toLowerCase();
+      if (value) normalized.tokens.add(value);
+    }
+    byFingerprint.set(fingerprint, normalized);
+  }
+  return [...byFingerprint.values()].sort((left, right) => (
+    left.fingerprint < right.fingerprint ? -1 : left.fingerprint > right.fingerprint ? 1 : 0
+  ));
+};
+
+const uniqueHighestScore = (matches) => {
+  if (matches.length === 0) return null;
+  const ordered = [...matches].sort((left, right) => (
+    right.score - left.score ||
+    (left.topic.fingerprint < right.topic.fingerprint ? -1 : left.topic.fingerprint > right.topic.fingerprint ? 1 : 0)
+  ));
+  if (ordered.length > 1 && ordered[0].score === ordered[1].score) return null;
+  return ordered[0];
+};
+
+const semanticMatchScore = (members, existingTokens, threshold) => {
+  if (existingTokens.size === 0) return null;
+  const membersByIdentity = new Map();
+  for (const member of members) {
+    const group = membersByIdentity.get(member.fingerprint) || [];
+    group.push(member);
+    membersByIdentity.set(member.fingerprint, group);
+  }
+
+  const conservativeThreshold = Math.max(0.72, threshold);
+  const identityScores = [];
+  for (const identityMembers of membersByIdentity.values()) {
+    let bestScore = 0;
+    for (const member of identityMembers) {
+      if (hasConflictingVersionIdentity(existingTokens, member.reconciliationTokens)) continue;
+      if (!hasDistinctiveOverlap(existingTokens, member.reconciliationTokens)) continue;
+      bestScore = Math.max(bestScore, diceSimilarity(existingTokens, member.reconciliationTokens));
+    }
+    if (bestScore < conservativeThreshold) return null;
+    identityScores.push(bestScore);
+  }
+  return identityScores.length > 0 ? Math.min(...identityScores) : null;
+};
+
+const reconcileTopicFingerprint = ({ members, evidenceKeys, existingTopics, threshold }) => {
+  const normalizedTopics = normalizeExistingTopics(existingTopics);
+  const directMatches = normalizedTopics
+    .map((topic) => ({
+      topic,
+      score: evidenceKeys.filter((key) => topic.evidenceKeys.has(key)).length,
+    }))
+    .filter(({ score }) => score > 0);
+
+  if (directMatches.length > 0) {
+    const direct = uniqueHighestScore(directMatches);
+    return direct
+      ? { fingerprint: direct.topic.fingerprint, source: 'existing_evidence' }
+      : null;
+  }
+
+  const semanticMatches = normalizedTopics
+    .map((topic) => ({ topic, score: semanticMatchScore(members, topic.tokens, threshold) }))
+    .filter(({ score }) => score !== null);
+  const semantic = uniqueHighestScore(semanticMatches);
+  return semantic
+    ? { fingerprint: semantic.topic.fingerprint, source: 'existing_semantic' }
+    : null;
+};
+
+export const clusterTopicCandidates = (
+  cards,
+  { similarityThreshold = 0.58, existingTopics = [] } = {}
+) => {
   const candidates = (Array.isArray(cards) ? cards : [])
     .map((card) => ({
       card,
@@ -154,6 +236,14 @@ export const clusterTopicCandidates = (cards, { similarityThreshold = 0.58 } = {
       normalizedUrl: normalizeEvidenceUrl(card?.sourceUrl || card?.source_url),
       tokens: new Set(tokenizeTopicText(card)),
       titleTokens: new Set(tokenizeTopicText({ title: card?.title, tags: card?.tags })),
+      reconciliationTokens: new Set(tokenizeTopicText({
+        title: card?.title,
+        suggestedTitle: card?.suggestedTitle,
+        summary: card?.summary,
+        rawContent: card?.rawContent,
+        raw_content: card?.raw_content,
+        aiAnalysis: { summary: card?.aiAnalysis?.summary },
+      })),
     }))
     .sort((left, right) => compareCards(left.card, right.card));
 
@@ -195,11 +285,23 @@ export const clusterTopicCandidates = (cards, { similarityThreshold = 0.58 } = {
     .map(({ members }) => {
       const orderedMembers = [...members].sort((left, right) => compareCards(left.card, right.card));
       const evidence = orderedMembers.map(({ card }) => card);
-      const anchor = [...orderedMembers].sort(compareAnchorCandidates)[0];
-      const representativeCard = anchor.card;
+      const representativeCard = evidence[0];
+      const evidenceKeys = buildEvidenceKeys(orderedMembers);
+      const tokens = buildClusterTokens(orderedMembers);
+      const provisionalFingerprint = buildProvisionalFingerprint(evidenceKeys, tokens);
+      const reconciled = reconcileTopicFingerprint({
+        members: orderedMembers,
+        evidenceKeys,
+        existingTopics,
+        threshold,
+      });
       return {
-        fingerprint: buildTopicFingerprint(orderedMembers),
+        fingerprint: reconciled?.fingerprint || provisionalFingerprint,
+        provisionalFingerprint,
+        fingerprintSource: reconciled?.source || 'provisional',
         evidenceSignature: buildEvidenceSignature(orderedMembers),
+        evidenceKeys,
+        tokens,
         title: String(representativeCard?.title || '').trim(),
         representativeCard,
         cards: evidence,

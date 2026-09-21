@@ -108,6 +108,29 @@ test('keeps different model versions separate while merging the same version', (
   ]);
 });
 
+test('applies version identity consistently across protected product aliases', () => {
+  const fixtures = [
+    ['sora', 'Sora 1', 'Sora 1', 'Sora 2'],
+    ['veo', 'Veo2', 'Veo 2', 'Veo3'],
+    ['kling', '可灵1.6', '可灵 1.6', '可灵2.0'],
+    ['claude-code', 'Claude Code1.0', 'Claude Code 1.0', 'Claude Code2.0'],
+  ];
+
+  for (const [name, firstVersion, sameVersion, otherVersion] of fixtures) {
+    const clusters = clusterTopicCandidates([
+      card(`${name}-a`, `${firstVersion} cinematic workflow benchmark`, `https://example.com/${name}/a`),
+      card(`${name}-b`, `${sameVersion} cinematic workflow benchmark`, `https://example.com/${name}/b`),
+      card(`${name}-c`, `${otherVersion} cinematic workflow benchmark`, `https://example.com/${name}/c`),
+    ]);
+
+    assert.equal(clusters.length, 2, name);
+    assert.deepEqual(clusters.map((cluster) => cluster.cards.map((item) => item.id)), [
+      [`${name}-a`, `${name}-b`],
+      [`${name}-c`],
+    ], name);
+  }
+});
+
 test('makes similarityThreshold effective at the merge boundary', () => {
   const candidates = [
     card('threshold-a', 'Sora video storyboard workflow benchmarks launch', 'https://example.com/threshold/a'),
@@ -174,7 +197,32 @@ test('uses every card field as a deterministic final tie-breaker regardless of o
   assert.deepEqual(forward[0].evidence.map((item) => item.author), ['alpha-author', 'zeta-author']);
 });
 
-test('keeps topic fingerprint anchored while later evidence changes the evidence signature', () => {
+test('reconciles a persisted fingerprint when relative publication text changes', () => {
+  const initialCard = card(
+    'relative-time',
+    'Claude Code Agent Teams parallel coding workflow',
+    'https://example.com/agent-teams/relative',
+    { date: '刚刚' }
+  );
+  const initial = clusterTopicCandidates([initialCard])[0];
+  const persistedFingerprint = 'topic:persisted-agent-teams';
+  const refreshed = clusterTopicCandidates([
+    { ...initialCard, date: '09-21' },
+  ], {
+    existingTopics: [{
+      fingerprint: persistedFingerprint,
+      evidenceKeys: initial.evidenceKeys,
+      tokens: initial.tokens,
+    }],
+  })[0];
+
+  assert.equal(refreshed.fingerprint, persistedFingerprint);
+  assert.equal(refreshed.fingerprintSource, 'existing_evidence');
+  assert.match(refreshed.provisionalFingerprint, /^topic:[a-f0-9]{64}$/);
+  assert.equal(initial.evidenceSignature, refreshed.evidenceSignature);
+});
+
+test('keeps a persisted fingerprint when earlier official evidence is added', () => {
   const early = card(
     'z-early',
     'Claude Code Agent Teams parallel coding workflow',
@@ -194,15 +242,74 @@ test('keeps topic fingerprint anchored while later evidence changes the evidence
     { date: '2026-09-22T08:00:00Z' }
   );
 
-  const initial = clusterTopicCandidates([early, middle]);
-  const expanded = clusterTopicCandidates([later, middle, early]);
+  const initial = clusterTopicCandidates([early, middle])[0];
+  const persistedFingerprint = 'topic:persisted-agent-teams';
+  const earlierOfficial = card(
+    'a-official',
+    'Claude Code Agent Teams parallel coding official details',
+    'https://official.example.com/agent-teams',
+    { date: '2026-09-01T08:00:00Z' }
+  );
+  const expanded = clusterTopicCandidates([later, earlierOfficial, middle, early], {
+    existingTopics: [{
+      fingerprint: persistedFingerprint,
+      evidenceKeys: initial.evidenceKeys,
+      tokens: initial.tokens,
+    }],
+  })[0];
 
-  assert.equal(initial.length, 1);
-  assert.equal(expanded.length, 1);
-  assert.equal(initial[0].fingerprint, expanded[0].fingerprint);
-  assert.notEqual(initial[0].evidenceSignature, expanded[0].evidenceSignature);
-  assert.match(initial[0].fingerprint, /^topic:[a-f0-9]{64}$/);
-  assert.match(initial[0].evidenceSignature, /^evidence:[a-f0-9]{64}$/);
+  assert.equal(expanded.fingerprint, persistedFingerprint);
+  assert.equal(expanded.fingerprintSource, 'existing_evidence');
+  assert.notEqual(initial.evidenceSignature, expanded.evidenceSignature);
+  assert.match(initial.fingerprint, /^topic:[a-f0-9]{64}$/);
+  assert.match(initial.evidenceSignature, /^evidence:[a-f0-9]{64}$/);
+});
+
+test('keeps evidence signature stable across operational metadata changes even without a URL', () => {
+  const base = card('stable-evidence', 'Sora 2 cinematic workflow', '', {
+    rawContent: 'A reproducible camera-control workflow.',
+    author: 'creator',
+    platform: 'Twitter',
+    date: '刚刚',
+    metrics: { likes: 10, comments: 2 },
+    tags: ['snapshot:2026-09-20', 'video'],
+    collections: ['daily'],
+    ownerId: 'owner-a',
+  });
+  const changedOperations = {
+    ...base,
+    date: '09-21',
+    metrics: { likes: 999, comments: 120 },
+    tags: ['snapshot:2026-09-21', 'trending'],
+    collections: ['published'],
+    ownerId: 'owner-b',
+  };
+  const changedBody = { ...changedOperations, rawContent: 'A materially revised camera-control workflow.' };
+
+  const baseCluster = clusterTopicCandidates([base])[0];
+  const operationsCluster = clusterTopicCandidates([changedOperations])[0];
+  const bodyCluster = clusterTopicCandidates([changedBody])[0];
+  assert.equal(operationsCluster.evidenceSignature, baseCluster.evidenceSignature);
+  assert.equal(operationsCluster.provisionalFingerprint, baseCluster.provisionalFingerprint);
+  assert.deepEqual(operationsCluster.tokens, baseCluster.tokens);
+  assert.notEqual(bodyCluster.evidenceSignature, baseCluster.evidenceSignature);
+});
+
+test('does not reconcile when multiple existing topics have an equal evidence match', () => {
+  const first = card('ambiguous-a', 'Claude Code Agent Teams parallel coding', 'https://example.com/ambiguous/a');
+  const second = card('ambiguous-b', 'Claude Code Agent Teams parallel coding', 'https://example.com/ambiguous/b');
+  const provisional = clusterTopicCandidates([first, second])[0];
+  const reconciled = clusterTopicCandidates([second, first], {
+    existingTopics: [
+      { fingerprint: 'topic:existing-a', evidenceKeys: [provisional.evidenceKeys[0]], tokens: provisional.tokens },
+      { fingerprint: 'topic:existing-b', evidenceKeys: [provisional.evidenceKeys[1]], tokens: provisional.tokens },
+    ],
+  })[0];
+
+  assert.equal(reconciled.fingerprint, reconciled.provisionalFingerprint);
+  assert.equal(reconciled.fingerprintSource, 'provisional');
+  assert.notEqual(reconciled.fingerprint, 'topic:existing-a');
+  assert.notEqual(reconciled.fingerprint, 'topic:existing-b');
 });
 
 test('uses a wide digest instead of the known 32-bit FNV collision', () => {

@@ -87,14 +87,43 @@ const CHINESE_STOP_TERMS = [
 ];
 const SHORT_CHINESE_STOP_WORDS = new Set(['与', '和', '及', '的', '了', '都', '会', '正式']);
 
-const PROTECTED_PHRASES = [
-  { pattern: /\bclaude[\s\-_]+code\b/giu, toToken: () => 'claude_code' },
-  { pattern: /\bgpt[\s._-]*(\d+(?:\.\d+)*)\b/giu, toToken: (_, version) => `gpt_${version.replaceAll('.', '_')}` },
-  { pattern: /\bgemini[\s._-]+(\d+(?:\.\d+)*)\b/giu, toToken: (_, version) => `gemini_${version.replaceAll('.', '_')}` },
-  { pattern: /\bclaude[\s._-]+(\d+(?:\.\d+)*)\b/giu, toToken: (_, version) => `claude_${version.replaceAll('.', '_')}` },
-  { pattern: /可灵/gu, toToken: () => '可灵' },
-  { pattern: /\bsora\b/giu, toToken: () => 'sora' },
+const PRODUCT_ALIASES = [
+  { alias: 'claude code', token: 'claude_code' },
+  { alias: 'gemini', token: 'gemini' },
+  { alias: 'claude', token: 'claude' },
+  { alias: 'sora', token: 'sora' },
+  { alias: 'veo', token: 'veo' },
+  { alias: 'gpt', token: 'gpt' },
+  { alias: '可灵', token: '可灵' },
 ];
+
+const escapePattern = (value) => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+
+const buildProductPattern = (alias, withVersion) => {
+  const isLatin = /^[a-z]/iu.test(alias);
+  const core = alias
+    .split(/[\s._-]+/u)
+    .map(escapePattern)
+    .join('[\\s._-]*');
+  const prefix = isLatin ? '\\b' : '';
+  const suffix = withVersion ? '[\\s._-]*(\\d+(?:\\.\\d+)*)\\b' : (isLatin ? '\\b' : '');
+  return new RegExp(`${prefix}${core}${suffix}`, 'giu');
+};
+
+const PRODUCT_PROTECTION_RULES = [
+  ...PRODUCT_ALIASES.map(({ alias, token }) => ({
+    pattern: buildProductPattern(alias, true),
+    toToken: (_, version) => `${token}_${version.replaceAll('.', '_')}`,
+  })),
+  ...PRODUCT_ALIASES.map(({ alias, token }) => ({
+    pattern: buildProductPattern(alias, false),
+    toToken: () => token,
+  })),
+];
+
+const VERSIONED_PRODUCT_TOKENS = PRODUCT_ALIASES
+  .map(({ token }) => token)
+  .sort((left, right) => right.length - left.length);
 
 const asUrl = (rawUrl) => {
   const raw = String(rawUrl || '').trim();
@@ -175,7 +204,7 @@ export const tokenizeTopicText = (card = {}) => {
   let text = collectCardText(card).normalize('NFKC').toLowerCase();
   const protectedTokens = [];
 
-  PROTECTED_PHRASES.forEach(({ pattern, toToken }) => {
+  PRODUCT_PROTECTION_RULES.forEach(({ pattern, toToken }) => {
     text = text.replace(pattern, (...args) => {
       const index = protectedTokens.length;
       protectedTokens.push(toToken(...args));
@@ -209,7 +238,17 @@ export const buildEvidenceFingerprint = (card = {}) => {
   const normalizedUrl = normalizeEvidenceUrl(sourceUrl);
   if (normalizedUrl) return `url:${normalizedUrl}`;
 
-  const tokens = tokenizeTopicText(card);
+  const cardId = String(card.id || '').trim();
+  if (cardId) return `id:${cardId}`;
+
+  const tokens = tokenizeTopicText({
+    title: card.title,
+    suggestedTitle: card.suggestedTitle,
+    summary: card.summary,
+    rawContent: card.rawContent,
+    raw_content: card.raw_content,
+    aiAnalysis: { summary: card.aiAnalysis?.summary },
+  });
   if (tokens.length > 0) return `text:${tokens.join('|')}`;
 
   const fallback = String(card.title || card.id || '')
@@ -222,4 +261,12 @@ export const buildEvidenceFingerprint = (card = {}) => {
 export const isDistinctiveTopicToken = (token) => {
   const normalized = String(token || '').trim().toLowerCase();
   return Boolean(normalized && !GENERIC_TOPIC_TERMS.has(normalized));
+};
+
+export const isVersionedProductToken = (token) => {
+  const normalized = String(token || '').trim().toLowerCase();
+  return VERSIONED_PRODUCT_TOKENS.some((productToken) => {
+    if (!normalized.startsWith(`${productToken}_`)) return false;
+    return /^\d+(?:_\d+)*$/u.test(normalized.slice(productToken.length + 1));
+  });
 };

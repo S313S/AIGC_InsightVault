@@ -111,13 +111,21 @@ test('tokenizes Unicode text while preserving bilingual product phrases and filt
 
 test('preserves versioned model identities as atomic tokens', () => {
   const tokens = tokenizeTopicText({
-    title: 'GPT-4 对比 GPT-5，Gemini 2.5 与 Claude 4 同场更新',
+    title: 'GPT-4 对比 GPT-5，Gemini 2.5、Claude 4、Sora 1、Sora 2、Veo2、Veo 3、可灵1.6、可灵 2.0、Claude Code1.0 与 Claude Code 2.0 同场更新',
   });
 
   assert.equal(tokens.includes('gpt_4'), true);
   assert.equal(tokens.includes('gpt_5'), true);
   assert.equal(tokens.includes('gemini_2_5'), true);
   assert.equal(tokens.includes('claude_4'), true);
+  assert.equal(tokens.includes('sora_1'), true);
+  assert.equal(tokens.includes('sora_2'), true);
+  assert.equal(tokens.includes('veo_2'), true);
+  assert.equal(tokens.includes('veo_3'), true);
+  assert.equal(tokens.includes('可灵_1_6'), true);
+  assert.equal(tokens.includes('可灵_2_0'), true);
+  assert.equal(tokens.includes('claude_code_1_0'), true);
+  assert.equal(tokens.includes('claude_code_2_0'), true);
 });
 
 test('builds stable fingerprints from normalized URL identity before text', () => {
