@@ -5,6 +5,7 @@ import {
   applyTopicFeedbackChoice,
   beginTopicFeedbackRead,
   buildTopicFeedbackKey,
+  clearTopicFeedbackOwner,
   createTopicFeedbackRequestRegistry,
   createTopicFeedbackState,
   mergeTopicFeedbackRead,
@@ -268,6 +269,108 @@ test('failed settlement after an owner switch rolls back only the original owner
 
   assert.equal(completed.update.updatesCurrentOwner, false);
   assert.deepEqual(completed.update.snapshot.topics[0].feedback, []);
-  assert.deepEqual(completed.state.owners['owner-1'].overlays, {});
+  assert.equal(completed.state.owners['owner-1'], undefined);
   assert.deepEqual(ownerTwoCurrent.topics[0].feedback, ['published']);
+});
+
+test('a post-success read removes overlays for topics deleted on the server', () => {
+  const recorded = recordTopicFeedbackMutation(createTopicFeedbackState(), {
+    ownerId: 'owner-1',
+    topicId: 'deleted-topic',
+    action: 'saved',
+    enabled: true,
+  });
+  const succeeded = settleTopicFeedbackMutation(recorded.state, recorded.mutation, true);
+  const read = beginTopicFeedbackRead(succeeded, 'owner-1');
+  const merged = mergeTopicFeedbackRead(succeeded, {
+    ownerId: 'owner-1',
+    readRevision: read.revision,
+    topics: [],
+  });
+
+  assert.equal(merged.state.owners['owner-1'], undefined);
+});
+
+test('unconfirmed successful overlays are never evicted before a stale read settles', () => {
+  const staleRead = beginTopicFeedbackRead(createTopicFeedbackState(), 'owner-1');
+  let state = createTopicFeedbackState();
+  const topicCount = 105;
+  for (let index = 0; index < topicCount; index += 1) {
+    const recorded = recordTopicFeedbackMutation(state, {
+      ownerId: 'owner-1',
+      topicId: `topic-${index}`,
+      action: 'saved',
+      enabled: true,
+    });
+    state = settleTopicFeedbackMutation(recorded.state, recorded.mutation, true);
+  }
+  const merged = mergeTopicFeedbackRead(state, {
+    ownerId: 'owner-1',
+    readRevision: staleRead.revision,
+    topics: Array.from({ length: topicCount }, (_, index) => ({
+      ...topic([]),
+      id: `topic-${index}`,
+    })),
+  });
+
+  assert.equal(Object.keys(state.owners['owner-1'].overlays).length, topicCount);
+  assert.deepEqual(merged.topics[0].feedback, ['saved']);
+});
+
+test('clearing an owner preserves pending writes through settlement', () => {
+  const ownerOne = recordTopicFeedbackMutation(createTopicFeedbackState(), {
+    ownerId: 'owner-1', topicId: 'topic-1', action: 'saved', enabled: true,
+  });
+  const ownerTwo = recordTopicFeedbackMutation(ownerOne.state, {
+    ownerId: 'owner-2', topicId: 'topic-2', action: 'saved', enabled: true,
+  });
+  const cleared = clearTopicFeedbackOwner(ownerTwo.state, 'owner-1');
+  const succeeded = settleTopicFeedbackMutation(cleared, ownerOne.mutation, true);
+
+  assert.equal(cleared.owners['owner-1'].overlays['topic-1\0saved'].status, 'pending');
+  assert.equal(succeeded.owners['owner-1'].overlays['topic-1\0saved'].status, 'succeeded');
+  assert.notEqual(cleared.owners['owner-2'], undefined);
+});
+
+test('owner cleanup removes only records whose overlays are already empty', () => {
+  const state = {
+    owners: {
+      'owner-1': { revision: 2, overlays: {} },
+      'owner-2': { revision: 1, overlays: {
+        'topic-2\0saved': {
+          ownerId: 'owner-2', topicId: 'topic-2', action: 'saved', enabled: true,
+          revision: 1, status: 'pending',
+        },
+      } },
+    },
+  };
+
+  const cleared = clearTopicFeedbackOwner(state, 'owner-1');
+
+  assert.equal(cleared.owners['owner-1'], undefined);
+  assert.notEqual(cleared.owners['owner-2'], undefined);
+});
+
+test('many owners with unconfirmed successes are retained against stale reads', () => {
+  let state = createTopicFeedbackState();
+  const ownerCount = 11;
+  for (let index = 0; index < ownerCount; index += 1) {
+    const recorded = recordTopicFeedbackMutation(state, {
+      ownerId: `owner-${index}`,
+      topicId: `topic-${index}`,
+      action: 'saved',
+      enabled: true,
+    });
+    state = settleTopicFeedbackMutation(recorded.state, recorded.mutation, true);
+  }
+
+  assert.equal(Object.keys(state.owners).length, ownerCount);
+  for (let index = 0; index < ownerCount; index += 1) {
+    const merged = mergeTopicFeedbackRead(state, {
+      ownerId: `owner-${index}`,
+      readRevision: 0,
+      topics: [{ ...topic([]), id: `topic-${index}`, ownerId: `owner-${index}` }],
+    });
+    assert.deepEqual(merged.topics[0].feedback, ['saved']);
+  }
 });

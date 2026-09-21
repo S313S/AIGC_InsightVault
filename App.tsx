@@ -58,6 +58,7 @@ import {
 import {
   beginTopicFeedbackRead,
   buildTopicFeedbackKey,
+  clearTopicFeedbackOwner,
   createTopicFeedbackRequestRegistry,
   createTopicFeedbackState,
   mergeTopicFeedbackRead,
@@ -976,6 +977,10 @@ const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
+    const ownerId = currentUserRef.current?.id;
+    if (ownerId) {
+      topicFeedbackStateRef.current = clearTopicFeedbackOwner(topicFeedbackStateRef.current, ownerId);
+    }
     clearActiveSnapshotOwner();
     await auth.signOut();
     setCurrentUser(null);
@@ -990,6 +995,10 @@ const App: React.FC = () => {
   };
 
   const handleClearLocalAuthState = () => {
+    const ownerId = currentUserRef.current?.id;
+    if (ownerId) {
+      topicFeedbackStateRef.current = clearTopicFeedbackOwner(topicFeedbackStateRef.current, ownerId);
+    }
     clearActiveSnapshotOwner();
     auth.clearLocalAuthState();
     setCurrentUser(null);
@@ -1510,6 +1519,35 @@ const App: React.FC = () => {
     return persistResolvedTopicFeedback(ownerId, update, storedRecord);
   }, [persistResolvedTopicFeedback]);
 
+  const confirmTopicFeedbackWrite = useCallback(async (ownerId: string) => {
+    if (
+      !isSupabaseConnected() ||
+      currentUserRef.current?.id !== ownerId ||
+      loadedOwnerIdRef.current !== ownerId
+    ) return;
+
+    const loadGeneration = loadRequestIdRef.current;
+    const read = beginTopicFeedbackRead(topicFeedbackStateRef.current, ownerId);
+    try {
+      const serverTopics = await db.getEditorialTopics();
+      if (
+        loadGeneration !== loadRequestIdRef.current ||
+        currentUserRef.current?.id !== ownerId ||
+        loadedOwnerIdRef.current !== ownerId
+      ) return;
+
+      const confirmed = mergeTopicFeedbackRead(topicFeedbackStateRef.current, {
+        ownerId,
+        readRevision: read.revision,
+        topics: serverTopics,
+      });
+      topicFeedbackStateRef.current = confirmed.state;
+    } catch (error) {
+      // The next normal topic read will retry confirmation. Until then the overlay stays authoritative.
+      console.warn('Topic feedback confirmation read failed:', error);
+    }
+  }, []);
+
   const handleToggleTopicFeedback = useCallback((
     topicId: string,
     action: TopicFeedbackAction,
@@ -1570,7 +1608,10 @@ const App: React.FC = () => {
       });
       topicFeedbackStateRef.current = settlement.state;
       persistResolvedTopicFeedback(ownerId, settlement.update, storedRecord);
-      if (saved) return true;
+      if (saved) {
+        void confirmTopicFeedbackWrite(ownerId);
+        return true;
+      }
 
       if (
         currentUserRef.current?.id === ownerId &&
@@ -1580,7 +1621,7 @@ const App: React.FC = () => {
       }
       return false;
     });
-  }, [openLoginModal, persistOwnerTopicFeedback, persistResolvedTopicFeedback]);
+  }, [confirmTopicFeedbackWrite, openLoginModal, persistOwnerTopicFeedback, persistResolvedTopicFeedback]);
 
   const handleSaveTrendingToVault = async (card: KnowledgeCard) => {
     if (!userCanMutate(card.ownerId)) {

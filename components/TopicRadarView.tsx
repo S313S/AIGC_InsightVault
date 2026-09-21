@@ -133,7 +133,7 @@ export const TopicRadarView: React.FC<TopicRadarViewProps> = ({
                 </div>
                 <div className="grid grid-cols-1 gap-5 lg:grid-cols-3" aria-label="正在整理话题">
                     {Array.from({ length: 3 }, (_, index) => (
-                        <div key={index} className="h-64 animate-pulse rounded-2xl border border-[#1e3a5f]/40 bg-[#0d1526]/60" />
+                        <div key={index} className="h-64 animate-pulse rounded-2xl border border-[#1e3a5f]/40 bg-[#0d1526]/60 motion-reduce:animate-none" />
                     ))}
                 </div>
             </section>
@@ -205,7 +205,7 @@ export const TopicRadarView: React.FC<TopicRadarViewProps> = ({
                                     onClick={() => void onToggleFeedback(topic.id, 'ignored', false)}
                                     className="rounded-lg border border-[#1e3a5f]/60 px-3 py-2 text-xs text-gray-400 hover:border-indigo-500/50 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                    {pending ? '处理中…' : `恢复：${topic.title}`}
+                                    <span aria-live="polite">{pending ? '处理中…' : `恢复：${topic.title}`}</span>
                                 </button>
                             );
                         })}

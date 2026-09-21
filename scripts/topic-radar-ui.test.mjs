@@ -45,7 +45,9 @@ test('topic evidence is expandable, role-aware, and only links safe web URLs', (
   assert.match(topicCardSource, /事实来源/);
   assert.match(topicCardSource, /热度来源/);
   assert.match(topicCardSource, /没有可展示的证据来源/);
-  assert.match(topicCardSource, /protocol !== 'http:' && parsed\.protocol !== 'https:'/);
+  assert.match(topicCardSource, /resolveSafeHttpUrl\(card\?\.sourceUrl\)/);
+  assert.doesNotMatch(topicCardSource, /const safeEvidenceUrl/);
+  assert.match(topicCardSource, /formatPublicationTime\(card\?\.date\)/);
   assert.match(topicCardSource, /rel="noopener noreferrer"/);
   assert.match(topicCardSource, /card\?\.author/);
   assert.match(topicCardSource, /card\?\.date/);
@@ -83,6 +85,36 @@ test('raw posts remain reachable in a collapsed accessible pool and topic-empty 
   assert.match(radarSource, /暂无可用话题/);
 });
 
+test('raw post actions and all-hotspots modal are keyboard and focus accessible', () => {
+  assert.match(dashboardSource, /type="button"[\s\S]{0,260}onClick=\{\(\) => openSourceUrl\(item\.sourceUrl\)\}/);
+  assert.doesNotMatch(dashboardSource, /<div[\s\S]{0,160}onClick=\{\(\) => openSourceUrl\(item\.sourceUrl\)\}/);
+  assert.match(dashboardSource, /role="dialog"/);
+  assert.match(dashboardSource, /aria-modal="true"/);
+  assert.match(dashboardSource, /aria-labelledby="all-trending-title"/);
+  assert.match(dashboardSource, /id="all-trending-title"/);
+  assert.match(dashboardSource, /dialogRef/);
+  assert.match(dashboardSource, /modalTriggerRef/);
+  assert.match(dashboardSource, /handleDialogKeyDown/);
+  assert.match(dashboardSource, /document\.body\.style\.overflow = 'hidden'/);
+});
+
+test('dashboard opens only safe web URLs in an isolated tab', () => {
+  assert.match(dashboardSource, /window\.open\(safeUrl, '_blank', 'noopener,noreferrer'\)/);
+  assert.match(dashboardSource, /openedWindow\.opener = null/);
+});
+
+test('editorial loading, dynamic text, media, and pending feedback honor UI guidance', () => {
+  assert.match(radarSource, /motion-reduce:animate-none/);
+  assert.match(dashboardSource, /motion-reduce:animate-none/);
+  assert.doesNotMatch(dashboardSource, /transition-all/);
+  assert.match(dashboardSource, /loading="lazy"/);
+  assert.match(dashboardSource, /width=\{640\}/);
+  assert.match(dashboardSource, /height=\{360\}/);
+  assert.match(topicCardSource, /break-words/);
+  assert.match(topicCardSource, /aria-live="polite"/);
+  assert.match(topicCardSource, /motion-reduce:transition-none/);
+});
+
 test('app wires cached topics, auth, and optimistic feedback with rollback and owner cache persistence', () => {
   assert.match(appSource, /topics=\{topics\}/);
   assert.match(appSource, /isTopicsLoading=\{isTopicsLoading\}/);
@@ -99,4 +131,7 @@ test('app wires cached topics, auth, and optimistic feedback with rollback and o
   assert.match(appSource, /if \(pendingRequest\) return pendingRequest/);
   assert.match(appSource, /readStoredSnapshotRecord\(ownerId\)/);
   assert.match(appSource, /activateOwner:\s*false/);
+  assert.match(appSource, /clearTopicFeedbackOwner\(topicFeedbackStateRef\.current, ownerId\)/);
+  assert.match(appSource, /confirmTopicFeedbackWrite/);
+  assert.match(appSource, /void confirmTopicFeedbackWrite\(ownerId\)/);
 });

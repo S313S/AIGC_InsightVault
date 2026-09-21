@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { EditorialTopic, KnowledgeCard, TrackingTask, Platform, TopicFeedbackAction } from '../types';
 import { Flame, ArrowRight, Save, Activity, LayoutGrid, Heart, TrendingUp, Bookmark, Sparkles } from './Icons';
 import { hasPromptEvidence } from '../shared/promptTagging.js';
@@ -8,6 +8,19 @@ import { getSourceUrlOpenBlockReason, resolveOpenableSourceUrl } from '../shared
 import { getCollectionFreshness, getCollectionLabel } from '../shared/collectionFreshness.js';
 import { getSyncLabel } from '../shared/syncFreshness.js';
 import { TopicRadarView } from './TopicRadarView';
+import { handleDialogKeyDown } from '../shared/dialogFocus.js';
+
+const PLATFORM_BADGE_COLORS: Record<Platform, string> = {
+    [Platform.Twitter]: 'bg-blue-500/20 text-blue-400',
+    [Platform.Xiaohongshu]: 'bg-red-500/20 text-red-400',
+    [Platform.Manual]: 'bg-gray-500/20 text-gray-400',
+};
+
+const PlatformBadge: React.FC<{ platform: Platform }> = ({ platform }) => (
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${PLATFORM_BADGE_COLORS[platform]}`}>
+        {platform}
+    </span>
+);
 
 interface DashboardViewProps {
     tasks: TrackingTask[];
@@ -71,6 +84,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const [showAllTrending, setShowAllTrending] = useState(false);
     const [rawPoolOpen, setRawPoolOpen] = useState(false);
     const [repairingCardId, setRepairingCardId] = useState<string | null>(null);
+    const dialogRef = useRef<HTMLDivElement>(null);
+    const dialogCloseRef = useRef<HTMLButtonElement>(null);
+    const modalTriggerRef = useRef<HTMLButtonElement>(null);
 
     useEffect(() => {
         const timer = window.setInterval(() => {
@@ -78,6 +94,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         }, 60_000);
         return () => window.clearInterval(timer);
     }, []);
+
+    useEffect(() => {
+        if (!showAllTrending) return;
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        const frame = window.requestAnimationFrame(() => dialogCloseRef.current?.focus());
+        const handleKeyDown = (event: KeyboardEvent) => {
+            handleDialogKeyDown(
+                event,
+                dialogRef.current,
+                () => setShowAllTrending(false),
+                document.activeElement
+            );
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.cancelAnimationFrame(frame);
+            document.removeEventListener('keydown', handleKeyDown);
+            document.body.style.overflow = previousOverflow;
+            modalTriggerRef.current?.focus();
+        };
+    }, [showAllTrending]);
 
     const normalizeSourceUrl = (url: string) => {
         if (!url) return '';
@@ -115,22 +153,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         return count >= 1000 ? (count / 1000).toFixed(1) + 'k' : count;
     };
 
-    const PlatformBadge: React.FC<{ platform: Platform }> = ({ platform }) => {
-        const colors = {
-            [Platform.Twitter]: 'bg-blue-500/20 text-blue-400',
-            [Platform.Xiaohongshu]: 'bg-red-500/20 text-red-400',
-            [Platform.Manual]: 'bg-gray-500/20 text-gray-400',
-        };
-        return (
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${colors[platform]}`}>
-                {platform}
-            </span>
-        );
-    };
-
     const openSourceUrl = (url: string) => {
-        const safeUrl = resolveOpenableSourceUrl(normalizeXiaohongshuSourceUrl(url) || url);
-        const blockReason = getSourceUrlOpenBlockReason(url);
+        const candidateUrl = normalizeXiaohongshuSourceUrl(url) || url;
+        const safeUrl = resolveOpenableSourceUrl(candidateUrl);
+        const blockReason = getSourceUrlOpenBlockReason(candidateUrl);
         if (blockReason) {
             window.alert(blockReason);
             return;
@@ -140,7 +166,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             window.alert('该小红书链接缺少 xsec_token，可能会 404。请到「设置 → XHS Token 配置」补全后再打开。');
             return;
         }
-        window.open(safeUrl, '_blank');
+        const openedWindow = window.open(safeUrl, '_blank', 'noopener,noreferrer');
+        if (openedWindow) openedWindow.opener = null;
     };
 
     const isXhsMissingToken = (url: string) =>
@@ -237,7 +264,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     aria-expanded={rawPoolOpen}
                     aria-controls="raw-post-pool"
                     onClick={() => setRawPoolOpen((open) => !open)}
-                    className="flex w-full items-center justify-between gap-4 text-left"
+                    className="flex w-full items-center justify-between gap-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                 >
                     <span>
                         <span className="block text-base font-bold text-gray-100">原始帖子池</span>
@@ -259,8 +286,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <h3 className="text-lg font-bold text-gray-100">近期热点</h3>
                     </div>
                     <button
+                        ref={modalTriggerRef}
+                        type="button"
                         onClick={() => setShowAllTrending(true)}
-                        className="text-sm text-indigo-400 font-medium hover:text-indigo-300 flex items-center gap-1"
+                        className="flex items-center gap-1 text-sm font-medium text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                     >
                         查看全部 <ArrowRight size={14} />
                     </button>
@@ -272,7 +301,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         {Array.from({ length: 6 }, (_, index) => (
                             <div
                                 key={index}
-                                className="h-72 animate-pulse rounded-xl border border-[#1e3a5f]/40 bg-[#0d1526]/60"
+                                className="h-72 animate-pulse rounded-xl border border-[#1e3a5f]/40 bg-[#0d1526]/60 motion-reduce:animate-none"
                             >
                                 <div className="h-40 bg-[#1e3a5f]/30" />
                                 <div className="space-y-3 p-4">
@@ -291,107 +320,97 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {hotPicks.map((item) => (
-                            <div
+                            <article
                                 key={item.id}
-                                onClick={() => openSourceUrl(item.sourceUrl)}
-                                className="bg-[#0d1526]/60 backdrop-blur-md rounded-xl border border-[#1e3a5f]/40 shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 hover:-translate-y-1 transition-all duration-300 flex flex-col overflow-hidden group cursor-pointer"
+                                className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-[#1e3a5f]/40 bg-[#0d1526]/60 shadow-sm backdrop-blur-md transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-indigo-500/10 motion-reduce:transform-none motion-reduce:transition-none"
                             >
-                                {/* Cover Image Area */}
-                                <div className="h-40 relative bg-[#1e3a5f]/30 overflow-hidden">
-                                    <img
-                                        src={safeCover(item)}
-                                        alt={item.title}
-                                        referrerPolicy="no-referrer"
-                                        onError={(e) => {
-                                            const target = e.target as HTMLImageElement;
-                                            target.src = buildFallbackCover(item);
-                                        }}
-                                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                    />
-                                    {/* Overlay Sparkles for Prompts */}
-                                    {hasPromptEvidence(item.aiAnalysis?.extractedPrompts) && (
-                                        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-md flex items-center gap-1">
-                                            <Sparkles size={10} className="text-yellow-400" />
-                                            <span>提示词</span>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Content Area */}
-                                <div className="p-4 flex flex-col flex-1">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <PlatformBadge platform={item.platform} />
-                                        <span className="text-xs text-gray-500">{item.date}</span>
-                                    </div>
-                                    {isXhsMissingToken(item.sourceUrl) && (
-                                        <div className="mb-2 inline-flex text-[10px] px-2 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-300">
-                                            缺少 xsec_token
-                                        </div>
-                                    )}
-
-                                    <h4 className="text-base font-bold text-gray-100 mb-2 leading-snug line-clamp-2 group-hover:text-indigo-400 transition-colors">
-                                        {item.title}
-                                    </h4>
-
-                                    <p className="text-sm text-gray-400 line-clamp-2 mb-3 flex-1">
-                                        {item.rawContent}
-                                    </p>
-
-                                    {/* Tags */}
-                                    <div className="flex flex-wrap gap-1 mb-4">
-                                        {item.tags.filter(t => !t.startsWith('snapshot:')).slice(0, 2).map(tag => (
-                                            <span key={tag} className="text-[10px] bg-[#1e3a5f]/50 text-gray-400 px-1.5 py-0.5 rounded border border-[#1e3a5f]/50">
-                                                #{tag}
+                                <button
+                                    type="button"
+                                    onClick={() => openSourceUrl(item.sourceUrl)}
+                                    className="flex min-w-0 flex-1 flex-col text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400"
+                                    aria-label={`打开原文：${item.title}`}
+                                >
+                                    <span className="relative block h-40 overflow-hidden bg-[#1e3a5f]/30">
+                                        <img
+                                            src={safeCover(item)}
+                                            alt={item.title}
+                                            width={640}
+                                            height={360}
+                                            loading="lazy"
+                                            decoding="async"
+                                            referrerPolicy="no-referrer"
+                                            onError={(e) => {
+                                                const target = e.target as HTMLImageElement;
+                                                target.src = buildFallbackCover(item);
+                                            }}
+                                            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105 motion-reduce:transform-none motion-reduce:transition-none"
+                                        />
+                                        {hasPromptEvidence(item.aiAnalysis?.extractedPrompts) && (
+                                            <span className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-[10px] text-white backdrop-blur-sm">
+                                                <Sparkles size={10} className="text-yellow-400" />
+                                                <span>提示词</span>
                                             </span>
-                                        ))}
-                                    </div>
-
-                                    {/* Footer */}
-                                    <div className="flex items-center justify-between pt-3 border-t border-[#1e3a5f]/40">
-                                        <div className="flex items-center gap-3 text-gray-500 text-xs">
-                                            <div className="flex items-center gap-1 hover:text-red-400 transition-colors">
-                                                <Heart size={14} />
-                                                <span>{formatLikes(item.metrics.likes)}</span>
-                                            </div>
-                                            <div className="flex items-center gap-1 hover:text-amber-400 transition-colors">
-                                                <Bookmark size={14} />
-                                                <span>{item.metrics.bookmarks}</span>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider truncate max-w-[80px]">
-                                                {item.author}
+                                        )}
+                                    </span>
+                                    <span className="flex min-w-0 flex-1 flex-col p-4">
+                                        <span className="mb-2 flex min-w-0 items-center justify-between gap-2">
+                                            <PlatformBadge platform={item.platform} />
+                                            <span className="min-w-0 break-words text-xs text-gray-500">{item.date}</span>
+                                        </span>
+                                        {isXhsMissingToken(item.sourceUrl) && (
+                                            <span className="mb-2 inline-flex self-start rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300">
+                                                缺少 xsec_token
                                             </span>
-                                            {item.platform === Platform.Xiaohongshu && canMutateTrendingItem(item) && (
-                                                <button
-                                                    onClick={(e) => handleRepairClick(e, item)}
-                                                    disabled={repairingCardId === item.id}
-                                                    className={`text-[10px] px-2 py-1 rounded border ${
-                                                        repairingCardId === item.id
-                                                            ? 'border-gray-600 text-gray-500 cursor-not-allowed'
-                                                            : 'border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/20'
-                                                    }`}
-                                                    title="打不开时点击修复链接"
-                                                >
-                                                    {repairingCardId === item.id ? '修复中...' : '🔄 修复'}
-                                                </button>
-                                            )}
-                                            {canMutateTrendingItem(item) && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        onSaveToVault(item);
-                                                    }}
-                                                    className="text-gray-500 hover:text-indigo-400 transition-colors"
-                                                    title="保存到知识库"
-                                                >
-                                                    <Save size={16} />
-                                                </button>
-                                            )}
-                                        </div>
+                                        )}
+                                        <span className="mb-2 min-w-0 break-words text-base font-bold leading-snug text-gray-100 line-clamp-2 transition-colors group-hover:text-indigo-400">
+                                            {item.title}
+                                        </span>
+                                        <span className="mb-3 min-w-0 flex-1 break-words text-sm text-gray-400 line-clamp-2">
+                                            {item.rawContent}
+                                        </span>
+                                        <span className="mb-4 flex flex-wrap gap-1">
+                                            {item.tags.filter(t => !t.startsWith('snapshot:')).slice(0, 2).map(tag => (
+                                                <span key={tag} className="break-words rounded border border-[#1e3a5f]/50 bg-[#1e3a5f]/50 px-1.5 py-0.5 text-[10px] text-gray-400">
+                                                    #{tag}
+                                                </span>
+                                            ))}
+                                        </span>
+                                        <span className="flex items-center justify-between border-t border-[#1e3a5f]/40 pt-3">
+                                            <span className="flex items-center gap-3 text-xs text-gray-500">
+                                                <span className="flex items-center gap-1"><Heart size={14} />{formatLikes(item.metrics.likes)}</span>
+                                                <span className="flex items-center gap-1"><Bookmark size={14} />{item.metrics.bookmarks}</span>
+                                            </span>
+                                            <span className="max-w-[80px] truncate text-[10px] font-medium uppercase tracking-wider text-gray-500">{item.author}</span>
+                                        </span>
+                                    </span>
+                                </button>
+                                {canMutateTrendingItem(item) && (
+                                    <div className="flex items-center justify-end gap-2 border-t border-[#1e3a5f]/40 px-4 py-3">
+                                        {item.platform === Platform.Xiaohongshu && canMutateTrendingItem(item) && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => handleRepairClick(e, item)}
+                                                disabled={repairingCardId === item.id}
+                                                className={`rounded border px-2 py-1 text-[10px] ${repairingCardId === item.id ? 'cursor-not-allowed border-gray-600 text-gray-500' : 'border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/20'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400`}
+                                                title="打不开时点击修复链接"
+                                            >
+                                                <span aria-live="polite">{repairingCardId === item.id ? '修复中…' : '🔄 修复'}</span>
+                                            </button>
+                                        )}
+                                        {canMutateTrendingItem(item) && (
+                                            <button
+                                                type="button"
+                                                onClick={() => onSaveToVault(item)}
+                                                className="text-gray-500 transition-colors hover:text-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                                                aria-label="保存到知识库"
+                                                title="保存到知识库"
+                                            >
+                                                <Save size={16} />
+                                            </button>
+                                        )}
                                     </div>
-                                </div>
-                            </div>
+                                )}
+                            </article>
                         ))}
                     </div>
                 )}
@@ -405,75 +424,85 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {/* All Trending Modal */}
             {showAllTrending && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#0d1526]/95 backdrop-blur-xl rounded-2xl w-full max-w-6xl max-h-[85vh] flex flex-col shadow-2xl border border-[#1e3a5f]/50">
+                    <div
+                        ref={dialogRef}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="all-trending-title"
+                        tabIndex={-1}
+                        className="flex max-h-[85vh] w-full max-w-6xl flex-col overscroll-contain rounded-2xl border border-[#1e3a5f]/50 bg-[#0d1526]/95 shadow-2xl backdrop-blur-xl"
+                    >
                         <div className="p-6 border-b border-[#1e3a5f]/40 flex items-center justify-between">
-                            <div>
-                                <h2 className="text-xl font-bold text-gray-100">近期热点 · 全部</h2>
+                            <div className="min-w-0">
+                                <h2 id="all-trending-title" className="break-words text-xl font-bold text-gray-100">近期热点 · 全部</h2>
                                 <p className="text-sm text-gray-500 mt-1">
                                     当前快照 {uniqueTrending.length} 条（原始命中 {trendingItems.length} 条）
                                 </p>
                             </div>
                             <button
+                                ref={dialogCloseRef}
+                                type="button"
                                 onClick={() => setShowAllTrending(false)}
-                                className="px-3 py-1.5 text-sm rounded-lg border border-[#1e3a5f]/50 text-gray-400 hover:bg-white/5"
+                                className="px-3 py-1.5 text-sm rounded-lg border border-[#1e3a5f]/50 text-gray-400 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                             >
                                 关闭
                             </button>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-6">
+                        <div className="flex-1 overflow-y-auto overscroll-contain p-6">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {uniqueTrending.map(item => (
-                                    <div
+                                    <article
                                         key={item.id}
-                                        onClick={() => openSourceUrl(item.sourceUrl)}
-                                        className="bg-[#0d1526]/60 backdrop-blur-md rounded-xl border border-[#1e3a5f]/40 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex flex-col overflow-hidden group cursor-pointer"
+                                        className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-[#1e3a5f]/40 bg-[#0d1526]/60 shadow-sm backdrop-blur-md transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:shadow-lg motion-reduce:transform-none motion-reduce:transition-none"
                                     >
-                                        <div className="h-40 relative bg-[#1e3a5f]/30 overflow-hidden">
-                                            <img
-                                                src={safeCover(item)}
-                                                alt={item.title}
-                                                referrerPolicy="no-referrer"
-                                                onError={(e) => {
-                                                    const target = e.target as HTMLImageElement;
-                                                    target.src = buildFallbackCover(item);
-                                                }}
-                                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                            />
-                                        </div>
-                                        <div className="p-4 flex flex-col flex-1">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <PlatformBadge platform={item.platform} />
-                                                <span className="text-xs text-gray-500">{item.date}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => openSourceUrl(item.sourceUrl)}
+                                            className="flex min-w-0 flex-1 flex-col text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400"
+                                            aria-label={`打开原文：${item.title}`}
+                                        >
+                                            <span className="relative block h-40 overflow-hidden bg-[#1e3a5f]/30">
+                                                <img
+                                                    src={safeCover(item)}
+                                                    alt={item.title}
+                                                    width={640}
+                                                    height={360}
+                                                    loading="lazy"
+                                                    decoding="async"
+                                                    referrerPolicy="no-referrer"
+                                                    onError={(e) => {
+                                                        const target = e.target as HTMLImageElement;
+                                                        target.src = buildFallbackCover(item);
+                                                    }}
+                                                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105 motion-reduce:transform-none motion-reduce:transition-none"
+                                                />
+                                            </span>
+                                            <span className="flex min-w-0 flex-1 flex-col p-4">
+                                                <span className="mb-2 flex min-w-0 items-center justify-between gap-2">
+                                                    <PlatformBadge platform={item.platform} />
+                                                    <span className="min-w-0 break-words text-xs text-gray-500">{item.date}</span>
+                                                </span>
+                                                {isXhsMissingToken(item.sourceUrl) && (
+                                                    <span className="mb-2 inline-flex self-start rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300">缺少 xsec_token</span>
+                                                )}
+                                                <span className="mb-2 min-w-0 break-words text-base font-bold leading-snug text-gray-100 line-clamp-2 transition-colors group-hover:text-indigo-400">{item.title}</span>
+                                                <span className="mb-3 min-w-0 flex-1 break-words text-sm text-gray-400 line-clamp-2">{item.rawContent}</span>
+                                            </span>
+                                        </button>
+                                        {item.platform === Platform.Xiaohongshu && canMutateTrendingItem(item) && (
+                                            <div className="flex justify-end border-t border-[#1e3a5f]/40 px-4 py-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => handleRepairClick(e, item)}
+                                                    disabled={repairingCardId === item.id}
+                                                    className={`rounded border px-2 py-1 text-[10px] ${repairingCardId === item.id ? 'cursor-not-allowed border-gray-600 text-gray-500' : 'border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/20'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400`}
+                                                    title="打不开时点击修复链接"
+                                                >
+                                                    <span aria-live="polite">{repairingCardId === item.id ? '修复中…' : '🔄 修复链接（noteId）'}</span>
+                                                </button>
                                             </div>
-                                            {isXhsMissingToken(item.sourceUrl) && (
-                                                <div className="mb-2 inline-flex text-[10px] px-2 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-300">
-                                                    缺少 xsec_token
-                                                </div>
-                                            )}
-                                            <h4 className="text-base font-bold text-gray-100 mb-2 leading-snug line-clamp-2 group-hover:text-indigo-400 transition-colors">
-                                                {item.title}
-                                            </h4>
-                                            <p className="text-sm text-gray-400 line-clamp-2 mb-3 flex-1">
-                                                {item.rawContent}
-                                            </p>
-                                            {item.platform === Platform.Xiaohongshu && (
-                                                <div className="pt-2 border-t border-[#1e3a5f]/40 flex justify-end">
-                                                    <button
-                                                        onClick={(e) => handleRepairClick(e, item)}
-                                                        disabled={repairingCardId === item.id}
-                                                        className={`text-[10px] px-2 py-1 rounded border ${
-                                                            repairingCardId === item.id
-                                                                ? 'border-gray-600 text-gray-500 cursor-not-allowed'
-                                                                : 'border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/20'
-                                                        }`}
-                                                        title="打不开时点击修复链接"
-                                                    >
-                                                        {repairingCardId === item.id ? '修复中...' : '🔄 修复链接（noteId）'}
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
+                                        )}
+                                    </article>
                                 ))}
                             </div>
                         </div>

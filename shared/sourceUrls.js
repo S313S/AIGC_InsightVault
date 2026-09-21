@@ -20,15 +20,28 @@ export const isPlaceholderSourceUrl = (url) => {
   }
 };
 
+export const resolveSafeHttpUrl = (url) => {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+};
+
 export const resolveOpenableSourceUrl = (url) => {
   const raw = String(url || '').trim();
   if (!raw || raw === '#' || isPlaceholderSourceUrl(raw)) return '';
-  return raw;
+  return resolveSafeHttpUrl(raw);
 };
 
 export const getSourceUrlOpenBlockReason = (url) => {
   const raw = String(url || '').trim();
   if (!raw || raw === '#') return '当前卡片没有可打开的原文链接。';
   if (isPlaceholderSourceUrl(raw)) return '这是离线示例数据的占位链接，不是真实原文链接。';
+  if (!resolveSafeHttpUrl(raw)) return '仅支持打开安全的 HTTP 或 HTTPS 原文链接。';
   return '';
 };

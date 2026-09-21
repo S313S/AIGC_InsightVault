@@ -2,6 +2,8 @@ import React, { memo, useId, useState } from 'react';
 import { EditorialTopic, TopicFeedbackAction, TopicSource } from '../types';
 import { Bookmark, Check, ChevronDown, ExternalLink, X } from './Icons';
 import { buildTopicFeedbackKey } from '../shared/topicFeedbackState.js';
+import { formatPublicationTime } from '../shared/publicationTime.js';
+import { resolveSafeHttpUrl } from '../shared/sourceUrls.js';
 
 export type TopicLane = 'write' | 'study' | 'breaking';
 
@@ -37,33 +39,9 @@ const FEEDBACK_ACTIONS: Array<{
     { action: 'published', label: '已发布', icon: Check },
 ];
 
-const safeEvidenceUrl = (value?: string): string | null => {
-    if (!value) return null;
-    try {
-        const parsed = new URL(value);
-        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
-        return parsed.toString();
-    } catch {
-        return null;
-    }
-};
-
 const isFactSource = (source: TopicSource) => {
     const kind = `${source.evidenceRole} ${source.sourceType}`.toLowerCase();
     return /fact|official|repository|github|一手|官方/.test(kind);
-};
-
-const formatPublicationTime = (value?: string) => {
-    if (!value) return '发布时间未知';
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return value;
-    return parsed.toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-    });
 };
 
 export const TopicCard = memo(function TopicCard({
@@ -119,12 +97,12 @@ export const TopicCard = memo(function TopicCard({
                 )}
             </div>
 
-            <h4 className="text-base font-bold leading-snug text-gray-100">{topic.title}</h4>
-            <p className="mt-2 text-sm leading-relaxed text-gray-400">{topic.summary}</p>
-            <p className="mt-2 text-xs leading-relaxed text-gray-500">此刻信号：{topic.whyNow}</p>
+            <h4 className="min-w-0 break-words text-base font-bold leading-snug text-gray-100">{topic.title}</h4>
+            <p className="mt-2 min-w-0 break-words text-sm leading-relaxed text-gray-400">{topic.summary}</p>
+            <p className="mt-2 min-w-0 break-words text-xs leading-relaxed text-gray-500">此刻信号：{topic.whyNow}</p>
             <div className="mt-3 rounded-xl border border-[#1e3a5f]/40 bg-[#111d33]/70 p-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{laneCopy.label}</p>
-                <p className="mt-1 text-sm leading-relaxed text-gray-300">{laneExplanation}</p>
+                <p className="mt-1 min-w-0 break-words text-sm leading-relaxed text-gray-300">{laneExplanation}</p>
             </div>
 
             <div className="mt-4 border-t border-[#1e3a5f]/40 pt-4">
@@ -133,12 +111,12 @@ export const TopicCard = memo(function TopicCard({
                     aria-expanded={evidenceOpen}
                     aria-controls={evidencePanelId}
                     onClick={() => setEvidenceOpen((open) => !open)}
-                    className="flex w-full items-center justify-between rounded-lg px-1 py-1 text-left text-xs font-medium text-gray-300 hover:text-white"
+                    className="flex w-full items-center justify-between rounded-lg px-1 py-1 text-left text-xs font-medium text-gray-300 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                 >
                     <span>证据来源 · {sources.length || topic.sourceCount}</span>
                     <ChevronDown
                         size={15}
-                        className={`transition-transform ${evidenceOpen ? 'rotate-180' : ''}`}
+                        className={`transition-transform motion-reduce:transition-none ${evidenceOpen ? 'rotate-180' : ''}`}
                     />
                 </button>
 
@@ -150,7 +128,7 @@ export const TopicCard = memo(function TopicCard({
                             </p>
                         ) : sources.map((source) => {
                             const card = source.card;
-                            const href = safeEvidenceUrl(card?.sourceUrl);
+                            const href = resolveSafeHttpUrl(card?.sourceUrl) || null;
                             const roleLabel = isFactSource(source) ? '事实来源' : '热度来源';
                             return (
                                 <div key={source.id} className="rounded-lg border border-[#1e3a5f]/40 bg-[#111d33]/60 p-3">
@@ -168,7 +146,7 @@ export const TopicCard = memo(function TopicCard({
                                         <span className="text-gray-600">{formatPublicationTime(card?.date)}</span>
                                     </div>
                                     <div className="mt-2 flex items-start justify-between gap-3">
-                                        <p className="line-clamp-2 text-xs leading-relaxed text-gray-300">
+                                        <p className="min-w-0 break-words line-clamp-2 text-xs leading-relaxed text-gray-300">
                                             {card?.title || '来源内容暂未载入'}
                                         </p>
                                         {href ? (
@@ -176,7 +154,7 @@ export const TopicCard = memo(function TopicCard({
                                                 href={href}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="flex shrink-0 items-center gap-1 text-xs text-indigo-300 hover:text-indigo-200"
+                                                className="flex shrink-0 items-center gap-1 text-xs text-indigo-300 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                                             >
                                                 原文 <ExternalLink size={12} />
                                             </a>
@@ -204,14 +182,14 @@ export const TopicCard = memo(function TopicCard({
                                 disabled={!canGiveFeedback || pending}
                                 onClick={() => void handleFeedback(action)}
                                 title={canGiveFeedback ? label : '登录后可标记话题'}
-                                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
+                                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
                                     active
                                         ? 'border-indigo-400/60 bg-indigo-500/20 text-indigo-200'
                                         : 'border-[#1e3a5f]/60 text-gray-400 hover:border-indigo-500/40 hover:text-gray-200'
                                 } disabled:cursor-not-allowed disabled:opacity-50`}
                             >
                                 <Icon size={13} />
-                                {pending ? '处理中…' : label}
+                                <span aria-live="polite">{pending ? '处理中…' : label}</span>
                             </button>
                         );
                     })}

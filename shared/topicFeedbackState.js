@@ -7,10 +7,26 @@ const ownerState = (state, ownerId) => state?.owners?.[ownerId] || {
 
 const overlayKey = (topicId, action) => `${topicId}\u0000${action}`;
 
+const replaceOwnerState = (state, ownerId, nextOwner) => {
+  const owners = { ...state.owners };
+  if (Object.keys(nextOwner.overlays).length === 0) delete owners[ownerId];
+  else owners[ownerId] = nextOwner;
+  return { ...state, owners };
+};
+
 export const buildTopicFeedbackKey = (ownerId, topicId, action) =>
   JSON.stringify([ownerId || '', topicId || '', action || '']);
 
 export const createTopicFeedbackState = () => emptyState();
+
+export const clearTopicFeedbackOwner = (state, ownerId) => {
+  const currentState = state || emptyState();
+  const currentOwner = currentState.owners[ownerId];
+  if (!currentOwner || Object.keys(currentOwner.overlays).length > 0) return currentState;
+  const owners = { ...currentState.owners };
+  delete owners[ownerId];
+  return { ...currentState, owners };
+};
 
 export const beginTopicFeedbackRead = (state, ownerId) => ({
   ownerId,
@@ -96,7 +112,7 @@ export const settleTopicFeedbackMutation = (state, mutation, succeeded) => {
   const currentOverlay = currentOwner.overlays[key];
   if (!currentOverlay || currentOverlay.revision !== mutation.revision) return currentState;
 
-  const overlays = { ...currentOwner.overlays };
+  let overlays = { ...currentOwner.overlays };
   const revision = succeeded ? currentOwner.revision + 1 : currentOwner.revision;
   if (succeeded) {
     overlays[key] = {
@@ -107,13 +123,11 @@ export const settleTopicFeedbackMutation = (state, mutation, succeeded) => {
   }
   else if (mutation.previousOverlay) overlays[key] = mutation.previousOverlay;
   else delete overlays[key];
-  return {
-    ...currentState,
-    owners: {
-      ...currentState.owners,
-      [mutation.ownerId]: { ...currentOwner, revision, overlays },
-    },
-  };
+  return replaceOwnerState(currentState, mutation.ownerId, {
+    ...currentOwner,
+    revision,
+    overlays,
+  });
 };
 
 export const resolveTopicFeedbackSettlement = ({
@@ -158,9 +172,10 @@ export const mergeTopicFeedbackRead = (state, {
   for (const overlay of overlays) {
     const topic = nextTopics.find((candidate) => candidate?.id === overlay.topicId);
     const serverEnabled = topic?.feedback?.includes(overlay.action) ?? false;
-    const confirmed = overlay.status === 'succeeded' &&
+    const readCanConfirm = overlay.status === 'succeeded' &&
       readRevision >= overlay.confirmAfterRevision &&
-      serverEnabled === overlay.enabled;
+      (topic === undefined || serverEnabled === overlay.enabled);
+    const confirmed = readCanConfirm;
     if (confirmed) {
       if (!removedConfirmedOverlay) nextOverlays = { ...nextOverlays };
       removedConfirmedOverlay = true;
@@ -178,13 +193,7 @@ export const mergeTopicFeedbackRead = (state, {
   if (!removedConfirmedOverlay) return { state: currentState, topics: nextTopics };
   return {
     topics: nextTopics,
-    state: {
-      ...currentState,
-      owners: {
-        ...currentState.owners,
-        [ownerId]: { ...currentOwner, overlays: nextOverlays },
-      },
-    },
+    state: replaceOwnerState(currentState, ownerId, { ...currentOwner, overlays: nextOverlays }),
   };
 };
 
