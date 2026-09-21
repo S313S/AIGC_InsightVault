@@ -9,14 +9,14 @@ const LANE_WINDOWS = Object.freeze({
   study: 30 * DAY_MS,
 });
 
+// Only publisher-originated timestamps establish editorial recency. Database
+// creation and collection timestamps belong exclusively to observation merge.
 const CARD_TIME_FIELDS = [
   'publishedAt',
   'published_at',
   'publishTime',
   'publish_time',
   'date',
-  'createdAt',
-  'created_at',
 ];
 
 const OBSERVATION_TIME_FIELDS = [
@@ -30,9 +30,14 @@ const OBSERVATION_TIME_FIELDS = [
   'created_at',
 ];
 
+const RELEASE_ACTION_PATTERNS = [
+  /\b(?:launch(?:es|ed)?|releas(?:e|es|ed)|introduc(?:es|ed|ing)|announc(?:e|es|ed|ing)|unveil(?:s|ed))\b|\b(?:is\s+)?now\s+available\b/iu,
+  /(?:正式发布|现已发布|宣布发布|正式推出|现已推出|宣布推出|现已上线|开放使用|现已可用|正式开放)/u,
+];
 const BREAKING_PATTERNS = [
-  /\b(?:launch(?:ed)?|release[ds]?|announc(?:e|ed|ement)|roll(?:ed)?\s*out|new\s+(?:model|api|feature)|api\s+update)\b/iu,
-  /(?:正式发布|发布|上线|推出|官宣|开源|重大更新|新版|更新)/u,
+  ...RELEASE_ACTION_PATTERNS,
+  /\b(?:roll(?:ed)?\s*out|new\s+(?:model|api|feature)|api\s+update)\b/iu,
+  /(?:发布|上线|推出|官宣|开源|重大更新|新版|更新)/u,
 ];
 const HANDS_ON_PATTERNS = [
   /\b(?:hands[- ]on|demo|benchmark(?:s|ed)?|tested?|experiment)\b/iu,
@@ -548,6 +553,13 @@ const positiveFactText = (text) => text
   .replace(/(?:没有|并无|不含|缺少|无)[^。.!?；;]{0,100}/giu, ' ')
   .replace(/\b(?:no|not|without|lacks?)\b[^.!?;]{0,100}/giu, ' ');
 
+const VERSIONED_PRODUCT_PATTERN = /\b(?:gpt|gemini|claude(?:[\s-]+code)?|sora|veo|llama|mistral|codex(?:[\s-]+cli)?)[\s-]*\d+(?:\.\d+)*(?:[a-z])?\b|(?:通义千问|文心一言|豆包|混元|智谱|可灵)[\s-]*\d+(?:\.\d+)*/iu;
+const NAMED_PRODUCT_PATTERN = /\b(?:claude\s+code|codex\s+cli|chatgpt\s+agent|responses\s+api|assistants\s+api|gemini\s+api)\b/iu;
+
+const hasConcreteProductIdentity = (text) => (
+  VERSIONED_PRODUCT_PATTERN.test(text) || NAMED_PRODUCT_PATTERN.test(text)
+);
+
 const releaseFactStructure = (card) => {
   const text = positiveFactText(cardText(card));
   const body = positiveFactText([
@@ -558,20 +570,23 @@ const releaseFactStructure = (card) => {
   ].map(normalizeText).filter(Boolean).join(' '));
   const signalsFor = (value) => ({
     releaseArtifact: /\b(?:changelog|release\s+notes?)\b|(?:更新日志|变更日志|发布说明)/iu.test(value),
-    version: /\b(?:version|v)\s*\d+(?:\.\d+)*\b|\b(?:gpt|gemini|claude|sora|veo|llama|mistral)\s*\d+(?:\.\d+)*\b|(?:版本)\s*\d+(?:\.\d+)*/iu.test(value),
+    version: /\b(?:version|v)\s*\d+(?:\.\d+)*\b|(?:版本)\s*\d+(?:\.\d+)*/iu.test(value) || VERSIONED_PRODUCT_PATTERN.test(value),
     availability: /\b(?:availability|available|rollout)\b[^.!?。；;]{0,60}\b(?:regions?|countries|users?|date|scope|access)\b|\b(?:rollout\s+regions?|access\s+scope)\b|(?:已开放|开放至|覆盖|上线日期)[^。.!?；;]{0,40}(?:地区|国家|用户|日期|范围)/iu.test(value),
     apiDetail: /\b(?:get|post|put|patch|delete)\s+\/v\d+\/[^\s]+|\/v\d+\/[a-z0-9_./{}:-]+|\bapi\s+(?:parameters?|limits?|rate\s+limits?|endpoints?)\b|(?:接口参数|API\s*参数|接口端点|速率限制|模型限制)/iu.test(value),
     concreteChange: /\b(?:adds?|added|removes?|removed|supports?|introduced|changed)\b[^.!?;]{1,80}|(?:新增|增加|移除|支持|调整|变更)[^。.!?；;]{1,80}/iu.test(value),
   });
-  const all = signalsFor(text);
   const bodySignals = signalsFor(body);
-  const structuredCombination = (
-    (all.releaseArtifact && (all.version || all.availability || all.concreteChange)) ||
-    (all.version && all.availability) ||
-    (all.apiDetail && all.concreteChange)
+  const bodyStructuredCombination = (
+    (bodySignals.releaseArtifact && (bodySignals.version || bodySignals.availability || bodySignals.concreteChange)) ||
+    (bodySignals.version && bodySignals.availability) ||
+    (bodySignals.apiDetail && bodySignals.concreteChange)
   );
   const factBodyCount = Object.values(bodySignals).filter(Boolean).length;
-  return structuredCombination || (isFactEvidence(card) && factBodyCount >= 2);
+  const verifiedFactAction = isFactEvidence(card) &&
+    matchesAny(text, RELEASE_ACTION_PATTERNS) &&
+    hasConcreteProductIdentity(text) &&
+    !matchesAny(text, LOW_VALUE_PATTERNS);
+  return verifiedFactAction || bodyStructuredCombination || (isFactEvidence(card) && factBodyCount >= 2);
 };
 
 const structuredEvidence = (card) => {
@@ -580,7 +595,7 @@ const structuredEvidence = (card) => {
   const numericValues = text.match(/\b\d+(?:\.\d+)?(?:%|ms|s|x)?\b/gu) || [];
   const quantitativeBenchmark = practical.benchmark && numericValues.length >= 2 &&
     /\b(?:vs\.?|versus|median|average|mean|p\d{2}|result|latency|accuracy|throughput)\b|(?:对比|结果|延迟|准确率|吞吐)/iu.test(text);
-  const numberedProcedure = /(?:\bstep\s*\d+\b|(?:^|[\s；;。])\d+[.)、]\s*|步骤\s*[一二三四五六七八九十\d]+|[一二三四五六七八九十两\d]+个步骤)/iu.test(text);
+  const numberedProcedure = /(?:\bstep\s*\d+\b|(?:^|[\s；;。])\d+(?:[)、]\s*|\.\s+)|步骤\s*[一二三四五六七八九十\d]+|[一二三四五六七八九十两\d]+个步骤)/iu.test(text);
   const codeStructure = /```|\b(?:const|let|function|import|from|curl|npm|pnpm|pip)\s+[^\s]/iu.test(text);
   const problemMethodResult = (
     /\bproblem\b|问题/u.test(text) &&

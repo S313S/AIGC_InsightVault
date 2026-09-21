@@ -119,6 +119,68 @@ test('keeps a fact-rich release eligible independent of its source type', () => 
   assert.equal(release.laneEligibility.breaking, true);
 });
 
+test('accepts a verified official launch action plus a concrete version identity', () => {
+  const result = scoreTopicCluster(cluster('official-action-release', [
+    evidence('official-action-release-1', 'OpenAI launches GPT-6', {
+      platform: 'Platform.Official',
+      sourceType: undefined,
+      rawContent: '',
+    }),
+  ]), { now: NOW, sourceBaselines: baselines });
+
+  assert.ok(result.breakingScore >= 60, result.breakingScore);
+  assert.equal(result.laneEligibility.breaking, true);
+});
+
+test('accepts a verified source-role release action with a spaced product version', () => {
+  const result = scoreTopicCluster(cluster('role-action-release', [
+    evidence('role-action-release-1', 'Anthropic released Claude Code 2.0', {
+      platform: undefined,
+      evidenceRole: 'official',
+      rawContent: '',
+    }),
+  ]), { now: NOW, sourceBaselines: baselines });
+
+  assert.ok(result.breakingScore >= 60, result.breakingScore);
+  assert.equal(result.laneEligibility.breaking, true);
+});
+
+test('accepts introducing and now-available actions from an exact official URL fallback', () => {
+  const result = scoreTopicCluster(cluster('url-action-release', [
+    evidence('url-action-release-1', 'Introducing GPT-6 — it is now available', {
+      platform: undefined,
+      sourceType: undefined,
+      sourceUrl: 'https://platform.openai.com/docs/changelog',
+      rawContent: '',
+    }),
+  ]), { now: NOW, sourceBaselines: baselines });
+
+  assert.ok(result.breakingScore >= 60, result.breakingScore);
+  assert.equal(result.laneEligibility.breaking, true);
+});
+
+test('does not let a release-action headline wash low-value social content', () => {
+  for (const title of [
+    'OpenAI launches GPT-6',
+    'Anthropic released Claude Code 2.0',
+    'Introducing GPT-6 — it is now available',
+  ]) {
+    const result = scoreTopicCluster(cluster(`social-action-${title}`, [
+      evidence(`social-action-${title}`, title, {
+        platform: 'Twitter',
+        sourceType: 'social',
+        rawContent: '纯娱乐段子和表情包合集，围观抽奖，没有参数、开放范围或具体变化。',
+        metrics: { likes: 2_000_000, bookmarks: 50_000, comments: 90_000, shares: 40_000 },
+      }),
+    ]), { now: NOW, sourceBaselines: baselines });
+
+    assert.equal(result.writeScore, 25, title);
+    assert.equal(result.studyScore, 15, title);
+    assert.equal(result.breakingScore, 0, title);
+    assert.equal(result.laneEligibility.breaking, false, title);
+  }
+});
+
 test('source identity cannot turn identical low-value content into momentum', () => {
   const makeResult = (sourceType) => scoreTopicCluster(cluster(`low-value-${sourceType}`, [
     evidence(`low-value-${sourceType}-1`, 'Sora 3 正式发布后的爆笑名场面实测', {
@@ -334,6 +396,22 @@ test('rejects invalid or unparseable publication times from breaking eligibility
     assert.equal(result.laneEligibility.breaking, false, String(date));
     assert.equal(result.breakingScore, 0, String(date));
   }
+});
+
+test('never treats database creation time as source publication time', () => {
+  const result = scoreTopicCluster(cluster('database-time-only', [
+    evidence('database-time-only-1', 'OpenAI launches GPT-6', {
+      platform: 'Platform.Official',
+      date: '不是日期',
+      publishedAt: undefined,
+      created_at: '2026-09-21T11:00:00+08:00',
+      rawContent: '',
+    }),
+  ]), { now: NOW, sourceBaselines: baselines });
+
+  assert.equal(result.latestPublishedAt, null);
+  assert.equal(result.breakingScore, 0);
+  assert.equal(result.laneEligibility.breaking, false);
 });
 
 test('enforces exact lane recency windows at 24 hours, 72 hours, and 30 days', () => {
