@@ -210,6 +210,37 @@ test('pure fact clusters never gain momentum from a second fact platform', () =>
   assert.ok(twoFacts.confidenceScore > oneFact.confidenceScore);
 });
 
+test('pure fact breaking selects the newest valid structured release instead of URL order', () => {
+  const staleOfficial = evidence('stale-official', 'Gemini 4 old release note', {
+    platform: 'Official',
+    sourceType: undefined,
+    sourceUrl: 'https://aaa.example.com/old-release',
+    date: '20天前',
+    rawContent: 'Release notes document Gemini version 4 availability, API parameters, regions, and access scope.',
+    metrics: { likes: 9_000_000, bookmarks: 1_000_000, comments: 500_000, shares: 300_000 },
+  });
+  const freshGithub = evidence('fresh-github', 'Gemini 4 fresh SDK release', {
+    platform: 'GitHub',
+    sourceType: undefined,
+    sourceUrl: 'https://zzz.example.com/fresh-release',
+    date: '刚刚',
+    rawContent: 'Changelog for Gemini version 4 adds API parameter limits and availability in 12 regions.',
+    metrics: { likes: 8_000_000, bookmarks: 800_000, comments: 400_000, shares: 200_000 },
+  });
+  const freshOnly = scoreTopicCluster(cluster('fresh-fact', [freshGithub]), {
+    now: NOW,
+    sourceBaselines: baselines,
+  });
+  const withStale = scoreTopicCluster(cluster('fresh-plus-stale-fact', [staleOfficial, freshGithub]), {
+    now: NOW,
+    sourceBaselines: baselines,
+  });
+
+  assert.equal(withStale.breakingScore, freshOnly.breakingScore);
+  assert.equal(withStale.laneEligibility.breaking, true);
+  assert.ok(withStale.confidenceScore > freshOnly.confidenceScore);
+});
+
 test('uses per-source percentiles instead of absolute engagement dominance', () => {
   const sourceBaselines = {
     Twitter: { engagement: [200_000, 500_000, 1_000_000, 2_000_000] },
@@ -420,6 +451,20 @@ test('does not let isolated tutorial, benchmark, or case-study labels wash enter
   }
 });
 
+test('does not treat isolated factual-release labels as concrete release structure', () => {
+  const result = scoreTopicCluster(cluster('fake-release-facts', [
+    evidence('fake-release-facts-1', 'Sora 3 爆笑 API 文档 / 版本号实测', {
+      rawContent: '纯娱乐段子和表情包合集，围观抽奖，没有端点、参数、开放范围或具体变化。',
+      metrics: { likes: 2_000_000, bookmarks: 50_000, comments: 90_000, shares: 40_000 },
+    }),
+  ]), { now: NOW, sourceBaselines: baselines });
+
+  assert.equal(result.writeScore, 25);
+  assert.equal(result.studyScore, 15);
+  assert.equal(result.breakingScore, 0);
+  assert.deepEqual(result.laneEligibility, { write: false, study: false, breaking: false });
+});
+
 test('keeps a quantitative benchmark with concrete method and results substantive', () => {
   const result = scoreTopicCluster(cluster('real-benchmark', [
     evidence('real-benchmark-1', 'Sora 3 latency benchmark', {
@@ -493,6 +538,90 @@ test('merges repeated observations using latest time and metrics plus the riches
   assert.equal(forward.latestPublishedAt, '2026-09-21T03:00:00.000Z');
   assert.ok(forward.studyScore >= 75, forward.studyScore);
   assert.ok(forward.breakingScore >= 85, forward.breakingScore);
+});
+
+test('merges monotonic metrics by observation time or per-field max without ID ordering', () => {
+  const base = {
+    title: 'Claude Code Agent Teams release benchmark',
+    sourceUrl: 'https://example.com/repeated-metrics',
+    publishedAt: '2026-09-21T03:00:00Z',
+    date: undefined,
+    rawContent: 'Release benchmark with implementation details.',
+  };
+  const observed = (id, likes, extra = {}) => evidence(id, base.title, {
+    ...base,
+    metrics: { likes, bookmarks: Math.floor(likes / 10), comments: Math.floor(likes / 20), shares: Math.floor(likes / 25), views: likes * 10 },
+    ...extra,
+  });
+  const score = (cards) => scoreTopicCluster(cluster('metric-observations', cards, {
+    evidenceKeys: ['evidence:metrics'],
+  }), { now: NOW, sourceBaselines: { Twitter: { engagement: [100, 500, 800, 1_000] } } });
+
+  const noObservationTime = score([
+    observed('a-low-id', 100),
+    observed('z-high-id', 900),
+  ]);
+  const maxEquivalent = score([observed('single-max', 900)]);
+  const reversedIds = score([
+    observed('z-high-id', 100),
+    observed('a-low-id', 900),
+  ]);
+  assert.equal(noObservationTime.breakingScore, maxEquivalent.breakingScore);
+  assert.equal(reversedIds.breakingScore, maxEquivalent.breakingScore);
+
+  const latestObserved = score([
+    observed('older-high', 900, { observedAt: '2026-09-21T03:10:00Z' }),
+    observed('newer-lower', 200, { observedAt: '2026-09-21T03:20:00Z' }),
+  ]);
+  const latestEquivalent = score([
+    observed('single-latest', 200, { observedAt: '2026-09-21T03:20:00Z' }),
+  ]);
+  assert.equal(latestObserved.breakingScore, latestEquivalent.breakingScore);
+});
+
+test('community and discussion URLs remain attention evidence rather than official facts', () => {
+  const scoreForUrl = (sourceUrl) => scoreTopicCluster(cluster(`community-${sourceUrl}`, [
+    evidence('community-card', 'Claude Code Agent Teams 正式发布实测', {
+      platform: 'Twitter',
+      sourceType: undefined,
+      sourceUrl,
+      rawContent: 'Launch demo and benchmark from a community discussion.',
+    }),
+  ]), { now: NOW, sourceBaselines: baselines });
+  const generic = scoreForUrl('https://example.com/community-post');
+
+  for (const sourceUrl of [
+    'https://community.openai.com/t/agent-teams/123',
+    'https://discuss.ai.google.dev/t/gemini-release/456',
+  ]) {
+    const result = scoreForUrl(sourceUrl);
+    assert.equal(result.breakingScore, generic.breakingScore, sourceUrl);
+    assert.equal(result.confidenceScore, generic.confidenceScore, sourceUrl);
+  }
+});
+
+test('explicit evidence roles outrank the reviewed official URL fallback', () => {
+  const score = (extra) => scoreTopicCluster(cluster('role-priority', [
+    evidence('role-priority-card', 'Sora 3 正式发布实测', {
+      rawContent: 'Launch demo with benchmark results.',
+      ...extra,
+    }),
+  ]), { now: NOW, sourceBaselines: baselines });
+  const genericSocial = score({ sourceUrl: 'https://example.com/post' });
+  const linkedFromSocial = score({
+    platform: 'Twitter',
+    sourceType: 'social',
+    sourceUrl: 'https://platform.openai.com/docs/changelog',
+  });
+  const officialFallback = score({
+    platform: undefined,
+    sourceType: undefined,
+    sourceUrl: 'https://platform.openai.com/docs/changelog',
+  });
+
+  assert.equal(linkedFromSocial.breakingScore, genericSocial.breakingScore);
+  assert.equal(linkedFromSocial.confidenceScore, genericSocial.confidenceScore);
+  assert.ok(officialFallback.confidenceScore > genericSocial.confidenceScore);
 });
 
 test('clamps every score and remains deterministic without mutating inputs', () => {

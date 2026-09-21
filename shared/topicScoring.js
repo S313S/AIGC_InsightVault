@@ -19,6 +19,17 @@ const CARD_TIME_FIELDS = [
   'created_at',
 ];
 
+const OBSERVATION_TIME_FIELDS = [
+  'collectedAt',
+  'collected_at',
+  'fetchedAt',
+  'fetched_at',
+  'observedAt',
+  'observed_at',
+  'createdAt',
+  'created_at',
+];
+
 const BREAKING_PATTERNS = [
   /\b(?:launch(?:ed)?|release[ds]?|announc(?:e|ed|ement)|roll(?:ed)?\s*out|new\s+(?:model|api|feature)|api\s+update)\b/iu,
   /(?:正式发布|发布|上线|推出|官宣|开源|重大更新|新版|更新)/u,
@@ -30,10 +41,6 @@ const HANDS_ON_PATTERNS = [
 const ANALYSIS_PATTERNS = [
   /\b(?:analysis|comparison|versus|vs\.?|trade-?offs?|why|impact|architecture)\b/iu,
   /(?:分析|对比|争议|影响|原因|观点|架构|取舍)/u,
-];
-const FACTUAL_RELEASE_PATTERNS = [
-  /\b(?:changelog|release\s+notes?|api\s+(?:docs?|documentation|parameters?)|documentation|availability|rollout\s+(?:date|regions?)|version\s*\d|access\s+scope|model\s+limits?|rate\s+limits?)\b/iu,
-  /(?:更新日志|变更日志|发布说明|接口文档|API\s*文档|可用性|开放地区|上线地区|版本号|开放范围|访问范围|接口参数|模型限制|速率限制)/iu,
 ];
 const PRACTICAL_SIGNAL_PATTERNS = Object.freeze({
   tutorial: /\b(?:tutorial|guide|how\s+to|walkthrough)\b|(?:教程|指南|教学)/iu,
@@ -120,6 +127,26 @@ const informationCompleteness = (card) => [
   ...asArray(card?.aiAnalysis?.coreKnowledge),
 ].map(normalizeText).reduce((total, value) => total + value.length, 0);
 
+const metricMaximums = (cards) => {
+  const merged = {};
+  for (const card of cards) {
+    for (const [key, value] of Object.entries(card?.metrics || {})) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric) || numeric < 0) continue;
+      merged[key] = Math.max(merged[key] ?? 0, numeric);
+    }
+  }
+  return merged;
+};
+
+const readObservationTime = (card, now, timezoneOffsetMinutes) => {
+  for (const field of OBSERVATION_TIME_FIELDS) {
+    const parsed = parseAbsoluteTime(card?.[field], timezoneOffsetMinutes);
+    if (parsed !== null && parsed <= now) return parsed;
+  }
+  return null;
+};
+
 const mergeEvidenceObservations = (values, now, timezoneOffsetMinutes) => {
   const richest = [...values].sort((left, right) => (
     informationCompleteness(right) - informationCompleteness(left) ||
@@ -134,9 +161,20 @@ const mergeEvidenceObservations = (values, now, timezoneOffsetMinutes) => {
       const rightKey = stableObservationKey(right.card);
       return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
     })[0] || null;
+  const observed = values
+    .map((card) => ({ card, timestamp: readObservationTime(card, now, timezoneOffsetMinutes) }))
+    .filter(({ timestamp }) => timestamp !== null)
+    .sort((left, right) => right.timestamp - left.timestamp);
+  const latestObservedAt = observed[0]?.timestamp ?? null;
+  const metricCards = latestObservedAt === null
+    ? values
+    : observed.filter(({ timestamp }) => timestamp === latestObservedAt).map(({ card }) => card);
   const merged = {
     ...richest,
-    metrics: { ...(latest?.card?.metrics || richest?.metrics || {}) },
+    // Social counters are monotonic within a snapshot. Without an observation
+    // timestamp, merge each counter by max; with one, only the latest observed
+    // snapshot participates (ties still merge per counter deterministically).
+    metrics: metricMaximums(metricCards),
   };
   for (const field of CARD_TIME_FIELDS) delete merged[field];
   if (latest) merged.publishedAt = new Date(latest.timestamp).toISOString();
@@ -419,43 +457,79 @@ const normalizedSourceType = (card) => normalizeText(
 const normalizedPlatformKind = (card) => normalizeText(card?.platform)
   .replace(/^platform[.:/]/u, '');
 
-const OFFICIAL_HOSTS = new Set([
-  'ai.google.dev',
-  'anthropic.com',
-  'blog.google',
-  'cohere.com',
-  'deepmind.google',
-  'mistral.ai',
-  'openai.com',
-  'stability.ai',
-  'x.ai',
+const ATTENTION_PLATFORM_KINDS = new Set([
+  'twitter',
+  'x',
+  'xiaohongshu',
+  'reddit',
+  'weibo',
+  'youtube',
+  'tiktok',
+  'linkedin',
+  'facebook',
+  'instagram',
+  'threads',
+  'bluesky',
+  'hacker news',
+  'product hunt',
 ]);
 
-const sourceHostname = (card) => {
+const explicitEvidenceKind = (card) => {
+  const sourceType = normalizedSourceType(card);
+  const platform = normalizedPlatformKind(card);
+  if (/\b(?:official|first[. -]?party|company[. -]?blog|changelog)\b/u.test(sourceType) || /(?:官方|一手)/u.test(sourceType)) {
+    return 'official';
+  }
+  if (/\b(?:repository|repo|github|gitlab)\b/u.test(sourceType)) return 'repository';
+  if (platform === 'official') return 'official';
+  if (platform === 'github' || platform === 'gitlab') return 'repository';
+  if (/\b(?:social|attention|community|discussion|forum|user[. -]?content)\b/u.test(sourceType)) return 'attention';
+  if (ATTENTION_PLATFORM_KINDS.has(platform)) return 'attention';
+  return '';
+};
+
+const sourceLocation = (card) => {
   try {
-    return new URL(card?.sourceUrl || card?.source_url).hostname.toLowerCase().replace(/^www\./u, '');
+    const url = new URL(card?.sourceUrl || card?.source_url);
+    return {
+      hostname: url.hostname.toLowerCase().replace(/^www\./u, ''),
+      pathname: url.pathname.toLowerCase(),
+    };
   } catch {
-    return '';
+    return { hostname: '', pathname: '' };
   }
 };
 
-const isOfficialHostname = (hostname) => [...OFFICIAL_HOSTS].some(
-  (officialHost) => hostname === officialHost || hostname.endsWith(`.${officialHost}`)
-);
+const isReviewedOfficialUrl = (card) => {
+  const { hostname, pathname } = sourceLocation(card);
+  if (!hostname || /(?:^|\.)(?:community|discuss|forum|user-content)(?:\.|$)/u.test(hostname)) return false;
+  if (hostname === 'platform.openai.com') return /^\/(?:docs|changelog)(?:\/|$)/u.test(pathname);
+  if (hostname === 'developers.openai.com') return /^\/(?:api|apps-sdk|codex|resources)(?:\/|$)/u.test(pathname);
+  if (hostname === 'ai.google.dev') return /^\/(?:api|docs|gemini-api\/docs)(?:\/|$)/u.test(pathname);
+  if (hostname === 'docs.anthropic.com' || hostname === 'docs.mistral.ai' || hostname === 'docs.cohere.com') {
+    return pathname !== '/';
+  }
+  if (hostname === 'openai.com') return /^\/(?:index|news|research)(?:\/|$)/u.test(pathname);
+  if (hostname === 'anthropic.com') return /^\/(?:news|research)(?:\/|$)/u.test(pathname);
+  return false;
+};
 
-const isOfficialEvidence = (card) => (
-  normalizedPlatformKind(card) === 'official' ||
-  /\b(?:official|first.party|company.blog|changelog)\b/u.test(normalizedSourceType(card)) ||
-  /(?:官方|一手)/u.test(normalizedSourceType(card)) ||
-  isOfficialHostname(sourceHostname(card))
-);
+const isReviewedRepositoryUrl = (card) => {
+  const { hostname, pathname } = sourceLocation(card);
+  if (hostname !== 'github.com' && hostname !== 'gitlab.com') return false;
+  return pathname.split('/').filter(Boolean).length >= 2;
+};
+
+const isOfficialEvidence = (card) => {
+  const explicitKind = explicitEvidenceKind(card);
+  if (explicitKind) return explicitKind === 'official';
+  return isReviewedOfficialUrl(card);
+};
 
 const isRepositoryEvidence = (card) => {
-  const sourceType = normalizedSourceType(card);
-  const url = normalizeText(card?.sourceUrl || card?.source_url);
-  return normalizedPlatformKind(card) === 'github' ||
-    /\b(?:repository|repo|github|gitlab)\b/u.test(sourceType) ||
-    /https?:\/\/(?:www\.)?(?:github|gitlab)\.com\//u.test(url);
+  const explicitKind = explicitEvidenceKind(card);
+  if (explicitKind) return explicitKind === 'repository';
+  return isReviewedRepositoryUrl(card);
 };
 
 const isFactEvidence = (card) => isOfficialEvidence(card) || isRepositoryEvidence(card);
@@ -469,6 +543,36 @@ const platformCount = (cards) => new Set(
 const practicalSignals = (text) => Object.fromEntries(
   Object.entries(PRACTICAL_SIGNAL_PATTERNS).map(([key, pattern]) => [key, pattern.test(text)])
 );
+
+const positiveFactText = (text) => text
+  .replace(/(?:没有|并无|不含|缺少|无)[^。.!?；;]{0,100}/giu, ' ')
+  .replace(/\b(?:no|not|without|lacks?)\b[^.!?;]{0,100}/giu, ' ');
+
+const releaseFactStructure = (card) => {
+  const text = positiveFactText(cardText(card));
+  const body = positiveFactText([
+    card?.rawContent,
+    card?.raw_content,
+    card?.summary,
+    card?.aiAnalysis?.summary,
+  ].map(normalizeText).filter(Boolean).join(' '));
+  const signalsFor = (value) => ({
+    releaseArtifact: /\b(?:changelog|release\s+notes?)\b|(?:更新日志|变更日志|发布说明)/iu.test(value),
+    version: /\b(?:version|v)\s*\d+(?:\.\d+)*\b|\b(?:gpt|gemini|claude|sora|veo|llama|mistral)\s*\d+(?:\.\d+)*\b|(?:版本)\s*\d+(?:\.\d+)*/iu.test(value),
+    availability: /\b(?:availability|available|rollout)\b[^.!?。；;]{0,60}\b(?:regions?|countries|users?|date|scope|access)\b|\b(?:rollout\s+regions?|access\s+scope)\b|(?:已开放|开放至|覆盖|上线日期)[^。.!?；;]{0,40}(?:地区|国家|用户|日期|范围)/iu.test(value),
+    apiDetail: /\b(?:get|post|put|patch|delete)\s+\/v\d+\/[^\s]+|\/v\d+\/[a-z0-9_./{}:-]+|\bapi\s+(?:parameters?|limits?|rate\s+limits?|endpoints?)\b|(?:接口参数|API\s*参数|接口端点|速率限制|模型限制)/iu.test(value),
+    concreteChange: /\b(?:adds?|added|removes?|removed|supports?|introduced|changed)\b[^.!?;]{1,80}|(?:新增|增加|移除|支持|调整|变更)[^。.!?；;]{1,80}/iu.test(value),
+  });
+  const all = signalsFor(text);
+  const bodySignals = signalsFor(body);
+  const structuredCombination = (
+    (all.releaseArtifact && (all.version || all.availability || all.concreteChange)) ||
+    (all.version && all.availability) ||
+    (all.apiDetail && all.concreteChange)
+  );
+  const factBodyCount = Object.values(bodySignals).filter(Boolean).length;
+  return structuredCombination || (isFactEvidence(card) && factBodyCount >= 2);
+};
 
 const structuredEvidence = (card) => {
   const text = cardText(card);
@@ -484,7 +588,7 @@ const structuredEvidence = (card) => {
     /\bresult\b|结果/u.test(text)
   );
   return {
-    factualRelease: matchesAny(text, FACTUAL_RELEASE_PATTERNS),
+    factualRelease: releaseFactStructure(card),
     quantitativeBenchmark,
     structured: numberedProcedure || codeStructure || problemMethodResult || quantitativeBenchmark,
   };
@@ -498,6 +602,15 @@ const hasSubstantiveContent = (cards) => cards.some((card) => {
 const hasQuantitativeBenchmark = (cards) => cards.some(
   (card) => structuredEvidence(card).quantitativeBenchmark
 );
+
+const newestFactBreakingCandidate = (cards, now, timezoneOffsetMinutes) => cards
+  .filter((card) => releaseFactStructure(card))
+  .map((card) => ({ card, timestamp: readCardTime(card, now, timezoneOffsetMinutes) }))
+  .filter(({ timestamp }) => timestamp !== null && timestamp <= now)
+  .sort((left, right) => (
+    right.timestamp - left.timestamp ||
+    stableObservationKey(left.card).localeCompare(stableObservationKey(right.card), 'en')
+  ))[0]?.card || null;
 
 const scorePreference = (cluster, cards, text, preferenceSignals) => {
   if (!preferenceSignals || typeof preferenceSignals !== 'object') return 50;
@@ -543,9 +656,16 @@ export const scoreTopicCluster = (
   const cards = cardsForCluster(cluster, nowTimestamp, sourceTimezoneOffset);
   const attentionCards = cards.filter((card) => !isFactEvidence(card));
   // A fact-only topic can be a time-sensitive release candidate, but one
-  // deterministic fact representative supplies only date/content. It never
-  // supplies engagement or a cross-platform propagation bonus.
-  const breakingCards = attentionCards.length > 0 ? attentionCards : cards.slice(0, 1);
+  // newest valid structured fact supplies only date/content. It never supplies
+  // engagement or a cross-platform propagation bonus.
+  const factBreakingCandidate = attentionCards.length === 0
+    ? newestFactBreakingCandidate(cards, nowTimestamp, sourceTimezoneOffset)
+    : null;
+  const breakingCards = attentionCards.length > 0
+    ? attentionCards
+    : factBreakingCandidate
+      ? [factBreakingCandidate]
+      : [];
   const text = clusterText(cluster, cards);
   const breakingText = breakingCards.map(cardText).filter(Boolean).join(' ');
   const latestPublishedAt = cards
