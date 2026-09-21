@@ -27,8 +27,33 @@ const isNonEmptyString = (value) =>
 const isFiniteScore = (value) =>
   typeof value === 'number' && Number.isFinite(value);
 
-const isEditorialTopicSnapshotItem = (topic) => {
-  if (!isPlainObject(topic) || typeof topic.isPublic !== 'boolean') return false;
+const isBoundedScore = (value) =>
+  isFiniteScore(value) && value >= 0 && value <= 100;
+
+const hasMinimumCachedCardShape = (card) => (
+  isPlainObject(card) &&
+  isNonEmptyString(card.id) &&
+  typeof card.title === 'string' &&
+  isNonEmptyString(card.sourceUrl) &&
+  isNonEmptyString(card.platform)
+);
+
+const isSafeTopicSource = (source) => (
+  isPlainObject(source) &&
+  isNonEmptyString(source.id) &&
+  isNonEmptyString(source.topicId) &&
+  isNonEmptyString(source.cardId) &&
+  typeof source.evidenceRole === 'string' &&
+  typeof source.sourceType === 'string' &&
+  isFiniteScore(source.relevance) &&
+  source.relevance >= 0 &&
+  source.relevance <= 1 &&
+  typeof source.createdAt === 'string' &&
+  (source.card === undefined || hasMinimumCachedCardShape(source.card))
+);
+
+const sanitizeEditorialTopicSnapshotItem = (topic) => {
+  if (!isPlainObject(topic) || typeof topic.isPublic !== 'boolean') return null;
 
   const requiredStrings = [
     'id',
@@ -42,7 +67,7 @@ const isEditorialTopicSnapshotItem = (topic) => {
     'createdAt',
     'updatedAt',
   ];
-  if (!requiredStrings.every((key) => isNonEmptyString(topic[key]))) return false;
+  if (!requiredStrings.every((key) => isNonEmptyString(topic[key]))) return null;
 
   const scoreFields = [
     'writeScore',
@@ -50,32 +75,36 @@ const isEditorialTopicSnapshotItem = (topic) => {
     'breakingScore',
     'confidenceScore',
     'preferenceScore',
-    'sourceCount',
-    'platformCount',
   ];
-  if (!scoreFields.every((key) => isFiniteScore(topic[key]))) return false;
+  if (!scoreFields.every((key) => isBoundedScore(topic[key]))) return null;
+  if (!['sourceCount', 'platformCount'].every((key) => (
+    Number.isInteger(topic[key]) && topic[key] >= 0
+  ))) return null;
 
-  if (!isPlainObject(topic.contentAngles)) return false;
+  if (!isPlainObject(topic.contentAngles)) return null;
   if (!['quick', 'viewpoint', 'tutorial'].every((key) => typeof topic.contentAngles[key] === 'string')) {
-    return false;
+    return null;
   }
   if (!Array.isArray(topic.durableKnowledge) || !topic.durableKnowledge.every(isNonEmptyString)) {
-    return false;
+    return null;
   }
-  if (!['rising', 'steady', 'fading', 'new'].includes(topic.trendDirection)) return false;
-  if (!['generated', 'fallback'].includes(topic.generationStatus)) return false;
-  if (topic.ownerId !== undefined && typeof topic.ownerId !== 'string') return false;
-  if (topic.generatedAt !== undefined && typeof topic.generatedAt !== 'string') return false;
-  if (topic.sources !== undefined && !Array.isArray(topic.sources)) return false;
-  if (
-    topic.feedback !== undefined &&
-    (!Array.isArray(topic.feedback) ||
-      !topic.feedback.every((action) => ['saved', 'ignored', 'published'].includes(action)))
-  ) {
-    return false;
-  }
+  if (!['rising', 'steady', 'fading', 'new'].includes(topic.trendDirection)) return null;
+  if (!['generated', 'fallback'].includes(topic.generationStatus)) return null;
+  if (topic.ownerId !== undefined && typeof topic.ownerId !== 'string') return null;
+  if (topic.generatedAt !== undefined && typeof topic.generatedAt !== 'string') return null;
 
-  return true;
+  const sanitized = { ...topic };
+  if (topic.sources !== undefined) {
+    sanitized.sources = Array.isArray(topic.sources)
+      ? topic.sources.filter(isSafeTopicSource)
+      : [];
+  }
+  if (topic.feedback !== undefined) {
+    sanitized.feedback = Array.isArray(topic.feedback)
+      ? topic.feedback.filter((action) => ['saved', 'ignored', 'published'].includes(action))
+      : [];
+  }
+  return sanitized;
 };
 
 export const deserializeSnapshot = (value) => {
@@ -93,7 +122,9 @@ export const deserializeSnapshot = (value) => {
       return null;
     }
     const topics = Array.isArray(parsed.topics)
-      ? parsed.topics.filter(isEditorialTopicSnapshotItem)
+      ? parsed.topics
+          .map(sanitizeEditorialTopicSnapshotItem)
+          .filter((topic) => topic !== null)
       : [];
     return { ...parsed, topics };
   } catch {

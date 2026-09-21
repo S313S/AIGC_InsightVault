@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   mergeLoadedSnapshot,
+  mergeTopicsIntoCurrentSnapshot,
   settlePrimaryLoadsIndependently,
 } from '../shared/loadMerge.js';
 
@@ -121,4 +122,51 @@ test('raw primary loads settle before an independently pending topic read', asyn
   topicRead.resolve({ ok: true, value: [{ id: 'topic' }] });
   const topicsResult = await settlements.topics;
   assert.equal(topicsResult.status, 'fulfilled');
+});
+
+test('a topic settlement is consumable while an unrelated secondary read is pending', async () => {
+  const topicRead = deferred();
+  const secondaryRead = deferred();
+  const settlements = settlePrimaryLoadsIndependently({
+    cards: Promise.resolve({ ok: true, value: [] }),
+    trending: Promise.resolve({ ok: true, value: [] }),
+    topics: topicRead.promise,
+  });
+  let secondarySettled = false;
+  secondaryRead.promise.finally(() => {
+    secondarySettled = true;
+  });
+
+  topicRead.resolve({ ok: true, value: [{ id: 'fast-topic' }] });
+  const topicResult = await settlements.topics;
+
+  assert.equal(topicResult.status, 'fulfilled');
+  assert.equal(secondarySettled, false);
+  secondaryRead.resolve([]);
+});
+
+test('late topics merge with the latest non-topic slices instead of an earlier snapshot', async () => {
+  const topicRead = deferred();
+  const current = {
+    cards: [{ id: 'old-card' }],
+    trending: [{ id: 'old-trend' }],
+    topics: [],
+    collections: [{ id: 'old-collection' }],
+    tasks: [],
+  };
+  const topicSnapshotPromise = topicRead.promise.then((nextTopics) =>
+    mergeTopicsIntoCurrentSnapshot(() => ({ ...current }), nextTopics)
+  );
+
+  current.cards = [{ id: 'edited-card' }];
+  current.collections = [{ id: 'new-collection' }];
+  topicRead.resolve([{ id: 'late-topic' }]);
+
+  assert.deepEqual(await topicSnapshotPromise, {
+    cards: [{ id: 'edited-card' }],
+    trending: [{ id: 'old-trend' }],
+    topics: [{ id: 'late-topic' }],
+    collections: [{ id: 'new-collection' }],
+    tasks: [],
+  });
 });

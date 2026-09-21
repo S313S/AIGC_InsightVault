@@ -10,3 +10,8 @@ export const settlePrimaryLoadsIndependently = ({ cards, trending, topics }) => 
   raw: Promise.allSettled([cards, trending]),
   topics: Promise.allSettled([topics]).then(([result]) => result),
 });
+
+export const mergeTopicsIntoCurrentSnapshot = (readCurrentSnapshot, topics) => ({
+  ...readCurrentSnapshot(),
+  topics,
+});

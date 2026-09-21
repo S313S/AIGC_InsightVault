@@ -114,6 +114,8 @@ test('deserializeSnapshot drops malformed topics without discarding valid cached
       null,
       { id: 'missing-required-fields' },
       topic('bad-score', { writeScore: Number.NaN }),
+      topic('score-too-high', { studyScore: 101 }),
+      topic('negative-score', { breakingScore: -1 }),
       topic('bad-angles', { contentAngles: [] }),
     ],
     collections: [{ id: 'cached-collection' }],
@@ -124,6 +126,41 @@ test('deserializeSnapshot drops malformed topics without discarding valid cached
   assert.deepEqual(decoded.cards, cached.cards);
   assert.deepEqual(decoded.collections, cached.collections);
   assert.deepEqual(decoded.topics, [topic('valid-topic')]);
+});
+
+test('deserializeSnapshot filters malformed nested topic sources and cards', () => {
+  const validSource = {
+    id: 'source-1',
+    topicId: 'topic-with-sources',
+    cardId: 'card-1',
+    evidenceRole: 'attention',
+    sourceType: 'social',
+    relevance: 0.8,
+    createdAt: '2026-09-21T00:00:00.000Z',
+    card: {
+      id: 'card-1',
+      title: 'Valid evidence',
+      sourceUrl: 'https://example.com/evidence',
+      platform: 'Twitter',
+    },
+  };
+  const decoded = deserializeSnapshot(JSON.stringify({
+    cards: [],
+    trending: [],
+    topics: [topic('topic-with-sources', {
+      sources: [
+        validSource,
+        null,
+        { ...validSource, id: '' },
+        { ...validSource, relevance: Number.POSITIVE_INFINITY },
+        { ...validSource, card: { id: 'card-without-openable-shape', title: 'Bad' } },
+      ],
+    })],
+    collections: [],
+    tasks: [],
+  }));
+
+  assert.deepEqual(decoded.topics[0].sources, [validSource]);
 });
 
 test('shouldPersistSnapshot allows authenticated post-load snapshots', () => {

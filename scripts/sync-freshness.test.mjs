@@ -80,6 +80,6 @@ test('app persists collection and browser sync times as separate metadata', () =
   );
   assert.match(
     appSource,
-    /writeStoredSnapshot\(targetOwnerId, topicSnapshot, \{ syncedAt \}\)/
+    /writeStoredSnapshot\(targetOwnerId, finalSnapshot, \{[\s\S]*?collectedAt: lastCollectedAtRef\.current,[\s\S]*?syncedAt/
   );
 });

@@ -19,7 +19,7 @@ test('app tracks owner-correct background synchronization state', () => {
   assert.match(appSource, /const \[lastSyncedAt, setLastSyncedAt\]/);
   assert.match(appSource, /const \[newTrendingCount, setNewTrendingCount\]/);
   assert.match(appSource, /countNewItemIds\(/);
-  assert.match(appSource, /writeStoredSnapshot\([^;]+\{ syncedAt \}\)/s);
+  assert.match(appSource, /writeStoredSnapshot\(targetOwnerId, finalSnapshot, \{[\s\S]*?syncedAt/);
 });
 
 test('initial hydration refreshes in the background without an overlay', () => {

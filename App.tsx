@@ -38,7 +38,11 @@ import {
   shouldPersistSnapshot,
   writeStoredSnapshot,
 } from './shared/dataSnapshot.js';
-import { mergeLoadedSnapshot, settlePrimaryLoadsIndependently } from './shared/loadMerge.js';
+import {
+  mergeLoadedSnapshot,
+  mergeTopicsIntoCurrentSnapshot,
+  settlePrimaryLoadsIndependently,
+} from './shared/loadMerge.js';
 import { resolveLoadNotice } from './shared/loadNotice.js';
 import { applyCollectionCounts } from './shared/collectionCounts.js';
 import { getLatestCollectionAt, resolveTrendingSnapshot } from './shared/collectionFreshness.js';
@@ -163,6 +167,9 @@ const App: React.FC = () => {
 
   // Loading State
   const [isLoading, setIsLoading] = useState(!snapshotHasAnyData(bootstrapSnapshot));
+  const [isTopicsLoading, setIsTopicsLoading] = useState(
+    isSupabaseConnected() && bootstrapSnapshot.topics.length === 0
+  );
   const [isSyncing, setIsSyncing] = useState(isSupabaseConnected());
   const [lastCollectedAt, setLastCollectedAt] = useState<string | null>(bootstrapRecord?.collectedAt || null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(bootstrapRecord?.syncedAt || null);
@@ -176,6 +183,7 @@ const App: React.FC = () => {
   const trendingRef = useRef<KnowledgeCard[]>(bootstrapSnapshot.trending);
   const topicsRef = useRef<EditorialTopic[]>(bootstrapSnapshot.topics);
   const lastCollectedAtRef = useRef<string | null>(bootstrapRecord?.collectedAt || null);
+  const lastSyncedAtRef = useRef<string | null>(bootstrapRecord?.syncedAt || null);
   const collectionsRef = useRef<Collection[]>(bootstrapSnapshot.collections);
   const lastSuccessfulDataRef = useRef<LoadedSnapshot | null>(bootstrapHasData ? bootstrapSnapshot : null);
   const hasCompletedInitialLoadRef = useRef(bootstrapHasData);
@@ -298,19 +306,72 @@ const App: React.FC = () => {
           lastSuccessfulDataRef.current = hasBaselineData ? baselineSnapshot : null;
           lastCollectedAtRef.current = baselineCollectedAt;
           setLastCollectedAt(baselineCollectedAt);
-          setLastSyncedAt(storedRecord?.syncedAt || null);
+          lastSyncedAtRef.current = storedRecord?.syncedAt || null;
+          setLastSyncedAt(lastSyncedAtRef.current);
           setNewTrendingCount(0);
         }
+
+        setIsTopicsLoading(baselineSnapshot.topics.length === 0);
 
         if (hasBaselineData) {
           hasCompletedInitialLoadRef.current = true;
           setIsLoading(false);
         }
 
+        let secondaryHadFailureForNotice = false;
         const primarySettlements = settlePrimaryLoadsIndependently({
           cards: runCloudRead(signal => db.getKnowledgeCards({ signal }), []),
           trending: runCloudRead(signal => db.getTrendingCards(signal), []),
           topics: runCloudRead(signal => db.getEditorialTopics(signal), []),
+        });
+        const topicSettlementPromise = primarySettlements.topics.then((topicsResult) => {
+          if (
+            requestId !== loadRequestIdRef.current ||
+            loadController.signal.aborted
+          ) {
+            return { applied: false, hadFailure: false };
+          }
+
+          const topicsLoad = getLoadResult(topicsResult, [], 'Loading editorial topics');
+          const dbTopics = topicsLoad.value;
+          const nextTopics = preserveOnFailedLoad(
+            topicsLoad,
+            dbTopics,
+            baselineSnapshot.topics.length > 0
+          ) ?? topicsRef.current;
+          const topicSnapshot = mergeTopicsIntoCurrentSnapshot(() => ({
+            cards: cardsRef.current,
+            trending: trendingRef.current,
+            topics: topicsRef.current,
+            collections: collectionsRef.current,
+            tasks: tasksRef.current,
+          }), nextTopics);
+
+          topicsRef.current = topicSnapshot.topics;
+          setTopics(topicSnapshot.topics);
+          setIsTopicsLoading(false);
+
+          if (!topicsLoad.ok && !secondaryHadFailureForNotice) {
+            const topicNotice = resolveLoadNotice({
+              phase: 'primary',
+              hadFailure: true,
+              hasCachedSnapshot: Boolean(lastSuccessfulDataRef.current || storedSnapshot),
+              authUser,
+            });
+            if (topicNotice) setLoadNotice(topicNotice);
+          }
+
+          if (topicsLoad.ok) {
+            lastSuccessfulDataRef.current = snapshotHasAnyData(topicSnapshot)
+              ? topicSnapshot
+              : null;
+            writeStoredSnapshot(targetOwnerId, topicSnapshot, {
+              collectedAt: lastCollectedAtRef.current,
+              syncedAt: lastSyncedAtRef.current,
+            });
+          }
+
+          return { applied: true, hadFailure: !topicsLoad.ok };
         });
         const [cardsResult, trendingResult] = await primarySettlements.raw;
 
@@ -349,7 +410,12 @@ const App: React.FC = () => {
           previousSnapshot: baselineSnapshot,
           storedSnapshot,
         });
-        const rawPrimarySnapshot = mergeLoadedSnapshot(baselineSnapshot, {
+        const rawPrimarySnapshot = mergeLoadedSnapshot({
+          ...baselineSnapshot,
+          topics: topicsRef.current,
+          collections: collectionsRef.current,
+          tasks: tasksRef.current,
+        }, {
           cards: preserveOnFailedLoad(cardsLoad, primaryResolved.cards, hasBaselineData),
           trending: preserveOnFailedLoad(trendingLoad, trendingSnapshot.cards, hasBaselineData),
         });
@@ -414,7 +480,14 @@ const App: React.FC = () => {
         );
         const dbTasks = tasksLoad.value;
         const secondaryHadFailure = !collectionsLoad.ok || !collectionCountsLoad.ok || !tasksLoad.ok;
-        const secondarySnapshot = mergeLoadedSnapshot(rawPrimarySnapshot, {
+        secondaryHadFailureForNotice = secondaryHadFailure;
+        const secondarySnapshot = mergeLoadedSnapshot({
+          cards: cardsRef.current,
+          trending: trendingRef.current,
+          topics: topicsRef.current,
+          collections: collectionsRef.current,
+          tasks: tasksRef.current,
+        }, {
           collections: collectionsLoad.ok ? dbCollections : undefined,
           tasks: tasksLoad.ok ? dbTasks : undefined,
         });
@@ -446,40 +519,36 @@ const App: React.FC = () => {
           }
         }
 
-        const topicsResult = await primarySettlements.topics;
+        const topicOutcome = await topicSettlementPromise;
         if (requestId !== loadRequestIdRef.current) return false;
 
-        const topicsLoad = getLoadResult(topicsResult, [], 'Loading editorial topics');
-        const dbTopics = topicsLoad.value;
-        const primaryHadFailure = rawPrimaryHadFailure || !topicsLoad.ok;
-        const topicSnapshot = mergeLoadedSnapshot(secondarySnapshot, {
-          topics: preserveOnFailedLoad(topicsLoad, dbTopics, baselineSnapshot.topics.length > 0),
-        });
-
-        topicsRef.current = topicSnapshot.topics;
-        setTopics(topicSnapshot.topics);
-
-        if (!topicsLoad.ok) {
-          const topicNotice = resolveLoadNotice({
-            phase: 'primary',
-            hadFailure: true,
-            hasCachedSnapshot: cachedSnapshotAvailable,
-            authUser,
-          });
-          if (topicNotice) setLoadNotice(topicNotice);
-        }
+        const primaryHadFailure = rawPrimaryHadFailure || topicOutcome.hadFailure;
+        const finalSnapshot = {
+          cards: cardsRef.current,
+          trending: trendingRef.current,
+          topics: topicsRef.current,
+          collections: collectionsRef.current,
+          tasks: tasksRef.current,
+        };
 
         if (!primaryHadFailure && !secondaryHadFailure) {
           setLoadNotice('');
           const syncedAt = new Date().toISOString();
+          lastSyncedAtRef.current = syncedAt;
           setLastSyncedAt(syncedAt);
-          writeStoredSnapshot(targetOwnerId, topicSnapshot, { syncedAt });
+          writeStoredSnapshot(targetOwnerId, finalSnapshot, {
+            collectedAt: lastCollectedAtRef.current,
+            syncedAt,
+          });
         }
 
-        if (snapshotHasAnyData(topicSnapshot)) {
-          lastSuccessfulDataRef.current = topicSnapshot;
+        if (snapshotHasAnyData(finalSnapshot)) {
+          lastSuccessfulDataRef.current = finalSnapshot;
           if (primaryHadFailure || secondaryHadFailure) {
-            writeStoredSnapshot(targetOwnerId, topicSnapshot);
+            writeStoredSnapshot(targetOwnerId, finalSnapshot, {
+              collectedAt: lastCollectedAtRef.current,
+              syncedAt: lastSyncedAtRef.current,
+            });
           }
         }
         return trendingLoad.ok;
@@ -492,10 +561,12 @@ const App: React.FC = () => {
       setTrending(offlineTrending);
       topicsRef.current = [];
       setTopics([]);
+      setIsTopicsLoading(false);
       setCollections(INITIAL_COLLECTIONS.map(toOfflinePublicCollection));
       setTasks([]);
       lastCollectedAtRef.current = collectedAt;
       setLastCollectedAt(collectedAt);
+      lastSyncedAtRef.current = null;
       setLastSyncedAt(null);
       setHasMoreCards(false);
       setChatScope({ cards: offlineCards, title: '全部知识库' });
@@ -525,6 +596,7 @@ const App: React.FC = () => {
       if (activeLoadControllerRef.current === loadController) {
         activeLoadControllerRef.current = null;
         setIsLoading(false);
+        setIsTopicsLoading(false);
         setIsSyncing(false);
       }
     }
@@ -607,6 +679,7 @@ const App: React.FC = () => {
 
     return () => {
       active = false;
+      loadRequestIdRef.current += 1;
       activeLoadControllerRef.current?.abort();
       collectionLoadControllerRef.current?.abort();
       subscription.unsubscribe();
