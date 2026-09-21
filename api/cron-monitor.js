@@ -6,6 +6,7 @@ import { isFallbackCoverUrl, normalizeLegacyFallbackCover } from '../shared/fall
 import { buildXiaohongshuWebUrl } from '../shared/xiaohongshuUrls.js';
 import { extractHashtagsFromText, pickSemanticCover } from '../shared/semanticCovers.js';
 import { classifyMonitorRun } from '../shared/monitorRunHealth.js';
+import { rebuildTopicRadar } from '../server/topicRadarPipeline.js';
 
 // Search keywords: high-volume terms covering all 3 categories (used for API searches)
 const DEFAULT_MONITOR_KEYWORDS = [
@@ -769,6 +770,20 @@ export default async function handler(req, res) {
   let keywordExecution = {};
   let effectivePayload = {};
   let fallbackCoverCount = 0;
+  let topicRadar = {
+    status: 'skipped',
+    reason: 'collection_not_completed',
+    cardsRead: 0,
+    cardsAccepted: 0,
+    clusters: 0,
+    topicsInserted: 0,
+    topicsUpdated: 0,
+    sourceLinksUpserted: 0,
+    briefsGenerated: 0,
+    briefsReused: 0,
+    briefsFallback: 0,
+    errors: []
+  };
   let resultSummary = {
     inserted: 0,
     updatedExisting: 0,
@@ -795,7 +810,7 @@ export default async function handler(req, res) {
       platformErrors: [{ platform: 'system', error }],
       failed: true
     });
-    return res.status(500).json({ error, runHealth });
+    return res.status(500).json({ error, topicRadar, runHealth });
   }
 
   let ownerId = null;
@@ -930,6 +945,7 @@ export default async function handler(req, res) {
         totalTrending: (refreshedRows || []).length,
         snapshot: snapshotTag,
         owner: ownerContext.username,
+        topicRadar: { ...topicRadar, reason: 'rebuild_only' },
         runHealth
       });
     }
@@ -988,6 +1004,7 @@ export default async function handler(req, res) {
         tasksRun: 0,
         skipped: true,
         skipReason: 'auto_update_disabled',
+        topicRadar: { ...topicRadar, reason: 'auto_update_disabled' },
         runHealth
       };
       await persistCronRunLog(supabase, {
@@ -1015,6 +1032,7 @@ export default async function handler(req, res) {
         skipped: true,
         reason: 'auto_update_disabled',
         message: 'Auto update is disabled by monitor_settings.auto_update_enabled=false',
+        topicRadar: { ...topicRadar, reason: 'auto_update_disabled' },
         runHealth
       });
     }
@@ -1537,6 +1555,7 @@ export default async function handler(req, res) {
         runtimeMs: Date.now() - runStartedAt,
         runtimeGuardTriggered,
         engagementDebug: engagementDebug.slice(0, 20),
+        topicRadar: { ...topicRadar, reason: 'no_candidates' },
         platformErrors
       };
       const runHealth = classifyMonitorRun({
@@ -1553,6 +1572,7 @@ export default async function handler(req, res) {
         updatedTasks: updatedTasks.length,
         candidates: 0,
         tasksRun: tasksToRun.length,
+        topicRadar: { ...topicRadar, reason: 'no_candidates' },
         runHealth
       };
       await persistCronRunLog(supabase, {
@@ -1705,6 +1725,35 @@ export default async function handler(req, res) {
       }
     }
 
+    // Cards have already been committed at this point. Topic persistence is a
+    // downstream projection: its failure is observable but never rolls back or
+    // hides a successful collection run.
+    try {
+      topicRadar = await rebuildTopicRadar({
+        supabase,
+        ownerId,
+        now: new Date().toISOString()
+      });
+      if (topicRadar.status === 'partial_failure') {
+        platformErrors = [...platformErrors, {
+          platform: 'topic_radar',
+          error: `Topic radar completed with ${topicRadar.errors.length} recoverable error(s)`
+        }];
+      }
+    } catch (topicRadarError) {
+      const stage = String(topicRadarError?.stage || 'pipeline');
+      topicRadar = {
+        ...topicRadar,
+        status: 'failed',
+        reason: null,
+        errors: [{ stage, errorKind: 'database_failure' }]
+      };
+      platformErrors = [...platformErrors, {
+        platform: 'topic_radar',
+        error: `Topic radar failed during ${stage}`
+      }];
+    }
+
     // Skip tracking_tasks updates in keyword-pool mode
 
     console.log('[cron-monitor] engagement debug sample', engagementDebug.slice(0, 10));
@@ -1727,6 +1776,7 @@ export default async function handler(req, res) {
       runtimeMs: Date.now() - runStartedAt,
       runtimeGuardTriggered,
       engagementDebug: engagementDebug.slice(0, 20),
+      topicRadar,
       platformErrors
     };
     const runHealth = classifyMonitorRun({
@@ -1743,6 +1793,7 @@ export default async function handler(req, res) {
       updatedTasks: updatedTasks.length,
       candidates: candidates.length,
       tasksRun: tasksToRun.length,
+      topicRadar,
       runHealth
     };
     await persistCronRunLog(supabase, {
@@ -1778,7 +1829,7 @@ export default async function handler(req, res) {
       runtimeGuardTriggered,
       failed: true
     });
-    resultSummary = { ...resultSummary, runHealth };
+    resultSummary = { ...resultSummary, topicRadar, runHealth };
     await persistCronRunLog(supabase, {
       owner_id: ownerId,
       trigger_source: triggerSource,
