@@ -17,7 +17,11 @@ import {
 } from '../services/supabaseService';
 import { isSupabaseConnected } from '../services/supabaseClient';
 import { CronRunLog, MonitorSettings, QualityKeyword, TrustedAccount, XhsMissingTokenItem, XhsTokenConfig } from '../types';
-import { resolveManualMonitorRunOutcome, resolveStoredMonitorRunHealth } from '../shared/monitorRunHealth.js';
+import {
+  resolveManualMonitorRunOutcome,
+  resolveMonitorRunFailureDetails,
+  resolveStoredMonitorRunHealth
+} from '../shared/monitorRunHealth.js';
 
 type Tab = 'trusted' | 'keywords' | 'threshold' | 'trace' | 'xhs_tokens' | 'about';
 type PlatformType = 'twitter' | 'xiaohongshu';
@@ -999,24 +1003,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 skipped: '已跳过'
               } as const;
               const runHealthExplanation = resolvedRunHealth.explanation;
-              const platformErrorMessages = (Array.isArray(log.platformErrors) ? log.platformErrors : [])
-                .map((item: any) => {
-                  const platform = String(item?.platform || '').trim();
-                  const error = String(item?.error || '').trim();
-                  if (!platform && !error) return '';
-                  return platform ? `${platform}: ${error}` : error;
-                })
-                .filter(Boolean);
-              const failureMessage = [
-                String(log.errorMessage || '').trim(),
-                ...platformErrorMessages
-              ].filter(Boolean).join('；');
-              const failureSummaryZh = summarizeFailureReasonZh(
-                failureMessage || String(log.errorMessage || '').trim()
-              );
+              const failureDetails = resolveMonitorRunFailureDetails(log, resolvedRunHealth);
+              const failureSummaryZh = summarizeFailureReasonZh(failureDetails.message);
               const failureRawDetail = {
                 errorMessage: log.errorMessage || null,
-                platformErrors: Array.isArray(log.platformErrors) ? log.platformErrors : [],
+                platformErrors: failureDetails.platformErrors,
                 requestMethod: log.requestMethod || 'GET',
                 requestUrl: log.requestUrl || '',
                 queryParams: log.queryParams || {}
@@ -1049,7 +1040,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       {twitterMode}；小红书实际关键词 {xhsTasks} 个；共请求 API {apiCalls} 次，其中有结果 {withResults} 次；总耗时约 {runtimeSeconds} 秒
                     </div>
                   )}
-                  {!log.success && failureMessage && (
+                  {failureDetails.shouldShow && (
                     <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                       <div className="text-xs text-rose-300">
                         失败概括：{failureSummaryZh}
@@ -1112,6 +1103,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           字段：tasksRun=实际执行任务数；candidates=通过筛选候选数；inserted=新增条数；updatedExisting=更新已有条数。
                         </p>
                         <pre className="rounded-md border border-[#1e3a5f]/30 bg-[#091223]/80 p-2 overflow-auto max-h-40">{JSON.stringify(log.resultSummary, null, 2)}</pre>
+                      </div>
+
+                      <div className="rounded-md border border-[#1e3a5f]/40 bg-[#0a1628]/70 p-2 space-y-1">
+                        <p className="text-xs font-semibold text-gray-200">⑤ 平台错误（platformErrors）</p>
+                        <p className="text-[11px] text-gray-400">
+                          概括：记录各平台调用失败原因；空数组表示没有已记录的平台错误。
+                        </p>
+                        <pre className="rounded-md border border-[#1e3a5f]/30 bg-[#091223]/80 p-2 overflow-auto max-h-40">{JSON.stringify(failureDetails.platformErrors, null, 2)}</pre>
                       </div>
                     </div>
                   </details>

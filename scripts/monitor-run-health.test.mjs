@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import {
   classifyMonitorRun,
   resolveManualMonitorRunOutcome,
+  resolveMonitorRunFailureDetails,
   resolveStoredMonitorRunHealth
 } from '../shared/monitorRunHealth.js';
 
@@ -260,6 +261,78 @@ test('resolves a legacy log with no completed platforms and a system error as fa
   assert.deepEqual(result.completedPlatforms, []);
 });
 
+test('resolves a legacy Twitter-only log from query params before platform total keys', () => {
+  const result = resolveStoredMonitorRunHealth({
+    success: true,
+    queryParams: { platform: 'twitter' },
+    effectiveParams: {},
+    platformStats: [{ platform: 'twitter', count: 0 }],
+    platformTotals: {
+      twitter: { fetched: 0, output: 0 },
+      xiaohongshu: { fetched: 0, output: 0 }
+    },
+    platformErrors: [],
+    resultSummary: { candidates: 0 }
+  });
+
+  assert.equal(result.status, 'healthy_low_volume');
+  assert.deepEqual(result.completedPlatforms, ['twitter']);
+  assert.deepEqual(result.failedPlatforms, []);
+});
+
+test('resolves a legacy Xiaohongshu-only log from request URL when query params are missing', () => {
+  const result = resolveStoredMonitorRunHealth({
+    success: true,
+    requestUrl: 'https://example.test/api/cron-monitor?platform=xhs',
+    effectiveParams: {},
+    platformStats: [{ platform: 'xiaohongshu', count: 0 }],
+    platformTotals: {
+      twitter: { fetched: 0, output: 0 },
+      xiaohongshu: { fetched: 0, output: 0 }
+    },
+    platformErrors: [],
+    resultSummary: { candidates: 0 }
+  });
+
+  assert.equal(result.status, 'healthy_low_volume');
+  assert.deepEqual(result.completedPlatforms, ['xiaohongshu']);
+});
+
+test('exposes failure details for a successful transport with partial platform failure', () => {
+  const platformErrors = [{ platform: 'xiaohongshu', error: 'timeout' }];
+  const details = resolveMonitorRunFailureDetails({
+    success: true,
+    errorMessage: null,
+    platformErrors
+  }, {
+    status: 'partial_failure',
+    completedPlatforms: ['twitter'],
+    failedPlatforms: ['xiaohongshu'],
+    explanation: '部分平台抓取完成，但运行部分失败。'
+  });
+
+  assert.equal(details.shouldShow, true);
+  assert.deepEqual(details.platformErrors, platformErrors);
+  assert.match(details.message, /xiaohongshu: timeout/);
+});
+
+test('ignores blank platform error records when resolving visible failure details', () => {
+  const details = resolveMonitorRunFailureDetails({
+    success: true,
+    errorMessage: '',
+    platformErrors: [{ platform: 'twitter', error: '   ' }, {}]
+  }, {
+    status: 'healthy',
+    completedPlatforms: ['twitter'],
+    failedPlatforms: [],
+    explanation: '正常完成。'
+  });
+
+  assert.equal(details.shouldShow, false);
+  assert.deepEqual(details.platformErrors, []);
+  assert.equal(details.message, '');
+});
+
 test('manual 200 partial failure returns a warning instead of a completion message', () => {
   const outcome = resolveManualMonitorRunOutcome({
     ok: true,
@@ -374,5 +447,7 @@ test('cron run log types, mapping and UI support run health with a legacy fallba
   assert.match(settingsSource, /const resolvedRunHealth = resolveStoredMonitorRunHealth\(log\)/);
   assert.match(settingsSource, /const runHealthStatus = resolvedRunHealth\.status/);
   assert.match(settingsSource, /resolvedRunHealth\.explanation/);
+  assert.match(settingsSource, /resolveMonitorRunFailureDetails\(log, resolvedRunHealth\)/);
+  assert.match(settingsSource, /JSON\.stringify\(failureDetails\.platformErrors, null, 2\)/);
   assert.match(settingsSource, /抓取状态：/);
 });

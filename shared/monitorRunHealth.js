@@ -122,13 +122,30 @@ const resolveIntendedPlatforms = (log) => {
     return uniquePlatforms([explicitPlatform]);
   }
 
+  const queryPlatform = normalizePlatform(log?.queryParams?.platform);
+  if (queryPlatform === 'twitter' || queryPlatform === 'xiaohongshu') {
+    return [queryPlatform];
+  }
+
+  try {
+    const requestPlatform = normalizePlatform(
+      new URL(String(log?.requestUrl || ''), 'https://monitor.local').searchParams.get('platform')
+    );
+    if (requestPlatform === 'twitter' || requestPlatform === 'xiaohongshu') {
+      return [requestPlatform];
+    }
+  } catch {
+    // Fall through to persisted totals and observed platforms for malformed legacy URLs.
+  }
+
   const totalPlatforms = uniquePlatforms(Object.keys(log?.platformTotals || {}));
   if (totalPlatforms.length > 0) return totalPlatforms;
 
-  return uniquePlatforms([
+  const observedPlatforms = uniquePlatforms([
     ...(Array.isArray(log?.platformStats) ? log.platformStats.map((item) => item?.platform) : []),
     ...(Array.isArray(log?.platformErrors) ? log.platformErrors.map((item) => item?.platform) : [])
   ]).filter((platform) => platform !== 'system');
+  return observedPlatforms.length > 0 ? observedPlatforms : ['twitter', 'xiaohongshu'];
 };
 
 export const resolveStoredMonitorRunHealth = (log = {}) => {
@@ -215,5 +232,26 @@ export const resolveManualMonitorRunOutcome = ({ ok = false, payload = {}, fallb
     notification,
     shouldRefreshLogs: true,
     shouldRefreshHomepage: ok && ['healthy', 'healthy_low_volume', 'partial_failure', 'truncated'].includes(runHealth.status)
+  };
+};
+
+export const resolveMonitorRunFailureDetails = (log = {}, runHealth = null) => {
+  const resolvedRunHealth = normalizeRunHealth(runHealth) || resolveStoredMonitorRunHealth(log);
+  const platformErrors = (Array.isArray(log.platformErrors) ? log.platformErrors : [])
+    .filter((item) => String(item?.error || '').trim().length > 0);
+  const messages = [
+    String(log.errorMessage || '').trim(),
+    ...platformErrors.map((item) => {
+      const platform = String(item?.platform || '').trim();
+      const error = String(item.error || '').trim();
+      return platform ? `${platform}: ${error}` : error;
+    })
+  ].filter(Boolean);
+  const statusRequiresDetails = ['partial_failure', 'failed', 'truncated'].includes(resolvedRunHealth.status);
+
+  return {
+    shouldShow: statusRequiresDetails || messages.length > 0,
+    message: messages.join('；') || (statusRequiresDetails ? resolvedRunHealth.explanation : ''),
+    platformErrors
   };
 };
