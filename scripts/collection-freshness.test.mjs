@@ -35,12 +35,25 @@ test('rejects calendar-invalid snapshot timestamps', async () => {
   ]), null);
 });
 
-test('rejects non-canonical timezone snapshot timestamps', async () => {
+test('accepts valid UTC shorthand timestamps', async () => {
+  const { getCollectionFreshness } = await loadFreshnessHelpers();
+
+  assert.deepEqual(getCollectionFreshness({
+    collectedAt: '2026-09-21T01:00:00Z',
+    now: Date.parse('2026-09-21T02:00:00.000Z'),
+  }), {
+    status: 'fresh',
+    ageMs: 60 * 60 * 1000,
+  });
+});
+
+test('accepts timezone offsets and compares snapshots by their real instant', async () => {
   const { getLatestCollectionAt } = await loadFreshnessHelpers();
 
   assert.equal(getLatestCollectionAt([
-    { tags: ['snapshot:2026-09-21T09:00:00+08:00'] },
-  ]), null);
+    { tags: ['snapshot:2026-09-21T01:30:00Z'] },
+    { tags: ['snapshot:2026-09-21T10:00:00+08:00'] },
+  ]), '2026-09-21T10:00:00+08:00');
 });
 
 test('marks a recent collection fresh and reports its age', async () => {
