@@ -94,6 +94,20 @@ test('still merges launch coverage that shares a concrete product identity', () 
   assert.equal(clusters.length, 1);
 });
 
+test('keeps different model versions separate while merging the same version', () => {
+  const clusters = clusterTopicCandidates([
+    card('gpt-4', 'OpenAI launches a new GPT-4 AI coding model benchmark', 'https://example.com/gpt-4'),
+    card('gpt-5-a', 'OpenAI launches a new GPT-5 AI coding model benchmark', 'https://example.com/gpt-5/a'),
+    card('gpt-5-b', 'GPT-5 coding benchmark release announcement from OpenAI', 'https://another.example/gpt-5'),
+  ]);
+
+  assert.equal(clusters.length, 2);
+  assert.deepEqual(clusters.map((cluster) => cluster.cards.map((item) => item.id)), [
+    ['gpt-4'],
+    ['gpt-5-a', 'gpt-5-b'],
+  ]);
+});
+
 test('makes similarityThreshold effective at the merge boundary', () => {
   const candidates = [
     card('threshold-a', 'Sora video storyboard workflow benchmarks launch', 'https://example.com/threshold/a'),
@@ -158,4 +172,61 @@ test('uses every card field as a deterministic final tie-breaker regardless of o
   assert.equal(forward[0].representativeCard.author, 'alpha-author');
   assert.deepEqual(forward[0].cards.map((item) => item.author), ['alpha-author', 'zeta-author']);
   assert.deepEqual(forward[0].evidence.map((item) => item.author), ['alpha-author', 'zeta-author']);
+});
+
+test('keeps topic fingerprint anchored while later evidence changes the evidence signature', () => {
+  const early = card(
+    'z-early',
+    'Claude Code Agent Teams parallel coding workflow',
+    'https://example.com/agent-teams/early',
+    { date: '2026-09-20T08:00:00Z' }
+  );
+  const middle = card(
+    'm-middle',
+    'Claude Code Agent Teams parallel coding guide',
+    'https://example.com/agent-teams/middle',
+    { date: '2026-09-21T08:00:00Z' }
+  );
+  const later = card(
+    'a-later',
+    'Claude Code Agent Teams parallel coding benchmarks',
+    'https://example.com/agent-teams/later',
+    { date: '2026-09-22T08:00:00Z' }
+  );
+
+  const initial = clusterTopicCandidates([early, middle]);
+  const expanded = clusterTopicCandidates([later, middle, early]);
+
+  assert.equal(initial.length, 1);
+  assert.equal(expanded.length, 1);
+  assert.equal(initial[0].fingerprint, expanded[0].fingerprint);
+  assert.notEqual(initial[0].evidenceSignature, expanded[0].evidenceSignature);
+  assert.match(initial[0].fingerprint, /^topic:[a-f0-9]{64}$/);
+  assert.match(initial[0].evidenceSignature, /^evidence:[a-f0-9]{64}$/);
+});
+
+test('uses a wide digest instead of the known 32-bit FNV collision', () => {
+  const first = clusterTopicCandidates([
+    card('collision-a', 'Collision fixture', 'https://example.com/item/149599'),
+  ])[0];
+  const second = clusterTopicCandidates([
+    card('collision-b', 'Collision fixture', 'https://example.com/item/312382'),
+  ])[0];
+
+  assert.notEqual(first.fingerprint, second.fingerprint);
+  assert.notEqual(first.evidenceSignature, second.evidenceSignature);
+});
+
+test('prevents single-link bridge evidence from collapsing distinct topic edges', () => {
+  const clusters = clusterTopicCandidates([
+    card('bridge-a', 'alpha bravo charlie delta', 'https://example.com/bridge/a'),
+    card('bridge-b', 'alpha bravo charlie delta echo foxtrot golf hotel', 'https://example.com/bridge/b'),
+    card('bridge-c', 'echo foxtrot golf hotel', 'https://example.com/bridge/c'),
+  ], { similarityThreshold: 0.6 });
+
+  assert.equal(clusters.length, 2);
+  assert.deepEqual(clusters.map((cluster) => cluster.cards.map((item) => item.id)), [
+    ['bridge-a', 'bridge-b'],
+    ['bridge-c'],
+  ]);
 });

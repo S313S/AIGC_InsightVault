@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   buildEvidenceFingerprint,
   isDistinctiveTopicToken,
@@ -57,6 +59,15 @@ const hasDistinctiveOverlap = (leftTokens, rightTokens) => {
   return false;
 };
 
+const VERSION_TOKEN_PATTERN = /^(?:gpt|gemini|claude)_\d/u;
+
+const hasConflictingVersionIdentity = (leftTokens, rightTokens) => {
+  const leftVersions = [...leftTokens].filter((token) => VERSION_TOKEN_PATTERN.test(token));
+  const rightVersions = [...rightTokens].filter((token) => VERSION_TOKEN_PATTERN.test(token));
+  if (leftVersions.length === 0 || rightVersions.length === 0) return false;
+  return !leftVersions.some((token) => rightTokens.has(token));
+};
+
 const hasConflictingResourceQuery = (leftUrl, rightUrl) => {
   if (!leftUrl || !rightUrl || leftUrl === rightUrl) return false;
   try {
@@ -71,18 +82,68 @@ const hasConflictingResourceQuery = (leftUrl, rightUrl) => {
   }
 };
 
-const hashText = (value) => {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
+// This clustering pipeline runs in Node during collection; it is not a browser bundle module.
+const hashText = (value) => createHash('sha256').update(value).digest('hex');
+
+const PUBLICATION_FIELDS = [
+  'publishedAt',
+  'published_at',
+  'publishTime',
+  'publish_time',
+  'date',
+  'createdAt',
+  'created_at',
+];
+
+const parsePublicationTime = (card) => {
+  for (const field of PUBLICATION_FIELDS) {
+    const value = card?.[field];
+    if (value instanceof Date && Number.isFinite(value.getTime())) return value.getTime();
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      const milliseconds = Math.abs(value) < 1e12 ? value * 1000 : value;
+      if (Number.isFinite(new Date(milliseconds).getTime())) return milliseconds;
+    }
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Date.parse(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
   }
-  return (hash >>> 0).toString(16).padStart(8, '0');
+  return null;
 };
 
-const buildClusterFingerprint = (members) => {
-  const identities = [...new Set(members.map(({ fingerprint }) => fingerprint))].sort();
-  return `topic:${hashText(identities.join('\n'))}`;
+const compareAnchorCandidates = (left, right) => {
+  const leftTime = parsePublicationTime(left.card);
+  const rightTime = parsePublicationTime(right.card);
+  if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return leftTime - rightTime;
+  if (leftTime !== null && rightTime === null) return -1;
+  if (leftTime === null && rightTime !== null) return 1;
+  return compareCards(left.card, right.card);
+};
+
+const buildTopicFingerprint = (members) => {
+  const anchor = [...members].sort(compareAnchorCandidates)[0];
+  return `topic:${hashText(`topic-anchor\n${anchor.fingerprint}`)}`;
+};
+
+const buildEvidenceSignature = (members) => {
+  const evidenceKeys = members.map(({ card }) => stableCardKey(card)).sort();
+  return `evidence:${hashText(evidenceKeys.join('\n'))}`;
+};
+
+const candidatesAreCompatible = (left, right, threshold) => {
+  if (hasConflictingResourceQuery(left.normalizedUrl, right.normalizedUrl)) return false;
+  if (hasConflictingVersionIdentity(left.tokens, right.tokens)) return false;
+  if (!hasDistinctiveOverlap(left.tokens, right.tokens)) return false;
+  return Math.max(
+    diceSimilarity(left.titleTokens, right.titleTokens),
+    diceSimilarity(left.tokens, right.tokens)
+  ) >= threshold;
+};
+
+const identityGroupsAreCompatible = (leftGroup, rightGroup, threshold) => {
+  return leftGroup.members.some((left) => (
+    rightGroup.members.some((right) => candidatesAreCompatible(left, right, threshold))
+  ));
 };
 
 export const clusterTopicCandidates = (cards, { similarityThreshold = 0.58 } = {}) => {
@@ -96,61 +157,49 @@ export const clusterTopicCandidates = (cards, { similarityThreshold = 0.58 } = {
     }))
     .sort((left, right) => compareCards(left.card, right.card));
 
-  const parent = candidates.map((_, index) => index);
-  const find = (index) => {
-    let root = index;
-    while (parent[root] !== root) root = parent[root];
-    while (parent[index] !== index) {
-      const next = parent[index];
-      parent[index] = root;
-      index = next;
-    }
-    return root;
-  };
-  const union = (left, right) => {
-    const leftRoot = find(left);
-    const rightRoot = find(right);
-    if (leftRoot !== rightRoot) parent[Math.max(leftRoot, rightRoot)] = Math.min(leftRoot, rightRoot);
-  };
-
-  const firstByFingerprint = new Map();
-  candidates.forEach((candidate, index) => {
-    const previous = firstByFingerprint.get(candidate.fingerprint);
-    if (previous === undefined) firstByFingerprint.set(candidate.fingerprint, index);
-    else union(previous, index);
-  });
-
   const threshold = clampThreshold(similarityThreshold);
-  for (let left = 0; left < candidates.length; left += 1) {
-    for (let right = left + 1; right < candidates.length; right += 1) {
-      const a = candidates[left];
-      const b = candidates[right];
-      if (a.fingerprint === b.fingerprint) continue;
-      if (hasConflictingResourceQuery(a.normalizedUrl, b.normalizedUrl)) continue;
-      if (!hasDistinctiveOverlap(a.tokens, b.tokens)) continue;
-      const similarity = Math.max(
-        diceSimilarity(a.titleTokens, b.titleTokens),
-        diceSimilarity(a.tokens, b.tokens)
-      );
-      if (similarity >= threshold) union(left, right);
+  const exactGroupsByFingerprint = new Map();
+  for (const candidate of candidates) {
+    const group = exactGroupsByFingerprint.get(candidate.fingerprint) || {
+      fingerprint: candidate.fingerprint,
+      members: [],
+    };
+    group.members.push(candidate);
+    exactGroupsByFingerprint.set(candidate.fingerprint, group);
+  }
+  const identityGroups = [...exactGroupsByFingerprint.values()];
+
+  const compatibility = identityGroups.map(() => new Map());
+  for (let left = 0; left < identityGroups.length; left += 1) {
+    for (let right = left + 1; right < identityGroups.length; right += 1) {
+      const compatible = identityGroupsAreCompatible(identityGroups[left], identityGroups[right], threshold);
+      compatibility[left].set(right, compatible);
+      compatibility[right].set(left, compatible);
     }
   }
 
-  const groups = new Map();
-  candidates.forEach((candidate, index) => {
-    const root = find(index);
-    const group = groups.get(root) || [];
-    group.push(candidate);
-    groups.set(root, group);
+  const completeLinkGroups = [];
+  identityGroups.forEach((identityGroup, identityIndex) => {
+    const destination = completeLinkGroups.find((cluster) => (
+      cluster.identityIndexes.every((existingIndex) => compatibility[identityIndex].get(existingIndex) === true)
+    ));
+    if (destination) {
+      destination.identityIndexes.push(identityIndex);
+      destination.members.push(...identityGroup.members);
+    } else {
+      completeLinkGroups.push({ identityIndexes: [identityIndex], members: [...identityGroup.members] });
+    }
   });
 
-  return [...groups.values()]
-    .map((members) => {
+  return completeLinkGroups
+    .map(({ members }) => {
       const orderedMembers = [...members].sort((left, right) => compareCards(left.card, right.card));
       const evidence = orderedMembers.map(({ card }) => card);
-      const representativeCard = evidence[0];
+      const anchor = [...orderedMembers].sort(compareAnchorCandidates)[0];
+      const representativeCard = anchor.card;
       return {
-        fingerprint: buildClusterFingerprint(orderedMembers),
+        fingerprint: buildTopicFingerprint(orderedMembers),
+        evidenceSignature: buildEvidenceSignature(orderedMembers),
         title: String(representativeCard?.title || '').trim(),
         representativeCard,
         cards: evidence,

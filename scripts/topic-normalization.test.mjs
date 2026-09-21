@@ -41,12 +41,29 @@ test('normalizes Twitter and X status identity across hosts and tracking queries
 test('removes known tracking parameters but conservatively retains resource queries', () => {
   assert.equal(
     normalizeEvidenceUrl('https://example.com/releases?id=42&lang=zh&utm_medium=social#comments'),
-    'https://example.com/releases?id=42&lang=zh'
+    'https://example.com/releases?id=42#comments'
   );
   assert.notEqual(
     normalizeEvidenceUrl('https://example.com/releases?id=42'),
     normalizeEvidenceUrl('https://example.com/releases?id=43')
   );
+});
+
+test('removes presentation locale params while preserving meaningful hash routes', () => {
+  assert.equal(
+    normalizeEvidenceUrl('https://example.com/app?id=42&hl=zh-CN&locale=zh_CN#/release/alpha'),
+    'https://example.com/app?id=42#/release/alpha'
+  );
+  assert.notEqual(
+    normalizeEvidenceUrl('https://example.com/app#/release/alpha'),
+    normalizeEvidenceUrl('https://example.com/app#/release/beta')
+  );
+});
+
+test('rejects non-HTTP evidence URL schemes', () => {
+  assert.equal(normalizeEvidenceUrl('ftp://example.com/resource'), '');
+  assert.equal(normalizeEvidenceUrl('mailto:creator@example.com'), '');
+  assert.equal(normalizeEvidenceUrl('javascript:alert(1)'), '');
 });
 
 test('preserves source and ref as identity parameters on unknown hosts', () => {
@@ -90,6 +107,17 @@ test('tokenizes Unicode text while preserving bilingual product phrases and filt
   assert.equal(tokens.includes('教程'), false);
   assert.equal(tokens.includes('工具'), false);
   assert.equal(tokens.filter((token) => token === 'claude_code').length, 1);
+});
+
+test('preserves versioned model identities as atomic tokens', () => {
+  const tokens = tokenizeTopicText({
+    title: 'GPT-4 对比 GPT-5，Gemini 2.5 与 Claude 4 同场更新',
+  });
+
+  assert.equal(tokens.includes('gpt_4'), true);
+  assert.equal(tokens.includes('gpt_5'), true);
+  assert.equal(tokens.includes('gemini_2_5'), true);
+  assert.equal(tokens.includes('claude_4'), true);
 });
 
 test('builds stable fingerprints from normalized URL identity before text', () => {

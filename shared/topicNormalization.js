@@ -11,6 +11,7 @@ const TRACKING_PARAM_NAMES = new Set([
   'msclkid',
   'spm',
 ]);
+const PRESENTATION_PARAM_NAMES = new Set(['hl', 'lang', 'locale']);
 
 const GENERIC_TOPIC_TERMS = new Set([
   'ai',
@@ -87,9 +88,12 @@ const CHINESE_STOP_TERMS = [
 const SHORT_CHINESE_STOP_WORDS = new Set(['与', '和', '及', '的', '了', '都', '会', '正式']);
 
 const PROTECTED_PHRASES = [
-  { pattern: /claude[\s\-_]+code/giu, token: 'claude_code' },
-  { pattern: /可灵/gu, token: '可灵' },
-  { pattern: /sora/giu, token: 'sora' },
+  { pattern: /\bclaude[\s\-_]+code\b/giu, toToken: () => 'claude_code' },
+  { pattern: /\bgpt[\s._-]*(\d+(?:\.\d+)*)\b/giu, toToken: (_, version) => `gpt_${version.replaceAll('.', '_')}` },
+  { pattern: /\bgemini[\s._-]+(\d+(?:\.\d+)*)\b/giu, toToken: (_, version) => `gemini_${version.replaceAll('.', '_')}` },
+  { pattern: /\bclaude[\s._-]+(\d+(?:\.\d+)*)\b/giu, toToken: (_, version) => `claude_${version.replaceAll('.', '_')}` },
+  { pattern: /可灵/gu, toToken: () => '可灵' },
+  { pattern: /\bsora\b/giu, toToken: () => 'sora' },
 ];
 
 const asUrl = (rawUrl) => {
@@ -115,12 +119,16 @@ const isTrackingParam = (name) => {
   return normalized.startsWith('utm_') || TRACKING_PARAM_NAMES.has(normalized);
 };
 
+const isPresentationParam = (name) => {
+  return PRESENTATION_PARAM_NAMES.has(String(name || '').toLowerCase());
+};
+
 export const normalizeEvidenceUrl = (rawUrl) => {
   const raw = String(rawUrl || '').trim();
   if (!raw) return '';
 
   const parsed = asUrl(raw);
-  if (!parsed) return raw;
+  if (!parsed || !['http:', 'https:'].includes(parsed.protocol.toLowerCase())) return '';
 
   const hostname = parsed.hostname.toLowerCase();
   if (XIAOHONGSHU_HOSTS.has(hostname)) {
@@ -133,9 +141,8 @@ export const normalizeEvidenceUrl = (rawUrl) => {
     if (statusId) return `https://x.com/i/status/${statusId}`;
   }
 
-  parsed.hash = '';
   for (const name of [...parsed.searchParams.keys()]) {
-    if (isTrackingParam(name)) parsed.searchParams.delete(name);
+    if (isTrackingParam(name) || isPresentationParam(name)) parsed.searchParams.delete(name);
   }
   parsed.searchParams.sort();
   return parsed.toString();
@@ -168,11 +175,12 @@ export const tokenizeTopicText = (card = {}) => {
   let text = collectCardText(card).normalize('NFKC').toLowerCase();
   const protectedTokens = [];
 
-  PROTECTED_PHRASES.forEach(({ pattern, token }, index) => {
-    const marker = ` protectedphrase${index} `;
-    if (pattern.test(text)) protectedTokens.push(token);
-    pattern.lastIndex = 0;
-    text = text.replace(pattern, marker);
+  PROTECTED_PHRASES.forEach(({ pattern, toToken }) => {
+    text = text.replace(pattern, (...args) => {
+      const index = protectedTokens.length;
+      protectedTokens.push(toToken(...args));
+      return ` protectedphrase${index} `;
+    });
   });
 
   const rawTokens = text.match(/[a-z0-9_]+|[\p{Script=Han}]+/gu) || [];
@@ -180,7 +188,7 @@ export const tokenizeTopicText = (card = {}) => {
   for (const token of rawTokens) {
     const protectedMatch = token.match(/^protectedphrase(\d+)$/u);
     if (protectedMatch) {
-      tokens.push(PROTECTED_PHRASES[Number(protectedMatch[1])].token);
+      tokens.push(protectedTokens[Number(protectedMatch[1])]);
       continue;
     }
 
