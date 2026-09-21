@@ -3,7 +3,11 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 
 import { clusterTopicCandidates } from '../shared/topicClustering.js';
-import { rebuildTopicRadar, TopicRadarPipelineError } from '../server/topicRadarPipeline.js';
+import {
+  buildSourceBaselines,
+  rebuildTopicRadar,
+  TopicRadarPipelineError,
+} from '../server/topicRadarPipeline.js';
 
 const OWNER = '00000000-0000-4000-8000-000000000001';
 const OTHER_OWNER = '00000000-0000-4000-8000-000000000002';
@@ -398,6 +402,94 @@ test('all reads and identity inheritance stay owner-scoped', async () => {
   assert.ok(ownerScopedReads.length >= 2);
   assert.ok(ownerScopedReads.every((call) => call.filters.some((filter) => filter.kind === 'eq' && filter.column === 'owner_id' && filter.value === OWNER)));
   assert.ok(supabase.calls.filter((call) => call.operation === 'select').every((call) => call.columns && call.columns !== '*'));
+});
+
+test('owner-scoped distinct evidence builds account baselines and drives relative scoring', async () => {
+  const baselineCard = ({ id, author, likes, product, status, createdAt = '2026-09-21T06:00:00.000Z' }) => card({
+    id,
+    author,
+    source_url: `https://x.com/${author}/status/${status}`,
+    title: `${product} 2 正式发布`,
+    raw_content: `${product} 2 正式发布。`,
+    metrics: { likes, comments: 0, shares: 0 },
+    ai_analysis: { summary: `${product} 2` },
+    tags: [product],
+    created_at: createdAt,
+  });
+  const cards = [
+    baselineCard({ id: 'big-target', author: 'big-account', likes: 12_000, product: 'Orion', status: 101 }),
+    baselineCard({ id: 'big-mid', author: 'big-account', likes: 20_000, product: 'Nebula', status: 102 }),
+    baselineCard({ id: 'big-high', author: 'big-account', likes: 30_000, product: 'Quasar', status: 103 }),
+    baselineCard({ id: 'small-low', author: 'small-account', likes: 10, product: 'Sprout', status: 201 }),
+    baselineCard({ id: 'small-mid', author: 'small-account', likes: 15, product: 'Seedling', status: 202 }),
+    baselineCard({ id: 'small-target', author: 'small-account', likes: 18, product: 'Bloom', status: 203 }),
+    baselineCard({
+      id: 'small-duplicate-old-observation',
+      author: 'small-account',
+      likes: 999_999,
+      product: 'Bloom',
+      status: 203,
+      createdAt: '2026-09-21T05:00:00.000Z',
+    }),
+    baselineCard({
+      id: 'foreign-noise', author: 'small-account', likes: 5_000_000,
+      product: 'Foreign', status: 999,
+    }),
+  ];
+  cards.at(-1).owner_id = OTHER_OWNER;
+
+  const baselines = buildSourceBaselines(cards.filter((value) => value.owner_id === OWNER).map((value) => ({
+    ...value,
+    sourceUrl: value.source_url,
+    createdAt: value.created_at,
+  })));
+  assert.deepEqual(baselines['twitter:big-account'].engagement, [12_000, 20_000, 30_000]);
+  assert.deepEqual(baselines['twitter:small-account'].engagement, [10, 15, 18]);
+
+  const supabase = new FakeSupabase({ knowledge_cards: cards });
+  await run(supabase);
+  const topicForCard = (cardId) => {
+    const source = supabase.tables.topic_sources.find((value) => value.card_id === cardId);
+    return supabase.tables.topics.find((value) => value.id === source?.topic_id);
+  };
+  const bigTarget = topicForCard('big-target');
+  const smallTarget = topicForCard('small-target');
+
+  assert.ok(bigTarget && smallTarget);
+  assert.ok(smallTarget.breaking_score > bigTarget.breaking_score,
+    `expected relative small-account performance to win: ${smallTarget.breaking_score} > ${bigTarget.breaking_score}`);
+  assert.equal(supabase.tables.topic_sources.some((value) => value.card_id === 'foreign-noise'), false);
+});
+
+test('stable evidence timestamps do not advance on rerun and only move for newer evidence', async () => {
+  const firstCard = card({
+    date: '2026-09-20T07:00:00.000Z',
+    created_at: '2026-09-20T07:05:00.000Z',
+  });
+  const supabase = new FakeSupabase({ knowledge_cards: [firstCard] });
+
+  await run(supabase, { now: '2026-09-21T08:00:00.000Z' });
+  const initial = structuredClone(supabase.tables.topics[0]);
+  await run(supabase, { now: '2026-09-24T08:00:00.000Z' });
+  const rerun = structuredClone(supabase.tables.topics[0]);
+
+  assert.equal(initial.first_seen_at, '2026-09-20T07:05:00.000Z');
+  assert.equal(initial.latest_evidence_at, '2026-09-20T07:05:00.000Z');
+  assert.equal(rerun.first_seen_at, initial.first_seen_at);
+  assert.equal(rerun.latest_evidence_at, initial.latest_evidence_at);
+
+  supabase.tables.knowledge_cards.push(card({
+    id: '10000000-0000-4000-8000-000000000012',
+    source_url: 'https://x.com/builder/status/102',
+    date: '2026-09-22T07:00:00.000Z',
+    created_at: '2026-09-22T07:05:00.000Z',
+    raw_content: `${card().raw_content} 新增官方迁移案例。`,
+  }));
+  await run(supabase, { now: '2026-09-25T08:00:00.000Z' });
+  const advanced = supabase.tables.topics[0];
+
+  assert.equal(advanced.first_seen_at, initial.first_seen_at);
+  assert.equal(advanced.latest_evidence_at, '2026-09-22T07:00:00.000Z');
 });
 
 test('old topics are retained and repeated runs are idempotent', async () => {

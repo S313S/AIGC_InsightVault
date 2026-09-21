@@ -1,6 +1,10 @@
 import { generateTopicBrief, shouldRegenerateBrief } from './topicBriefGenerator.js';
 import { clusterTopicCandidates } from '../shared/topicClustering.js';
-import { buildEvidenceFingerprint, tokenizeTopicText } from '../shared/topicNormalization.js';
+import {
+  buildEvidenceFingerprint,
+  normalizeEvidenceUrl,
+  tokenizeTopicText,
+} from '../shared/topicNormalization.js';
 import { isFactEvidence, scoreTopicCluster } from '../shared/topicScoring.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -28,10 +32,123 @@ const cleanId = (value) => String(value || '').trim();
 const cleanText = (value) => String(value || '').normalize('NFKC').trim();
 const asArray = (value) => Array.isArray(value) ? value : [];
 
+const engagementTotal = (card) => ['likes', 'bookmarks', 'comments', 'shares', 'retweets', 'reposts']
+  .reduce((total, key) => total + Math.max(0, Number(card?.metrics?.[key]) || 0), 0);
+
+const baselinePlatform = (card) => cleanText(card?.platform).toLowerCase();
+const baselineAccount = (card) => cleanText(
+  card?.accountId || card?.account_id || card?.account || card?.handle ||
+  card?.username || card?.userName || card?.user_name || card?.author
+).toLowerCase().replace(/^@+/u, '');
+
+const baselineEvidenceKey = (card) => {
+  const normalizedUrl = normalizeEvidenceUrl(card?.sourceUrl || card?.source_url);
+  if (normalizedUrl) return `url:${normalizedUrl}`;
+  const id = cleanId(card?.id || card?.cardId || card?.card_id);
+  return id ? `id:${id}` : '';
+};
+
+const observationTimestamp = (card) => {
+  for (const field of ['observedAt', 'observed_at', 'collectedAt', 'collected_at', 'createdAt', 'created_at']) {
+    const timestamp = safeDate(card?.[field]);
+    if (timestamp !== null) return timestamp;
+  }
+  return null;
+};
+
+/** Build deterministic per-platform and per-account engagement distributions. */
+export const buildSourceBaselines = (cards) => {
+  const observations = new Map();
+  for (const card of asArray(cards)) {
+    if (!card || typeof card !== 'object') continue;
+    const evidenceKey = baselineEvidenceKey(card);
+    const platform = baselinePlatform(card);
+    if (!evidenceKey || !platform) continue;
+    const current = observations.get(evidenceKey);
+    const timestamp = observationTimestamp(card);
+    const stableKey = `${cleanId(card.id)}\u0000${engagementTotal(card)}`;
+    const currentKey = current?.stableKey || '';
+    if (!current ||
+      (timestamp !== null && (current.timestamp === null || timestamp > current.timestamp)) ||
+      (timestamp === current.timestamp && stableKey > currentKey)) {
+      observations.set(evidenceKey, { card, platform, timestamp, stableKey });
+    }
+  }
+
+  const samples = new Map();
+  const addSample = (key, value) => {
+    const values = samples.get(key) || [];
+    values.push(value);
+    samples.set(key, values);
+  };
+  for (const { card, platform } of observations.values()) {
+    const engagement = engagementTotal(card);
+    addSample(platform, engagement);
+    const account = baselineAccount(card);
+    if (account) addSample(`${platform}:${account}`, engagement);
+  }
+
+  return Object.fromEntries([...samples.entries()]
+    .sort(([left], [right]) => left.localeCompare(right, 'en'))
+    .map(([key, engagement]) => [key, {
+      engagement: [...engagement].sort((left, right) => left - right),
+    }]));
+};
+
 const safeDate = (value) => {
-  const timestamp = value instanceof Date ? value.getTime() : Date.parse(String(value || ''));
+  const timestamp = value instanceof Date
+    ? value.getTime()
+    : typeof value === 'number'
+      ? (Math.abs(value) < 1e12 ? value * 1000 : value)
+      : Date.parse(String(value || ''));
   return Number.isFinite(timestamp) ? timestamp : null;
 };
+
+const stableAbsoluteTime = (value) => {
+  if (value instanceof Date || typeof value === 'number') return safeDate(value);
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:?\d{2})?)?$/u.exec(text);
+  if (!match) return null;
+  const normalized = match[4]
+    ? `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6] || '00'}${match[7] ? `.${match[7].padEnd(3, '0')}` : ''}${match[8] || 'Z'}`
+    : `${match[1]}-${match[2]}-${match[3]}T00:00:00Z`;
+  const timestamp = Date.parse(normalized);
+  if (!Number.isFinite(timestamp)) return null;
+  const parsed = new Date(timestamp);
+  const offsetMatch = match[8] && match[8] !== 'Z' ? /([+-])(\d{2}):?(\d{2})/u.exec(match[8]) : null;
+  const offsetMinutes = offsetMatch
+    ? (offsetMatch[1] === '-' ? -1 : 1) * (Number(offsetMatch[2]) * 60 + Number(offsetMatch[3]))
+    : 0;
+  const local = new Date(timestamp + offsetMinutes * 60 * 1000);
+  return local.getUTCFullYear() === Number(match[1]) &&
+    local.getUTCMonth() + 1 === Number(match[2]) &&
+    local.getUTCDate() === Number(match[3]) &&
+    (!match[4] || (
+      local.getUTCHours() === Number(match[4]) &&
+      local.getUTCMinutes() === Number(match[5]) &&
+      local.getUTCSeconds() === Number(match[6] || 0)
+    ))
+    ? parsed.getTime()
+    : null;
+};
+
+const readStableFieldTime = (card, fields) => {
+  for (const field of fields) {
+    const timestamp = stableAbsoluteTime(card?.[field]);
+    if (timestamp !== null) return timestamp;
+  }
+  return null;
+};
+
+const evidenceDiscoveryTime = (card) => readStableFieldTime(card, [
+  'collectedAt', 'collected_at', 'fetchedAt', 'fetched_at',
+  'observedAt', 'observed_at', 'createdAt', 'created_at',
+]);
+
+const evidenceContentTime = (card) => readStableFieldTime(card, [
+  'publishedAt', 'published_at', 'publishTime', 'publish_time', 'date',
+]) ?? evidenceDiscoveryTime(card);
 
 const resolveNow = (value) => {
   const timestamp = value === undefined ? Date.now() : safeDate(value);
@@ -104,7 +221,7 @@ const distinctPlatforms = (cards) => new Set(cards
   .map((card) => cleanText(card?.platform).toLowerCase())
   .filter(Boolean)).size;
 
-const latestTimestamp = (...values) => {
+const maximumTimestamp = (...values) => {
   const timestamps = values.flat().map(safeDate).filter((value) => value !== null);
   return timestamps.length > 0 ? Math.max(...timestamps) : null;
 };
@@ -273,9 +390,17 @@ export const rebuildTopicRadar = async ({ supabase, ownerId, now, generateConten
     cardsAccepted: cards.length,
     clusters: clusters.length,
   });
+  const sourceBaselines = buildSourceBaselines(cards);
+  // No topic-preference persistence exists yet. Task 9 will connect saved,
+  // ignored, and published feedback; until then the neutral default is explicit.
+  const preferenceSignals = {};
 
   for (const cluster of clusters) {
-    const scored = scoreTopicCluster(cluster, { now: clock.iso });
+    const scored = scoreTopicCluster(cluster, {
+      now: clock.iso,
+      sourceBaselines,
+      preferenceSignals,
+    });
     const existing = topicByFingerprint.get(scored.fingerprint) || null;
     const needsBrief = shouldRegenerateBrief(existing, scored.evidenceSignature);
     let brief;
@@ -309,8 +434,21 @@ export const rebuildTopicRadar = async ({ supabase, ownerId, now, generateConten
     }
 
     const evidence = asArray(scored.evidence);
-    const priorLatest = existing?.latest_evidence_at;
-    const eventTimestamp = latestTimestamp(scored.latestPublishedAt, priorLatest, clock.iso);
+    const discoveryTimes = evidence.map(evidenceDiscoveryTime).filter((value) => value !== null);
+    const contentTimes = evidence.map(evidenceContentTime).filter((value) => value !== null);
+    const firstSeenTimestamp = existing
+      ? stableAbsoluteTime(existing.first_seen_at)
+      : discoveryTimes.length > 0
+        ? Math.min(...discoveryTimes)
+        : contentTimes.length > 0
+          ? Math.min(...contentTimes)
+          : null;
+    if (firstSeenTimestamp === null) fail('evidence_time', 'Evidence has no stable timestamp');
+    const eventTimestamp = maximumTimestamp(
+      existing?.latest_evidence_at,
+      contentTimes,
+      firstSeenTimestamp
+    );
     const persistedSourceIds = new Set(existing ? sourceCardIdsByTopic.get(existing.id) || [] : []);
     const currentSourceIds = evidence.map((item) => cleanId(item?.id)).filter(Boolean);
     const allSourceIds = new Set([...persistedSourceIds, ...currentSourceIds]);
@@ -330,7 +468,7 @@ export const rebuildTopicRadar = async ({ supabase, ownerId, now, generateConten
       breaking_score: Math.round(scored.breakingScore),
       confidence_score: Math.round(scored.confidenceScore),
       preference_score: Math.round(scored.preferenceScore),
-      first_seen_at: existing?.first_seen_at || clock.iso,
+      first_seen_at: new Date(firstSeenTimestamp).toISOString(),
       latest_evidence_at: new Date(eventTimestamp).toISOString(),
       trend_direction: existing
         ? sourceCount > Number(existing.source_count || 0) || scored.evidenceSignature !== existing.evidence_signature
