@@ -2,6 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 
 export const TOPIC_BRIEF_PROMPT_MAX_CHARS = 12_000;
 export const TOPIC_BRIEF_MAX_EVIDENCE_ITEMS = 24;
+export const TOPIC_BRIEF_MAX_KNOWLEDGE_CANDIDATES = 20;
 export const TOPIC_BRIEF_RAW_FIELD_MAX_CHARS = 8_000;
 
 export const TOPIC_BRIEF_FIELD_LIMITS = Object.freeze({
@@ -38,6 +39,7 @@ const persistedValue = (value, camelKey, snakeKey) => (
 const cleanText = (value, limit) => {
   if (typeof value !== 'string') return '';
   return value
+    .slice(0, TOPIC_BRIEF_RAW_FIELD_MAX_CHARS)
     .normalize('NFKC')
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/gu, '')
     .replace(/\s+/gu, ' ')
@@ -122,7 +124,10 @@ const normalizeStringField = (value, fallback, limit) => (
 const normalizeKnowledge = (value, fallback) => {
   const seen = new Set();
   const result = [];
-  for (const item of Array.isArray(value) ? value : []) {
+  const candidates = Array.isArray(value) ? value : [];
+  const limit = Math.min(candidates.length, TOPIC_BRIEF_MAX_KNOWLEDGE_CANDIDATES);
+  for (let index = 0; index < limit; index += 1) {
+    const item = candidates[index];
     const normalized = cleanText(item, TOPIC_BRIEF_FIELD_LIMITS.durableKnowledgeItem);
     if (!normalized || seen.has(normalized)) continue;
     seen.add(normalized);

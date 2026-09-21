@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   TOPIC_BRIEF_FIELD_LIMITS,
   TOPIC_BRIEF_MAX_EVIDENCE_ITEMS,
+  TOPIC_BRIEF_MAX_KNOWLEDGE_CANDIDATES,
   TOPIC_BRIEF_PROMPT_MAX_CHARS,
   TOPIC_BRIEF_RAW_FIELD_MAX_CHARS,
   buildTopicBriefPrompt,
@@ -184,6 +185,37 @@ test('normalizeTopicBrief fills empty required fields with deterministic cluster
   assert.ok(first.contentAngles.tutorial);
   assert.ok(first.durableKnowledge.length > 0);
   assert.doesNotMatch(JSON.stringify(first), /undefined/);
+});
+
+test('fallback slices hostile raw strings before normalization and whitespace processing', () => {
+  const hiddenAfterHardLimit = `${' '.repeat(TOPIC_BRIEF_RAW_FIELD_MAX_CHARS)}HIDDEN_AFTER_LIMIT`;
+  const result = normalizeTopicBrief({}, {
+    title: hiddenAfterHardLimit,
+    evidence: [{
+      title: '安全的证据标题',
+      rawContent: hiddenAfterHardLimit,
+      platform: hiddenAfterHardLimit,
+    }],
+  });
+
+  assert.equal(result.title, '安全的证据标题');
+  assert.doesNotMatch(JSON.stringify(result), /HIDDEN_AFTER_LIMIT/);
+  assert.ok(result.summary.length <= TOPIC_BRIEF_FIELD_LIMITS.summary);
+});
+
+test('normalization inspects only a bounded number of invalid knowledge candidates', () => {
+  let reads = 0;
+  const durableKnowledge = new Proxy(Array.from({ length: 10_000 }, () => null), {
+    get(target, property, receiver) {
+      if (typeof property === 'string' && /^\d+$/u.test(property)) reads += 1;
+      return Reflect.get(target, property, receiver);
+    },
+  });
+
+  const result = normalizeTopicBrief({ durableKnowledge }, cluster);
+
+  assert.equal(reads, TOPIC_BRIEF_MAX_KNOWLEDGE_CANDIDATES);
+  assert.ok(result.durableKnowledge.length > 0);
 });
 
 test('shouldRegenerateBrief reuses a complete brief only for the same evidence signature', () => {
