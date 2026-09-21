@@ -2,7 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-import { classifyMonitorRun } from '../shared/monitorRunHealth.js';
+import {
+  classifyMonitorRun,
+  resolveManualMonitorRunOutcome,
+  resolveStoredMonitorRunHealth
+} from '../shared/monitorRunHealth.js';
 
 const classify = (overrides = {}) => classifyMonitorRun({
   intendedPlatforms: ['twitter', 'xiaohongshu'],
@@ -106,6 +110,36 @@ test('ignores empty error records when classifying a completed run', () => {
   assert.deepEqual(result.failedPlatforms, []);
 });
 
+test('classifies one of two intended platforms completing without errors as partial failure', () => {
+  const result = classify({
+    platformTotals: {
+      twitter: { fetched: 0, output: 0, completed: true },
+      xiaohongshu: { fetched: 0, output: 0, completed: false }
+    },
+    candidateCount: 0,
+    platformErrors: []
+  });
+
+  assert.equal(result.status, 'partial_failure');
+  assert.deepEqual(result.completedPlatforms, ['twitter']);
+  assert.deepEqual(result.failedPlatforms, []);
+});
+
+test('classifies no intended platform completing without errors as failed', () => {
+  const result = classify({
+    platformTotals: {
+      twitter: { fetched: 0, output: 0, completed: false },
+      xiaohongshu: { fetched: 0, output: 0, completed: false }
+    },
+    candidateCount: 0,
+    platformErrors: []
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.deepEqual(result.completedPlatforms, []);
+  assert.deepEqual(result.failedPlatforms, []);
+});
+
 test('classifies a completed intended platform plus a system error as partial failure', () => {
   const result = classify({
     platformTotals: {
@@ -189,6 +223,121 @@ test('rebuild-only maintenance is explicitly classified as skipped collection wo
   assert.match(result.explanation, /维护模式/);
 });
 
+test('resolves a legacy log with one completed platform and another platform error as partial failure', () => {
+  const result = resolveStoredMonitorRunHealth({
+    success: true,
+    effectiveParams: { platforms: ['twitter', 'xiaohongshu'] },
+    platformStats: [{ platform: 'twitter', count: 0 }],
+    platformTotals: {
+      twitter: { fetched: 0, output: 0 },
+      xiaohongshu: { fetched: 0, output: 0 }
+    },
+    platformErrors: [{ platform: 'xiaohongshu', error: 'timeout' }],
+    resultSummary: { candidates: 0 },
+    runtimeGuardTriggered: false
+  });
+
+  assert.equal(result.status, 'partial_failure');
+  assert.deepEqual(result.completedPlatforms, ['twitter']);
+  assert.deepEqual(result.failedPlatforms, ['xiaohongshu']);
+});
+
+test('resolves a legacy log with no completed platforms and a system error as failed', () => {
+  const result = resolveStoredMonitorRunHealth({
+    success: false,
+    effectiveParams: { platforms: ['twitter', 'xiaohongshu'] },
+    platformStats: [],
+    platformTotals: {
+      twitter: { fetched: 0, output: 0 },
+      xiaohongshu: { fetched: 0, output: 0 }
+    },
+    platformErrors: [{ platform: 'system', error: 'boom' }],
+    resultSummary: { candidates: 0 },
+    runtimeGuardTriggered: false
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.deepEqual(result.completedPlatforms, []);
+});
+
+test('manual 200 partial failure returns a warning instead of a completion message', () => {
+  const outcome = resolveManualMonitorRunOutcome({
+    ok: true,
+    payload: {
+      inserted: 2,
+      candidates: 3,
+      runtimeMs: 1200,
+      platformErrors: [{ platform: 'xiaohongshu', error: 'timeout' }],
+      runHealth: {
+        status: 'partial_failure',
+        completedPlatforms: ['twitter'],
+        failedPlatforms: ['xiaohongshu'],
+        explanation: '部分平台失败。'
+      }
+    }
+  });
+
+  assert.equal(outcome.runHealth.status, 'partial_failure');
+  assert.equal(outcome.shouldRefreshLogs, true);
+  assert.equal(outcome.shouldRefreshHomepage, true);
+  assert.match(outcome.summary, /^部分完成：/);
+  assert.doesNotMatch(outcome.notification, /抓取完成/);
+});
+
+test('manual 200 failed or truncated result is surfaced as an explicit warning', () => {
+  const failed = resolveManualMonitorRunOutcome({
+    ok: true,
+    payload: {
+      error: 'upstream failed',
+      runHealth: {
+        status: 'failed',
+        completedPlatforms: [],
+        failedPlatforms: ['twitter'],
+        explanation: '运行失败。'
+      }
+    }
+  });
+  const truncated = resolveManualMonitorRunOutcome({
+    ok: true,
+    payload: {
+      candidates: 1,
+      runHealth: {
+        status: 'truncated',
+        completedPlatforms: ['twitter'],
+        failedPlatforms: [],
+        explanation: '运行提前停止。'
+      }
+    }
+  });
+
+  assert.match(failed.summary, /^执行失败：/);
+  assert.equal(failed.shouldRefreshHomepage, false);
+  assert.match(truncated.summary, /^提前停止：/);
+  assert.doesNotMatch(truncated.notification, /抓取完成/);
+});
+
+test('manual non-2xx response preserves server partial health and refreshes audit logs', () => {
+  const outcome = resolveManualMonitorRunOutcome({
+    ok: false,
+    payload: {
+      error: 'database write failed',
+      candidates: 2,
+      runHealth: {
+        status: 'partial_failure',
+        completedPlatforms: ['twitter'],
+        failedPlatforms: [],
+        explanation: '抓取完成，但后续写入失败。'
+      }
+    },
+    fallbackError: '请求失败 (500)'
+  });
+
+  assert.equal(outcome.runHealth.status, 'partial_failure');
+  assert.equal(outcome.shouldRefreshLogs, true);
+  assert.match(outcome.summary, /^部分完成：/);
+  assert.match(outcome.summary, /抓取完成，但后续写入失败/);
+});
+
 test('cron results persist and return run health for collection outcome paths', async () => {
   const source = await readFile(new URL('../api/cron-monitor.js', import.meta.url), 'utf8');
 
@@ -199,6 +348,7 @@ test('cron results persist and return run health for collection outcome paths', 
   assert.match(source, /skipReason: 'auto_update_disabled'/);
   assert.match(source, /skipReason: 'rebuild_only'/);
   assert.match(source, /failed: true/);
+  assert.match(source, /Supabase service role not configured'[\s\S]{0,300}?runHealth/);
 
   assert.match(source, /mode: 'rebuild'[\s\S]{0,300}?runHealth/);
   assert.match(source, /reason: 'auto_update_disabled'[\s\S]{0,300}?runHealth/);
@@ -220,7 +370,9 @@ test('cron run log types, mapping and UI support run health with a legacy fallba
   assert.match(typesSource, /export interface MonitorRunHealth/);
   assert.match(typesSource, /runHealth\?: MonitorRunHealth/);
   assert.match(serviceSource, /runHealth: row\.result_summary\?\.runHealth \|\| row\.run_health \|\| undefined/);
-  assert.match(settingsSource, /const runHealthStatus = log\.runHealth\?\.status/);
-  assert.match(settingsSource, /log\.runHealth\?\.explanation/);
+  assert.match(settingsSource, /resolveManualMonitorRunOutcome\(\{/);
+  assert.match(settingsSource, /const resolvedRunHealth = resolveStoredMonitorRunHealth\(log\)/);
+  assert.match(settingsSource, /const runHealthStatus = resolvedRunHealth\.status/);
+  assert.match(settingsSource, /resolvedRunHealth\.explanation/);
   assert.match(settingsSource, /抓取状态：/);
 });

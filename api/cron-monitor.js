@@ -787,7 +787,15 @@ export default async function handler(req, res) {
 
   const supabase = getSupabaseClient();
   if (!supabase) {
-    return res.status(500).json({ error: 'Supabase service role not configured' });
+    const error = 'Supabase service role not configured';
+    const runHealth = classifyMonitorRun({
+      intendedPlatforms,
+      platformTotals,
+      candidateCount: 0,
+      platformErrors: [{ platform: 'system', error }],
+      failed: true
+    });
+    return res.status(500).json({ error, runHealth });
   }
 
   let ownerId = null;
@@ -1098,6 +1106,7 @@ export default async function handler(req, res) {
       }
     };
     effectivePayload = {
+      platforms: intendedPlatforms,
       days: effectiveRecentDays,
       twitter_days: effectiveTwitterDays,
       minInteraction: effectiveMinInteraction,

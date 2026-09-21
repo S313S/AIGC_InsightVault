@@ -17,6 +17,7 @@ import {
 } from '../services/supabaseService';
 import { isSupabaseConnected } from '../services/supabaseClient';
 import { CronRunLog, MonitorSettings, QualityKeyword, TrustedAccount, XhsMissingTokenItem, XhsTokenConfig } from '../types';
+import { resolveManualMonitorRunOutcome, resolveStoredMonitorRunHealth } from '../shared/monitorRunHealth.js';
 
 type Tab = 'trusted' | 'keywords' | 'threshold' | 'trace' | 'xhs_tokens' | 'about';
 type PlatformType = 'twitter' | 'xiaohongshu';
@@ -488,18 +489,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       requestUrl = `/api/cron-monitor?${params.toString()}`;
       const resp = await fetch(requestUrl, { method: 'GET' });
       const payload = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        throw new Error(payload?.error || `请求失败 (${resp.status})`);
+      const outcome = resolveManualMonitorRunOutcome({
+        ok: resp.ok,
+        payload,
+        fallbackError: `请求失败 (${resp.status})`
+      });
+      let homepageStatus = '';
+      if (outcome.shouldRefreshHomepage) {
+        const homepageRefreshed = await refreshHomepageTrending({ announce: false });
+        homepageStatus = homepageRefreshed ? '，首页已更新' : '，首页更新失败，请手动重试';
       }
-      const inserted = Number(payload?.inserted || 0);
-      const candidates = Number(payload?.candidates || 0);
-      const runtimeMs = Number(payload?.runtimeMs || 0);
-      const errors = Array.isArray(payload?.platformErrors) ? payload.platformErrors.length : 0;
-      const homepageRefreshed = await refreshHomepageTrending({ announce: false });
-      const homepageStatus = homepageRefreshed ? '，首页已更新' : '，首页更新失败，请手动重试';
-      setCronRunSummary(`完成：候选 ${candidates}，新增 ${inserted}，耗时 ${runtimeMs}ms，错误 ${errors}${homepageStatus}`);
-      flashMessage(homepageRefreshed ? '热点抓取完成，首页已更新' : '热点抓取完成，请手动更新首页');
-      await refreshCronRunLogs();
+      setCronRunSummary(`${outcome.summary}${homepageStatus}`);
+      flashMessage(`${outcome.notification}${homepageStatus}`);
+      if (outcome.shouldRefreshLogs) {
+        await refreshCronRunLogs();
+      }
     } catch (err: any) {
       const msg = err?.message || '执行失败';
       setCronRunSummary(`执行失败：${msg}`);
@@ -983,16 +987,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               const updatedExisting = Number(log.resultSummary?.updatedExisting || 0);
               const candidates = Number(log.resultSummary?.candidates || 0);
               const tasksRun = Number(log.resultSummary?.tasksRun || 0);
-              const legacySkipped = Boolean(log.resultSummary?.skipped);
-              const runHealthStatus = log.runHealth?.status || (
-                legacySkipped
-                  ? 'skipped'
-                  : log.runtimeGuardTriggered
-                    ? 'truncated'
-                    : log.success
-                      ? candidates === 0 ? 'healthy_low_volume' : 'healthy'
-                      : 'failed'
-              );
+              const resolvedRunHealth = resolveStoredMonitorRunHealth(log);
+              const runHealthStatus = resolvedRunHealth.status;
               const isSkipped = runHealthStatus === 'skipped';
               const runHealthLabels = {
                 healthy: '正常',
@@ -1002,17 +998,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 truncated: '提前截断',
                 skipped: '已跳过'
               } as const;
-              const runHealthExplanation = log.runHealth?.explanation || (
-                isSkipped
-                  ? '旧日志：本次运行已跳过。'
-                  : runHealthStatus === 'truncated'
-                    ? '旧日志：运行时间保护已触发，结果可能不完整。'
-                    : runHealthStatus === 'failed'
-                      ? '旧日志：运行失败，请查看错误明细。'
-                      : runHealthStatus === 'healthy_low_volume'
-                        ? '旧日志：运行成功，但没有筛选出候选内容。'
-                        : '旧日志：运行成功；该记录尚未保存新版健康详情。'
-              );
+              const runHealthExplanation = resolvedRunHealth.explanation;
               const platformErrorMessages = (Array.isArray(log.platformErrors) ? log.platformErrors : [])
                 .map((item: any) => {
                   const platform = String(item?.platform || '').trim();
