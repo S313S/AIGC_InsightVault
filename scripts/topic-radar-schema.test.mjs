@@ -16,6 +16,15 @@ const compact = (value) => value
 
 const sql = compact(schema);
 
+const getPolicy = (name) => {
+  const marker = `create policy "${name}"`;
+  const start = sql.indexOf(marker);
+  assert.notEqual(start, -1, `missing ${name} policy`);
+  const end = sql.indexOf(';', start);
+  assert.notEqual(end, -1, `unterminated ${name} policy`);
+  return sql.slice(start, end + 1);
+};
+
 test('topic radar migration defines the owner-scoped topic records and editorial fields', () => {
   assert.match(sql, /create table if not exists public\.topics \(/);
   assert.match(sql, /id uuid primary key default gen_random_uuid\(\)/);
@@ -74,24 +83,36 @@ test('topic radar migration adds query indexes and enables RLS on every topic ta
 });
 
 test('topic policies expose public or owner topics and keep writes owner-only', () => {
-  assert.match(sql, /create policy "topics_public_or_owner_select" on public\.topics for select using \(is_public = true or auth\.uid\(\) = owner_id\)/);
-  assert.match(sql, /create policy "topics_owner_insert" on public\.topics for insert with check \(auth\.uid\(\) = owner_id\)/);
-  assert.match(sql, /create policy "topics_owner_update" on public\.topics for update using \(auth\.uid\(\) = owner_id\) with check \(auth\.uid\(\) = owner_id\)/);
-  assert.match(sql, /create policy "topics_owner_delete" on public\.topics for delete using \(auth\.uid\(\) = owner_id\)/);
+  assert.match(getPolicy('topics_public_or_owner_select'), /for select using \(is_public = true or auth\.uid\(\) = owner_id\)/);
+  assert.match(getPolicy('topics_owner_insert'), /for insert with check \(auth\.uid\(\) = owner_id\)/);
+  assert.match(getPolicy('topics_owner_update'), /for update using \(auth\.uid\(\) = owner_id\) with check \(auth\.uid\(\) = owner_id\)/);
+  assert.match(getPolicy('topics_owner_delete'), /for delete using \(auth\.uid\(\) = owner_id\)/);
 });
 
 test('topic-source policies require both a visible topic and a visible evidence card', () => {
-  assert.match(sql, /create policy "topic_sources_visible_select" on public\.topic_sources for select using \(exists \( select 1 from public\.topics t where t\.id = topic_id and \(t\.is_public = true or auth\.uid\(\) = t\.owner_id\) \) and exists \( select 1 from public\.knowledge_cards c where c\.id = card_id and \(c\.is_public = true or auth\.uid\(\) = c\.owner_id\) \)\)/);
-  assert.match(sql, /create policy "topic_sources_owner_insert" on public\.topic_sources for insert with check \(exists \( select 1 from public\.topics t join public\.knowledge_cards c on c\.id = card_id where t\.id = topic_id and t\.owner_id = auth\.uid\(\) and c\.owner_id = auth\.uid\(\) \)\)/);
-  assert.match(sql, /create policy "topic_sources_owner_update" on public\.topic_sources for update/);
-  assert.match(sql, /create policy "topic_sources_owner_delete" on public\.topic_sources for delete/);
+  const selectPolicy = getPolicy('topic_sources_visible_select');
+  assert.match(selectPolicy, /for select using \(exists \( select 1 from public\.topics t where t\.id = topic_id and \(t\.is_public = true or auth\.uid\(\) = t\.owner_id\) \) and exists \( select 1 from public\.knowledge_cards c where c\.id = card_id and \(c\.is_public = true or auth\.uid\(\) = c\.owner_id\) \)\)/);
+
+  const insertPolicy = getPolicy('topic_sources_owner_insert');
+  assert.match(insertPolicy, /for insert with check \(exists \( select 1 from public\.topics t join public\.knowledge_cards c on c\.id = card_id where t\.id = topic_id and t\.owner_id = auth\.uid\(\) and c\.owner_id = auth\.uid\(\) \)\)/);
+
+  const updatePolicy = getPolicy('topic_sources_owner_update');
+  assert.match(updatePolicy, /for update using \( exists \( select 1 from public\.topics t join public\.knowledge_cards c on c\.id = card_id where t\.id = topic_id and t\.owner_id = auth\.uid\(\) and c\.owner_id = auth\.uid\(\) \) \) with check \( exists \( select 1 from public\.topics t join public\.knowledge_cards c on c\.id = card_id where t\.id = topic_id and t\.owner_id = auth\.uid\(\) and c\.owner_id = auth\.uid\(\) \) \)/);
+
+  const deletePolicy = getPolicy('topic_sources_owner_delete');
+  assert.match(deletePolicy, /for delete using \( exists \( select 1 from public\.topics t where t\.id = topic_id and t\.owner_id = auth\.uid\(\) \) \)/);
 });
 
 test('feedback policies permit only the feedback owner to read and write', () => {
-  assert.match(sql, /create policy "topic_feedback_owner_select" on public\.topic_feedback for select using \(auth\.uid\(\) = owner_id\)/);
-  assert.match(sql, /create policy "topic_feedback_owner_insert" on public\.topic_feedback for insert with check \(auth\.uid\(\) = owner_id/);
-  assert.match(sql, /create policy "topic_feedback_owner_update" on public\.topic_feedback for update using \(auth\.uid\(\) = owner_id/);
-  assert.match(sql, /create policy "topic_feedback_owner_delete" on public\.topic_feedback for delete using \(auth\.uid\(\) = owner_id\)/);
+  assert.match(getPolicy('topic_feedback_owner_select'), /for select using \(auth\.uid\(\) = owner_id\)/);
+
+  const insertPolicy = getPolicy('topic_feedback_owner_insert');
+  assert.match(insertPolicy, /for insert with check \(auth\.uid\(\) = owner_id and exists \( select 1 from public\.topics t where t\.id = topic_id and \(t\.is_public = true or t\.owner_id = auth\.uid\(\)\) \)\)/);
+
+  const updatePolicy = getPolicy('topic_feedback_owner_update');
+  assert.match(updatePolicy, /for update using \(auth\.uid\(\) = owner_id\) with check \(auth\.uid\(\) = owner_id and exists \( select 1 from public\.topics t where t\.id = topic_id and \(t\.is_public = true or t\.owner_id = auth\.uid\(\)\) \)\)/);
+
+  assert.match(getPolicy('topic_feedback_owner_delete'), /for delete using \(auth\.uid\(\) = owner_id\)/);
 });
 
 test('TypeScript exports contracts aligned with the topic schema', () => {
