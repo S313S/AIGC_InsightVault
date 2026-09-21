@@ -86,6 +86,38 @@ test('does not let high-like entertainment outrank useful information', () => {
   assert.equal(result.laneEligibility.study, false);
 });
 
+test('does not treat entertainment derived from a launch as substantive breaking evidence', () => {
+  const entertainment = scoreTopicCluster(cluster('launch-meme', [
+    evidence('launch-meme-1', 'Sora 3 正式发布后的爆笑名场面实测', {
+      rawContent: '纯娱乐段子和表情包合集，围观抽奖。',
+      tags: ['发布', '实测', '搞笑', '娱乐'],
+      metrics: { likes: 2_000_000, bookmarks: 50_000, comments: 90_000, shares: 40_000 },
+    }),
+  ]), { now: NOW, sourceBaselines: baselines });
+
+  assert.ok(entertainment.writeScore < 40, entertainment.writeScore);
+  assert.ok(entertainment.studyScore < 40, entertainment.studyScore);
+  assert.ok(entertainment.breakingScore < 60, entertainment.breakingScore);
+  assert.deepEqual(entertainment.laneEligibility, {
+    write: false,
+    study: false,
+    breaking: false,
+  });
+});
+
+test('keeps a real official release eligible even when its demo includes entertainment wording', () => {
+  const official = scoreTopicCluster(cluster('official-release', [
+    evidence('official-release-1', 'Sora 3 正式发布：官方演示包含一个爆笑名场面', {
+      sourceType: 'official',
+      rawContent: 'Official changelog records the rollout date and availability regions.',
+      tags: ['发布', '官方', 'API'],
+    }),
+  ]), { now: NOW, sourceBaselines: baselines });
+
+  assert.ok(official.breakingScore >= 60, official.breakingScore);
+  assert.equal(official.laneEligibility.breaking, true);
+});
+
 test('uses per-source percentiles instead of absolute engagement dominance', () => {
   const sourceBaselines = {
     Twitter: { engagement: [200_000, 500_000, 1_000_000, 2_000_000] },

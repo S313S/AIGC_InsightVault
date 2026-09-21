@@ -322,6 +322,12 @@ export const scoreTopicCluster = (
   const practical = practicalSignals(text);
   const practicalCount = Object.values(practical).filter(Boolean).length;
   const lowValue = matchesAny(text, LOW_VALUE_PATTERNS);
+  const officialCount = cards.filter(isOfficialEvidence).length;
+  const repositoryCount = cards.filter(isRepositoryEvidence).length;
+  const hasSubstantiveEvidence = analysisSignal ||
+    practicalCount > 0 ||
+    officialCount > 0 ||
+    repositoryCount > 0;
 
   let writeScore = 15 + collectionSizeScore(cards.length) + engagement * 0.12;
   if (breakingSignal) writeScore += 20;
@@ -340,7 +346,9 @@ export const scoreTopicCluster = (
   if (practical.workflow) studyScore += 10;
   if (text.length >= 240) studyScore += 8;
 
-  if (lowValue && practicalCount === 0 && !analysisSignal && !breakingSignal) {
+  // Broad launch/hands-on wording also appears in memes and reaction posts. It
+  // cannot override the low-value cap without reusable or first-party evidence.
+  if (lowValue && !hasSubstantiveEvidence) {
     writeScore = Math.min(writeScore, 25);
     studyScore = Math.min(studyScore, 15);
   }
@@ -352,11 +360,9 @@ export const scoreTopicCluster = (
     if (breakingSignal) breakingScore += 30;
     if (handsOnSignal) breakingScore += 15;
     if (platforms >= 2) breakingScore += 15;
-    if (lowValue && !breakingSignal) breakingScore = Math.min(breakingScore, 35);
+    if (lowValue && !hasSubstantiveEvidence) breakingScore = Math.min(breakingScore, 35);
   }
 
-  const officialCount = cards.filter(isOfficialEvidence).length;
-  const repositoryCount = cards.filter(isRepositoryEvidence).length;
   let confidenceScore = 25 + collectionSizeScore(cards.length);
   if (platforms >= 2) confidenceScore += 15;
   if (officialCount > 0) confidenceScore += 30;
