@@ -135,7 +135,7 @@ test('deserializeSnapshot filters malformed nested topic sources and cards', () 
     cardId: 'card-1',
     evidenceRole: 'attention',
     sourceType: 'social',
-    relevance: 0.8,
+    relevance: 80,
     createdAt: '2026-09-21T00:00:00.000Z',
     card: {
       id: 'card-1',
@@ -144,15 +144,22 @@ test('deserializeSnapshot filters malformed nested topic sources and cards', () 
       platform: 'Twitter',
     },
   };
+  const legacyFractionalSource = {
+    ...validSource,
+    id: 'source-legacy-fraction',
+    relevance: 0.8,
+  };
   const decoded = deserializeSnapshot(JSON.stringify({
     cards: [],
     trending: [],
     topics: [topic('topic-with-sources', {
       sources: [
         validSource,
+        legacyFractionalSource,
         null,
         { ...validSource, id: '' },
-        { ...validSource, relevance: Number.POSITIVE_INFINITY },
+        { ...validSource, id: 'source-over-100', relevance: 101 },
+        { ...validSource, id: 'source-nan', relevance: Number.NaN },
         { ...validSource, card: { id: 'card-without-openable-shape', title: 'Bad' } },
       ],
     })],
@@ -160,7 +167,7 @@ test('deserializeSnapshot filters malformed nested topic sources and cards', () 
     tasks: [],
   }));
 
-  assert.deepEqual(decoded.topics[0].sources, [validSource]);
+  assert.deepEqual(decoded.topics[0].sources, [validSource, legacyFractionalSource]);
 });
 
 test('shouldPersistSnapshot allows authenticated post-load snapshots', () => {

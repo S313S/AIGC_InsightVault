@@ -47,7 +47,7 @@ const isSafeTopicSource = (source) => (
   typeof source.sourceType === 'string' &&
   isFiniteScore(source.relevance) &&
   source.relevance >= 0 &&
-  source.relevance <= 1 &&
+  source.relevance <= 100 &&
   typeof source.createdAt === 'string' &&
   (source.card === undefined || hasMinimumCachedCardShape(source.card))
 );
