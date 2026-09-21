@@ -41,6 +41,7 @@ import {
 import { mergeLoadedSnapshot } from './shared/loadMerge.js';
 import { resolveLoadNotice } from './shared/loadNotice.js';
 import { applyCollectionCounts } from './shared/collectionCounts.js';
+import { getLatestCollectionAt } from './shared/collectionFreshness.js';
 import { countNewItemIds } from './shared/syncFreshness.js';
 import {
   buildCollectionCardCacheKey,
@@ -159,6 +160,7 @@ const App: React.FC = () => {
   // Loading State
   const [isLoading, setIsLoading] = useState(!snapshotHasAnyData(bootstrapSnapshot));
   const [isSyncing, setIsSyncing] = useState(isSupabaseConnected());
+  const [lastCollectedAt, setLastCollectedAt] = useState<string | null>(bootstrapRecord?.collectedAt || null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(bootstrapRecord?.syncedAt || null);
   const [newTrendingCount, setNewTrendingCount] = useState(0);
   const [isRetryingLoad, setIsRetryingLoad] = useState(false);
@@ -281,6 +283,7 @@ const App: React.FC = () => {
           applyLoadedSnapshot(baselineSnapshot);
           loadedOwnerIdRef.current = targetOwnerId;
           lastSuccessfulDataRef.current = hasBaselineData ? baselineSnapshot : null;
+          setLastCollectedAt(storedRecord?.collectedAt || null);
           setLastSyncedAt(storedRecord?.syncedAt || null);
           setNewTrendingCount(0);
         }
@@ -301,7 +304,13 @@ const App: React.FC = () => {
         const trendingLoad = getLoadResult(trendingResult, [], 'Loading trending cards');
         const dbCards = cardsLoad.value;
         const dbTrending = trendingLoad.value;
+        const collectedAt = trendingLoad.ok
+          ? getLatestCollectionAt(dbTrending)
+          : undefined;
         const primaryHadFailure = !cardsLoad.ok || !trendingLoad.ok;
+        if (collectedAt !== undefined) {
+          setLastCollectedAt(collectedAt);
+        }
         if (trendingLoad.ok) {
           setNewTrendingCount(
             hasBaselineData ? countNewItemIds(baselineSnapshot.trending, dbTrending) : 0
@@ -329,7 +338,9 @@ const App: React.FC = () => {
 
         if (!primaryResolved.usedFallback) {
           lastSuccessfulDataRef.current = primarySnapshot;
-          writeStoredSnapshot(targetOwnerId, lastSuccessfulDataRef.current);
+        }
+        if (trendingLoad.ok || !primaryResolved.usedFallback) {
+          writeStoredSnapshot(targetOwnerId, primarySnapshot, { collectedAt });
         }
 
         hasCompletedInitialLoadRef.current = true;
@@ -423,19 +434,26 @@ const App: React.FC = () => {
 
       const offlineCards = INITIAL_DATA.map(toOfflinePublicCard);
       setCards(offlineCards);
-      setTrending(TRENDING_DATA.map(toOfflinePublicCard));
+      const offlineTrending = TRENDING_DATA.map(toOfflinePublicCard);
+      const collectedAt = getLatestCollectionAt(offlineTrending);
+      setTrending(offlineTrending);
       setCollections(INITIAL_COLLECTIONS.map(toOfflinePublicCollection));
       setTasks([]);
+      setLastCollectedAt(collectedAt);
+      setLastSyncedAt(null);
       setHasMoreCards(false);
       setChatScope({ cards: offlineCards, title: '全部知识库' });
       lastSuccessfulDataRef.current = {
         cards: offlineCards,
-        trending: TRENDING_DATA.map(toOfflinePublicCard),
+        trending: offlineTrending,
         collections: INITIAL_COLLECTIONS.map(toOfflinePublicCollection),
         tasks: [],
       };
       loadedOwnerIdRef.current = null;
-      writeStoredSnapshot(null, lastSuccessfulDataRef.current);
+      writeStoredSnapshot(null, lastSuccessfulDataRef.current, {
+        collectedAt,
+        syncedAt: null,
+      });
       return true;
     } catch (error) {
       console.error('Failed to load app data:', error);
@@ -2036,6 +2054,7 @@ const App: React.FC = () => {
                 trendingItems={trending}
                 isInitialLoading={isLoading}
                 isSyncing={isSyncing}
+                lastCollectedAt={lastCollectedAt}
                 lastSyncedAt={lastSyncedAt}
                 newItemsCount={newTrendingCount}
                 onNavigateToMonitoring={() => handleMainNavigation('monitoring')}

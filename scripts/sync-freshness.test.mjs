@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import { countNewItemIds, getSyncLabel } from '../shared/syncFreshness.js';
+
+const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
 
 test('counts only newly returned trending ids', () => {
   assert.equal(
@@ -55,4 +58,28 @@ test('reports an older same-day sync as a clock time', () => {
 test('reports a missing or invalid sync time honestly', () => {
   assert.equal(getSyncLabel({ isSyncing: false, lastSyncedAt: null }), '尚未同步');
   assert.equal(getSyncLabel({ isSyncing: false, lastSyncedAt: 'bad-date' }), '尚未同步');
+});
+
+test('app derives collection time only from a successful trending response', () => {
+  assert.match(appSource, /import \{ getLatestCollectionAt \} from '\.\/shared\/collectionFreshness\.js'/);
+  assert.match(
+    appSource,
+    /const collectedAt = trendingLoad\.ok\s*\? getLatestCollectionAt\(dbTrending\)\s*:\s*undefined;/s
+  );
+  assert.match(
+    appSource,
+    /if \(collectedAt !== undefined\) \{\s*setLastCollectedAt\(collectedAt\);\s*\}/s
+  );
+  assert.doesNotMatch(appSource, /setLastCollectedAt\(new Date\(\)\.toISOString\(\)\)/);
+});
+
+test('app persists collection and browser sync times as separate metadata', () => {
+  assert.match(
+    appSource,
+    /writeStoredSnapshot\(targetOwnerId, primarySnapshot, \{ collectedAt \}\)/
+  );
+  assert.match(
+    appSource,
+    /writeStoredSnapshot\(targetOwnerId, secondarySnapshot, \{ syncedAt \}\)/
+  );
 });

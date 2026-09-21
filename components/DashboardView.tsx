@@ -5,6 +5,7 @@ import { hasPromptEvidence } from '../shared/promptTagging.js';
 import { fallbackCoverFromSeed, isRenderableCoverUrl, normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
 import { hasXiaohongshuXsecToken, isXiaohongshuUrl, normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
 import { getSourceUrlOpenBlockReason, resolveOpenableSourceUrl } from '../shared/sourceUrls.js';
+import { getCollectionFreshness, getCollectionLabel } from '../shared/collectionFreshness.js';
 import { getSyncLabel } from '../shared/syncFreshness.js';
 
 interface DashboardViewProps {
@@ -12,6 +13,7 @@ interface DashboardViewProps {
     trendingItems: KnowledgeCard[];
     isInitialLoading: boolean;
     isSyncing: boolean;
+    lastCollectedAt: string | null;
     lastSyncedAt: string | null;
     newItemsCount: number;
     onNavigateToMonitoring: () => void;
@@ -28,6 +30,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     trendingItems,
     isInitialLoading,
     isSyncing,
+    lastCollectedAt,
     lastSyncedAt,
     newItemsCount,
     onNavigateToMonitoring,
@@ -40,6 +43,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 }) => {
 
     const totalItemsFound = trendingItems.length;
+    const collectionFreshness = getCollectionFreshness({ collectedAt: lastCollectedAt });
+    const collectionLabel = getCollectionLabel({
+        collectedAt: lastCollectedAt,
+        status: collectionFreshness.status,
+    });
     const syncLabel = getSyncLabel({ isSyncing, lastSyncedAt });
     const [showAllTrending, setShowAllTrending] = useState(false);
     const [repairingCardId, setRepairingCardId] = useState<string | null>(null);
@@ -264,7 +272,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             </span>
                         )}
                     </div>
-                    <p className="text-sm text-gray-500" aria-live="polite">{syncLabel}</p>
+                    <div className="space-y-1 text-sm text-gray-500" aria-live="polite">
+                        <p>热点采集：{collectionLabel}</p>
+                        <p>页面同步：{syncLabel}</p>
+                    </div>
+                    {collectionFreshness.status === 'stale' && (
+                        <div
+                            role="alert"
+                            className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-200"
+                        >
+                            更新提醒：{collectionLabel}。当前继续显示上次成功采集的内容。
+                        </div>
+                    )}
                 </div>
             </div>
 

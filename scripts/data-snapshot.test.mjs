@@ -95,10 +95,11 @@ test('shouldPersistSnapshot avoids writing private data to guest cache', () => {
   }), false);
 });
 
-test('writeStoredSnapshot persists owner and sync metadata', () => {
+test('writeStoredSnapshot persists owner, sync, and collection metadata separately', () => {
   installStorage();
   writeStoredSnapshot('user-1', snapshot('private-card'), {
     syncedAt: '2026-09-20T01:00:00.000Z',
+    collectedAt: '2026-09-19T23:30:00.000Z',
     now: () => '2026-09-20T01:00:01.000Z',
   });
 
@@ -107,14 +108,16 @@ test('writeStoredSnapshot persists owner and sync metadata', () => {
     ownerId: 'user-1',
     savedAt: '2026-09-20T01:00:01.000Z',
     syncedAt: '2026-09-20T01:00:00.000Z',
+    collectedAt: '2026-09-19T23:30:00.000Z',
   });
   assert.equal(window.localStorage.getItem(ACTIVE_SNAPSHOT_OWNER_KEY), 'user-1');
 });
 
-test('writeStoredSnapshot preserves the previous sync time for local changes', () => {
+test('writeStoredSnapshot preserves previous sync and collection times for local changes', () => {
   installStorage();
   writeStoredSnapshot('user-1', snapshot('first'), {
     syncedAt: '2026-09-20T01:00:00.000Z',
+    collectedAt: '2026-09-19T23:30:00.000Z',
     now: () => '2026-09-20T01:00:01.000Z',
   });
   writeStoredSnapshot('user-1', snapshot('edited'), {
@@ -123,7 +126,33 @@ test('writeStoredSnapshot preserves the previous sync time for local changes', (
 
   const record = readStoredSnapshotRecord('user-1');
   assert.equal(record.syncedAt, '2026-09-20T01:00:00.000Z');
+  assert.equal(record.collectedAt, '2026-09-19T23:30:00.000Z');
   assert.equal(record.savedAt, '2026-09-20T01:05:00.000Z');
+});
+
+test('writeStoredSnapshot can clear collection time after a successful empty result', () => {
+  installStorage();
+  writeStoredSnapshot('user-1', snapshot('first'), {
+    collectedAt: '2026-09-19T23:30:00.000Z',
+  });
+  writeStoredSnapshot('user-1', snapshot('fallback-kept'), {
+    collectedAt: null,
+  });
+
+  assert.equal(readStoredSnapshotRecord('user-1').collectedAt, null);
+});
+
+test('snapshot collection metadata stays isolated between guest and authenticated owners', () => {
+  installStorage();
+  writeStoredSnapshot(null, snapshot('public-card'), {
+    collectedAt: '2026-09-18T01:00:00.000Z',
+  });
+  writeStoredSnapshot('user-1', snapshot('private-card'), {
+    collectedAt: '2026-09-20T01:00:00.000Z',
+  });
+
+  assert.equal(readStoredSnapshotRecord(null).collectedAt, '2026-09-18T01:00:00.000Z');
+  assert.equal(readStoredSnapshotRecord('user-1').collectedAt, '2026-09-20T01:00:00.000Z');
 });
 
 test('readBootstrapSnapshot prefers the active authenticated owner', () => {
@@ -165,6 +194,7 @@ test('legacy snapshots remain readable without metadata', () => {
     ownerId: 'user-1',
     savedAt: null,
     syncedAt: null,
+    collectedAt: null,
   });
 });
 

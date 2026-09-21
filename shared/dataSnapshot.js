@@ -88,6 +88,7 @@ const readStoredSnapshotMetadata = (userId) => {
       ownerId: parsed.ownerId,
       savedAt: typeof parsed.savedAt === 'string' ? parsed.savedAt : null,
       syncedAt: typeof parsed.syncedAt === 'string' ? parsed.syncedAt : null,
+      collectedAt: typeof parsed.collectedAt === 'string' ? parsed.collectedAt : null,
     };
   } catch {
     return null;
@@ -104,6 +105,7 @@ export const readStoredSnapshotRecord = (userId) => {
     ownerId: userId || null,
     savedAt: metadata?.savedAt || null,
     syncedAt: metadata?.syncedAt || null,
+    collectedAt: metadata?.collectedAt || null,
   };
 };
 
@@ -144,6 +146,9 @@ export const writeStoredSnapshot = (userId, snapshot, options = {}) => {
   const syncedAt = options.syncedAt === undefined
     ? previousMetadata?.syncedAt || null
     : options.syncedAt;
+  const collectedAt = options.collectedAt === undefined
+    ? previousMetadata?.collectedAt || null
+    : options.collectedAt;
 
   try {
     storage.setItem(buildSnapshotStorageKey(userId), serializeSnapshot(snapshot));
@@ -151,6 +156,7 @@ export const writeStoredSnapshot = (userId, snapshot, options = {}) => {
       ownerId,
       savedAt,
       syncedAt,
+      collectedAt,
     }));
     if (userId) {
       storage.setItem(ACTIVE_SNAPSHOT_OWNER_KEY, userId);
