@@ -55,6 +55,7 @@ export interface KnowledgeCard {
 }
 
 export type TopicTrendDirection = 'rising' | 'steady' | 'fading' | 'new';
+export type TopicBriefGenerationStatus = 'generated' | 'fallback';
 export type TopicFeedbackAction = 'saved' | 'ignored' | 'published';
 
 export interface TopicSource {
@@ -86,6 +87,7 @@ export interface EditorialTopic {
   latestEvidenceAt: string;
   trendDirection: TopicTrendDirection;
   evidenceSignature: string;
+  generationStatus: TopicBriefGenerationStatus;
   generatedAt?: string;
   createdAt: string;
   updatedAt: string;

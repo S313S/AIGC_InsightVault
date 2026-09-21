@@ -38,6 +38,10 @@ create table if not exists public.topics (
   trend_direction text not null default 'new'
     check (trend_direction in ('rising', 'steady', 'fading', 'new')),
   evidence_signature text not null default '',
+  -- New rows are retryable unless the pipeline explicitly records a successful
+  -- model generation. Runtime objects without this field remain legacy-compatible.
+  generation_status text not null default 'fallback'
+    check (generation_status in ('generated', 'fallback')),
   source_count integer not null default 0 check (source_count >= 0),
   platform_count integer not null default 0 check (platform_count >= 0 and platform_count <= source_count),
   generated_at timestamptz,

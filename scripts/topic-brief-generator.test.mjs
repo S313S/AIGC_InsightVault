@@ -155,6 +155,19 @@ test('normalization truncates at Unicode code-point boundaries', () => {
   assert.doesNotMatch(result.title, /[\uD800-\uDFFF]$/u);
 });
 
+test('normalization removes pre-existing lone surrogates without damaging emoji', () => {
+  const result = normalizeTopicBrief({
+    ...validBrief,
+    title: '正常😀破损\uD83D文本\uDC00结束',
+    summary: '摘要\uD83D仍可编码',
+  }, cluster);
+  const serialized = JSON.stringify(result);
+
+  assert.match(result.title, /😀/u);
+  assert.doesNotMatch(serialized, /\\ud[89ab][0-9a-f]{2}(?!\\ud[c-f][0-9a-f]{2})|(?<!\\ud[89ab][0-9a-f]{2})\\ud[c-f][0-9a-f]{2}/iu);
+  assert.doesNotThrow(() => encodeURIComponent(serialized));
+});
+
 test('normalizeTopicBrief ignores inherited and prototype-polluting fields', () => {
   const polluted = Object.create({
     title: 'inherited title',
@@ -268,6 +281,24 @@ test('shouldRegenerateBrief accepts persisted snake_case briefs and gives camelC
     generation_status: 'fallback',
     generationStatus: 'generated',
   }, 'evidence:v2'), false);
+});
+
+test('generation status survives a snake_case database roundtrip and controls retry', () => {
+  const storedFallback = JSON.parse(JSON.stringify({
+    title: validBrief.title,
+    summary: validBrief.summary,
+    why_now: validBrief.whyNow,
+    content_angles: validBrief.contentAngles,
+    durable_knowledge: validBrief.durableKnowledge,
+    evidence_signature: cluster.evidenceSignature,
+    generation_status: 'fallback',
+  }));
+
+  assert.equal(shouldRegenerateBrief(storedFallback, cluster.evidenceSignature), true);
+  assert.equal(shouldRegenerateBrief({
+    ...storedFallback,
+    generation_status: 'generated',
+  }, cluster.evidenceSignature), false);
 });
 
 test('unchanged persisted snake_case evidence bypasses the model call', async () => {

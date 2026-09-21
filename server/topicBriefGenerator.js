@@ -42,12 +42,28 @@ const sliceCodePoints = (value, limit) => {
   const maximum = Math.max(0, Math.trunc(Number(limit) || 0));
   let index = 0;
   let count = 0;
+  let result = '';
   while (index < value.length && count < maximum) {
-    const codePoint = value.codePointAt(index);
-    index += codePoint > 0xFFFF ? 2 : 1;
+    const first = value.charCodeAt(index);
+    if (first >= 0xD800 && first <= 0xDBFF) {
+      const second = value.charCodeAt(index + 1);
+      if (second >= 0xDC00 && second <= 0xDFFF) {
+        result += value.slice(index, index + 2);
+        index += 2;
+      } else {
+        result += '\uFFFD';
+        index += 1;
+      }
+    } else if (first >= 0xDC00 && first <= 0xDFFF) {
+      result += '\uFFFD';
+      index += 1;
+    } else {
+      result += value[index];
+      index += 1;
+    }
     count += 1;
   }
-  return value.slice(0, index);
+  return result;
 };
 
 const sliceUtf16Safely = (value, limit) => {
@@ -323,6 +339,9 @@ const hasCompleteBrief = (topic) => {
 export const shouldRegenerateBrief = (existingTopic, evidenceSignature) => {
   const cachedSignature = persistedValue(existingTopic, 'evidenceSignature', 'evidence_signature');
   const generationStatus = persistedValue(existingTopic, 'generationStatus', 'generation_status');
+  // Legacy in-memory/topic payloads may predate generation_status. Treat the
+  // missing field as generated for compatibility; every new DB row has the
+  // conservative `fallback` default and must be explicitly promoted.
   return typeof evidenceSignature !== 'string' ||
     evidenceSignature.length === 0 ||
     cachedSignature !== evidenceSignature ||

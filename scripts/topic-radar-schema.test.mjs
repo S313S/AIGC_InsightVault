@@ -41,6 +41,7 @@ test('topic radar migration defines the owner-scoped topic records and editorial
   assert.match(sql, /first_seen_at timestamptz not null/);
   assert.match(sql, /latest_evidence_at timestamptz not null/);
   assert.match(sql, /evidence_signature text not null/);
+  assert.match(topicsTable, /generation_status text not null default 'fallback' check \(generation_status in \('generated', 'fallback'\)\)/);
   assert.match(sql, /generated_at timestamptz/);
   assert.match(sql, /created_at timestamptz not null default now\(\)/);
   assert.match(sql, /updated_at timestamptz not null default now\(\)/);
@@ -129,7 +130,8 @@ test('feedback policies permit only the feedback owner to read and write', () =>
 
 test('TypeScript exports contracts aligned with the topic schema', () => {
   assert.match(types, /export type TopicTrendDirection = 'rising' \| 'steady' \| 'fading' \| 'new';/);
+  assert.match(types, /export type TopicBriefGenerationStatus = 'generated' \| 'fallback';/);
   assert.match(types, /export type TopicFeedbackAction = 'saved' \| 'ignored' \| 'published';/);
   assert.match(types, /export interface TopicSource \{[\s\S]*topicId: string;[\s\S]*cardId: string;[\s\S]*evidenceRole: string;[\s\S]*sourceType: string;[\s\S]*relevance: number;[\s\S]*\}/);
-  assert.match(types, /export interface EditorialTopic \{[\s\S]*contentAngles: \{ quick: string; viewpoint: string; tutorial: string \};[\s\S]*durableKnowledge: string\[\];[\s\S]*writeScore: number;[\s\S]*studyScore: number;[\s\S]*breakingScore: number;[\s\S]*confidenceScore: number;[\s\S]*preferenceScore: number;[\s\S]*generatedAt\?: string;[\s\S]*createdAt: string;[\s\S]*updatedAt: string;[\s\S]*sourceCount: number;[\s\S]*platformCount: number;[\s\S]*sources\?: TopicSource\[\];[\s\S]*feedback\?: TopicFeedbackAction\[\];[\s\S]*\}/);
+  assert.match(types, /export interface EditorialTopic \{[\s\S]*contentAngles: \{ quick: string; viewpoint: string; tutorial: string \};[\s\S]*durableKnowledge: string\[\];[\s\S]*writeScore: number;[\s\S]*studyScore: number;[\s\S]*breakingScore: number;[\s\S]*confidenceScore: number;[\s\S]*preferenceScore: number;[\s\S]*generationStatus: TopicBriefGenerationStatus;[\s\S]*generatedAt\?: string;[\s\S]*createdAt: string;[\s\S]*updatedAt: string;[\s\S]*sourceCount: number;[\s\S]*platformCount: number;[\s\S]*sources\?: TopicSource\[\];[\s\S]*feedback\?: TopicFeedbackAction\[\];[\s\S]*\}/);
 });
