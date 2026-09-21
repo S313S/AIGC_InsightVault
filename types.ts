@@ -132,6 +132,13 @@ export interface MonitorSettings {
   autoUpdateEnabled: boolean;
 }
 
+export interface MonitorRunHealth {
+  status: 'healthy' | 'healthy_low_volume' | 'partial_failure' | 'failed' | 'truncated' | 'skipped';
+  completedPlatforms: string[];
+  failedPlatforms: string[];
+  explanation: string;
+}
+
 export interface CronRunLog {
   id: string;
   ownerId?: string;
@@ -150,6 +157,7 @@ export interface CronRunLog {
   platformTotals: Record<string, any>;
   platformErrors: any[];
   resultSummary: Record<string, any>;
+  runHealth?: MonitorRunHealth;
   runtimeMs: number;
   runtimeGuardTriggered: boolean;
   success: boolean;

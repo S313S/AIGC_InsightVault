@@ -5,6 +5,7 @@ import { resolveContentTypeByPrompts } from '../shared/promptTagging.js';
 import { isFallbackCoverUrl, normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
 import { buildXiaohongshuWebUrl } from '../shared/xiaohongshuUrls.js';
 import { extractHashtagsFromText, pickSemanticCover } from '../shared/semanticCovers.js';
+import { classifyMonitorRun } from '../shared/monitorRunHealth.js';
 
 // Search keywords: high-volume terms covering all 3 categories (used for API searches)
 const DEFAULT_MONITOR_KEYWORDS = [
@@ -746,11 +747,12 @@ export default async function handler(req, res) {
   const runStartedAt = Date.now();
   const apiCallTrace = [];
   let runtimeGuardTriggered = false;
+  let intendedPlatforms = DEFAULT_PLATFORMS;
   let platformStats = [];
   let platformErrors = [];
   let platformTotals = {
-    twitter: { fetched: 0, output: 0 },
-    xiaohongshu: { fetched: 0, output: 0 }
+    twitter: { fetched: 0, output: 0, completed: false, completedCalls: 0 },
+    xiaohongshu: { fetched: 0, output: 0, completed: false, completedCalls: 0 }
   };
   let funnel = {
     fetched: 0,
@@ -832,11 +834,21 @@ export default async function handler(req, res) {
       : overridePlatform === 'xiaohongshu' || overridePlatform === 'xhs'
         ? ['xiaohongshu']
         : DEFAULT_PLATFORMS;
+    intendedPlatforms = effectivePlatforms;
     const justOneToken = process.env.JUSTONEAPI_TOKEN;
     const tikhubToken = process.env.TIKHUB_API_TOKEN;
     const xBearerToken = process.env.X_API_BEARER_TOKEN;
 
     if (rebuildOnly) {
+      const runHealth = classifyMonitorRun({
+        intendedPlatforms: [],
+        platformTotals: {},
+        candidateCount: 0,
+        platformErrors: [],
+        runtimeGuardTriggered: false,
+        skipped: true,
+        skipReason: 'rebuild_only'
+      });
       const snapshotId = new Date().toISOString();
       const snapshotTag = `snapshot:${snapshotId}`;
 
@@ -909,12 +921,13 @@ export default async function handler(req, res) {
         updatedExisting,
         totalTrending: (refreshedRows || []).length,
         snapshot: snapshotTag,
-        owner: ownerContext.username
+        owner: ownerContext.username,
+        runHealth
       });
     }
 
     if ((!justOneToken && !tikhubToken) && !xBearerToken) {
-      return res.status(500).json({ error: 'No upstream API tokens configured' });
+      throw new Error('No upstream API tokens configured');
     }
 
     const { data: settingRows, error: settingsError } = await supabase
@@ -946,6 +959,15 @@ export default async function handler(req, res) {
     }
 
     if (triggerSource === 'vercel_cron' && !autoUpdateEnabled) {
+      const runHealth = classifyMonitorRun({
+        intendedPlatforms,
+        platformTotals,
+        candidateCount: 0,
+        platformErrors: [],
+        runtimeGuardTriggered: false,
+        skipped: true,
+        skipReason: 'auto_update_disabled'
+      });
       effectivePayload = {
         auto_update_enabled: autoUpdateEnabled,
         split: effectiveSplit
@@ -957,7 +979,8 @@ export default async function handler(req, res) {
         candidates: 0,
         tasksRun: 0,
         skipped: true,
-        skipReason: 'auto_update_disabled'
+        skipReason: 'auto_update_disabled',
+        runHealth
       };
       await persistCronRunLog(supabase, {
         owner_id: ownerId,
@@ -983,7 +1006,8 @@ export default async function handler(req, res) {
       return res.status(200).json({
         skipped: true,
         reason: 'auto_update_disabled',
-        message: 'Auto update is disabled by monitor_settings.auto_update_enabled=false'
+        message: 'Auto update is disabled by monitor_settings.auto_update_enabled=false',
+        runHealth
       });
     }
 
@@ -1100,8 +1124,8 @@ export default async function handler(req, res) {
     platformStats = [];
     platformErrors = [];
     platformTotals = {
-      twitter: { fetched: 0, output: 0 },
-      xiaohongshu: { fetched: 0, output: 0 }
+      twitter: { fetched: 0, output: 0, completed: false, completedCalls: 0 },
+      xiaohongshu: { fetched: 0, output: 0, completed: false, completedCalls: 0 }
     };
     platformFunnel = {
       twitter: { fetched: 0, afterMinInteraction: 0, afterRecent: 0, afterAI: 0, afterQuality: 0 },
@@ -1144,6 +1168,7 @@ export default async function handler(req, res) {
               return [];
             }
             let keywordResults = [];
+            let twitterCompletedCalls = 0;
             if (effectiveSplit) {
               const runKeywordSearch = async (keyword) => {
                 const query = buildTwitterQuery([keyword], twitterQueryOpts);
@@ -1162,6 +1187,7 @@ export default async function handler(req, res) {
                     hasResults: oneKeywordResults.length > 0,
                     durationMs: Date.now() - startedAt
                   });
+                  twitterCompletedCalls += 1;
                   return oneKeywordResults;
                 } catch (err) {
                   apiCallTrace.push({
@@ -1198,6 +1224,7 @@ export default async function handler(req, res) {
               const query = buildTwitterQuery(twitterKeywordPool, twitterQueryOpts);
               const startedAt = Date.now();
               keywordResults = await searchTwitterByQuery(query, effectiveLimit, xBearerToken, 'relevancy');
+              twitterCompletedCalls += 1;
               apiCallTrace.push({
                 platform: 'twitter',
                 provider: 'x_recent_search',
@@ -1219,6 +1246,7 @@ export default async function handler(req, res) {
                 const trustedLimit = Math.min(Math.max(effectiveLimit * Math.min(trustedHandles.length, 3), 10), 100);
                 const startedAt = Date.now();
                 trustedResults = await searchTwitterByQuery(trustedQuery, trustedLimit, xBearerToken, 'recency');
+                twitterCompletedCalls += 1;
                 apiCallTrace.push({
                   platform: 'twitter',
                   provider: 'x_recent_search',
@@ -1265,6 +1293,10 @@ export default async function handler(req, res) {
               keywordTasks: effectiveSplit ? twitterSplitKeywordPool.length : twitterKeywordPool.length,
               keywordMode: effectiveSplit ? 'per_keyword_api_calls' : 'single_or_query'
             });
+            if (twitterCompletedCalls > 0) {
+              platformTotals.twitter.completed = true;
+              platformTotals.twitter.completedCalls += twitterCompletedCalls;
+            }
             platformTotals.twitter.fetched += results.length;
             return results;
           }
@@ -1328,6 +1360,8 @@ export default async function handler(req, res) {
           if (lastError) {
             throw lastError;
           }
+          platformTotals.xiaohongshu.completed = true;
+          platformTotals.xiaohongshu.completedCalls += 1;
           // Rate-limit between XHS calls to reduce timeouts
           await sleep(effectiveXhsDelayMs);
           platformStats.push({
@@ -1496,12 +1530,21 @@ export default async function handler(req, res) {
         engagementDebug: engagementDebug.slice(0, 20),
         platformErrors
       };
+      const runHealth = classifyMonitorRun({
+        intendedPlatforms,
+        platformTotals,
+        candidateCount: candidates.length,
+        platformErrors,
+        runtimeGuardTriggered
+      });
+      responsePayload.runHealth = runHealth;
       resultSummary = {
         inserted: 0,
         updatedExisting: 0,
         updatedTasks: updatedTasks.length,
         candidates: 0,
-        tasksRun: tasksToRun.length
+        tasksRun: tasksToRun.length,
+        runHealth
       };
       await persistCronRunLog(supabase, {
         owner_id: ownerId,
@@ -1518,7 +1561,7 @@ export default async function handler(req, res) {
         platform_stats: platformStats,
         platform_totals: platformTotals,
         platform_errors: platformErrors,
-        result_summary: { ...resultSummary, fallbackCoverCount },
+        result_summary: { ...resultSummary, fallbackCoverCount, runHealth },
         runtime_ms: Date.now() - runStartedAt,
         runtime_guard_triggered: runtimeGuardTriggered,
         success: true,
@@ -1677,12 +1720,21 @@ export default async function handler(req, res) {
       engagementDebug: engagementDebug.slice(0, 20),
       platformErrors
     };
+    const runHealth = classifyMonitorRun({
+      intendedPlatforms,
+      platformTotals,
+      candidateCount: candidates.length,
+      platformErrors,
+      runtimeGuardTriggered
+    });
+    responsePayload.runHealth = runHealth;
     resultSummary = {
       inserted: toInsert.length,
       updatedExisting,
       updatedTasks: updatedTasks.length,
       candidates: candidates.length,
-      tasksRun: tasksToRun.length
+      tasksRun: tasksToRun.length,
+      runHealth
     };
     await persistCronRunLog(supabase, {
       owner_id: ownerId,
@@ -1699,7 +1751,7 @@ export default async function handler(req, res) {
       platform_stats: platformStats,
       platform_totals: platformTotals,
       platform_errors: platformErrors,
-      result_summary: { ...resultSummary, fallbackCoverCount },
+      result_summary: { ...resultSummary, fallbackCoverCount, runHealth },
       runtime_ms: Date.now() - runStartedAt,
       runtime_guard_triggered: runtimeGuardTriggered,
       success: true,
@@ -1709,6 +1761,15 @@ export default async function handler(req, res) {
   } catch (err) {
     console.error('Cron monitor error:', err);
     platformErrors = [...platformErrors, { platform: 'system', error: err.message || 'Cron monitor failed' }];
+    const runHealth = classifyMonitorRun({
+      intendedPlatforms,
+      platformTotals,
+      candidateCount: Number(resultSummary?.candidates || 0),
+      platformErrors,
+      runtimeGuardTriggered,
+      failed: true
+    });
+    resultSummary = { ...resultSummary, runHealth };
     await persistCronRunLog(supabase, {
       owner_id: ownerId,
       trigger_source: triggerSource,
@@ -1724,12 +1785,12 @@ export default async function handler(req, res) {
       platform_stats: platformStats,
       platform_totals: platformTotals,
       platform_errors: platformErrors,
-      result_summary: { ...resultSummary, fallbackCoverCount },
+      result_summary: { ...resultSummary, fallbackCoverCount, runHealth },
       runtime_ms: Date.now() - runStartedAt,
       runtime_guard_triggered: runtimeGuardTriggered,
       success: false,
       error_message: err.message || 'Cron monitor failed'
     });
-    return res.status(500).json({ error: err.message || 'Cron monitor failed' });
+    return res.status(500).json({ error: err.message || 'Cron monitor failed', runHealth });
   }
 }

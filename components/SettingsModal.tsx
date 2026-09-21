@@ -427,6 +427,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       platformTotals: {},
       platformErrors: [{ platform: 'system', error: errorMessage }],
       resultSummary: {},
+      runHealth: {
+        status: 'failed',
+        completedPlatforms: [],
+        failedPlatforms: [],
+        explanation: '手动运行请求失败，未完成热点抓取。'
+      },
       runtimeMs: 0,
       runtimeGuardTriggered: false,
       success: false,
@@ -977,7 +983,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               const updatedExisting = Number(log.resultSummary?.updatedExisting || 0);
               const candidates = Number(log.resultSummary?.candidates || 0);
               const tasksRun = Number(log.resultSummary?.tasksRun || 0);
-              const isSkipped = Boolean(log.resultSummary?.skipped);
+              const legacySkipped = Boolean(log.resultSummary?.skipped);
+              const runHealthStatus = log.runHealth?.status || (
+                legacySkipped
+                  ? 'skipped'
+                  : log.runtimeGuardTriggered
+                    ? 'truncated'
+                    : log.success
+                      ? candidates === 0 ? 'healthy_low_volume' : 'healthy'
+                      : 'failed'
+              );
+              const isSkipped = runHealthStatus === 'skipped';
+              const runHealthLabels = {
+                healthy: '正常',
+                healthy_low_volume: '正常但低产',
+                partial_failure: '部分失败',
+                failed: '失败',
+                truncated: '提前截断',
+                skipped: '已跳过'
+              } as const;
+              const runHealthExplanation = log.runHealth?.explanation || (
+                isSkipped
+                  ? '旧日志：本次运行已跳过。'
+                  : runHealthStatus === 'truncated'
+                    ? '旧日志：运行时间保护已触发，结果可能不完整。'
+                    : runHealthStatus === 'failed'
+                      ? '旧日志：运行失败，请查看错误明细。'
+                      : runHealthStatus === 'healthy_low_volume'
+                        ? '旧日志：运行成功，但没有筛选出候选内容。'
+                        : '旧日志：运行成功；该记录尚未保存新版健康详情。'
+              );
               const platformErrorMessages = (Array.isArray(log.platformErrors) ? log.platformErrors : [])
                 .map((item: any) => {
                   const platform = String(item?.platform || '').trim();
@@ -1007,14 +1042,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       {log.createdAt ? new Date(log.createdAt).toLocaleString() : '未知时间'} · {log.triggerSource}
                     </div>
                     <div className={`text-[11px] px-2 py-0.5 rounded-full border ${
-                      isSkipped
+                      runHealthStatus === 'skipped' || runHealthStatus === 'truncated' || runHealthStatus === 'partial_failure'
                         ? 'border-amber-500/50 text-amber-300 bg-amber-500/10'
-                        : log.success
+                        : runHealthStatus === 'healthy' || runHealthStatus === 'healthy_low_volume'
                           ? 'border-emerald-500/50 text-emerald-300 bg-emerald-500/10'
                           : 'border-rose-500/50 text-rose-300 bg-rose-500/10'
                     }`}>
-                      {isSkipped ? 'SKIPPED（已跳过）' : log.success ? 'SUCCESS' : 'FAILED'}
+                      {runHealthLabels[runHealthStatus]}
                     </div>
+                  </div>
+                  <div className="mt-1 text-xs text-gray-300">
+                    抓取状态：{runHealthLabels[runHealthStatus]}。{runHealthExplanation}
                   </div>
                   {isSkipped ? (
                     <div className="mt-1 text-xs text-amber-200/90">

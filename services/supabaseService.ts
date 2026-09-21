@@ -318,6 +318,7 @@ const dbToCronRunLog = (row: any): CronRunLog => ({
     platformTotals: row.platform_totals || {},
     platformErrors: Array.isArray(row.platform_errors) ? row.platform_errors : [],
     resultSummary: row.result_summary || {},
+    runHealth: row.result_summary?.runHealth || row.run_health || undefined,
     runtimeMs: Number(row.runtime_ms || 0),
     runtimeGuardTriggered: Boolean(row.runtime_guard_triggered),
     success: Boolean(row.success),
