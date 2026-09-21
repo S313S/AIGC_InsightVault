@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { LayoutGrid, Plus, Search, Database, Menu, MessageSquare, Activity, Home, Folder, X, Check, MoreVertical, Edit2, Trash2, CheckSquare, FolderPlus, Sparkles, Loader2, Settings, LogOut } from './components/Icons';
 import { Card } from './components/Card';
 import { DetailModal } from './components/DetailModal';
@@ -9,7 +9,7 @@ import { MonitoringView } from './components/MonitoringView';
 import { DashboardView } from './components/DashboardView';
 import { SettingsModal } from './components/SettingsModal';
 import { INITIAL_DATA, INITIAL_TASKS, TRENDING_DATA, INITIAL_COLLECTIONS } from './mockData';
-import { AuthUser, KnowledgeCard, EditorialTopic, FilterState, TrackingTask, Collection, ContentType, Platform, SocialSearchResult, TaskStatus, XhsMissingTokenItem, XhsTokenConfig } from './types';
+import { AuthUser, KnowledgeCard, EditorialTopic, TopicFeedbackAction, FilterState, TrackingTask, Collection, ContentType, Platform, SocialSearchResult, TaskStatus, XhsMissingTokenItem, XhsTokenConfig } from './types';
 import { isSupabaseConnected } from './services/supabaseClient';
 import * as db from './services/supabaseService';
 import * as auth from './services/authService';
@@ -145,6 +145,19 @@ const toOfflinePublicCollection = (collection: Collection): Collection => ({
   isPublic: true,
 });
 
+const updateTopicFeedback = (
+  values: EditorialTopic[],
+  topicId: string,
+  action: TopicFeedbackAction,
+  enabled: boolean
+) => values.map((topic) => {
+  if (topic.id !== topicId) return topic;
+  const feedback = new Set(topic.feedback || []);
+  if (enabled) feedback.add(action);
+  else feedback.delete(action);
+  return { ...topic, feedback: Array.from(feedback) };
+});
+
 const App: React.FC = () => {
   const [bootstrapRecord] = useState(() => readBootstrapSnapshot());
   const bootstrapSnapshot: LoadedSnapshot = bootstrapRecord?.snapshot || EMPTY_SNAPSHOT;
@@ -182,6 +195,7 @@ const App: React.FC = () => {
   const cardsRef = useRef<KnowledgeCard[]>(bootstrapSnapshot.cards);
   const trendingRef = useRef<KnowledgeCard[]>(bootstrapSnapshot.trending);
   const topicsRef = useRef<EditorialTopic[]>(bootstrapSnapshot.topics);
+  const topicFeedbackRequestsRef = useRef(new Set<string>());
   const lastCollectedAtRef = useRef<string | null>(bootstrapRecord?.collectedAt || null);
   const lastSyncedAtRef = useRef<string | null>(bootstrapRecord?.syncedAt || null);
   const collectionsRef = useRef<Collection[]>(bootstrapSnapshot.collections);
@@ -231,7 +245,7 @@ const App: React.FC = () => {
   const userCanMutate = (ownerId?: string) =>
     canMutateResource(currentUser?.id || null, ownerId || null);
 
-  const openLoginModal = () => setIsLoginModalOpen(true);
+  const openLoginModal = useCallback(() => setIsLoginModalOpen(true), []);
 
   const loadData = async (
     authUser: AuthUser | null,
@@ -1431,6 +1445,74 @@ const App: React.FC = () => {
     }
   };
 
+  const persistTopicFeedbackSnapshot = useCallback((ownerId: string, nextTopics: EditorialTopic[]) => {
+    if (currentUserRef.current?.id !== ownerId) return false;
+    const nextSnapshot: LoadedSnapshot = {
+      cards: cardsRef.current,
+      trending: trendingRef.current,
+      topics: nextTopics,
+      collections: collectionsRef.current,
+      tasks: tasksRef.current,
+    };
+    topicsRef.current = nextTopics;
+    setTopics(nextTopics);
+    lastSuccessfulDataRef.current = nextSnapshot;
+    writeStoredSnapshot(ownerId, nextSnapshot, {
+      collectedAt: lastCollectedAtRef.current,
+      syncedAt: lastSyncedAtRef.current,
+    });
+    return true;
+  }, []);
+
+  const handleToggleTopicFeedback = useCallback(async (
+    topicId: string,
+    action: TopicFeedbackAction,
+    enabled: boolean
+  ): Promise<boolean> => {
+    const ownerId = currentUserRef.current?.id;
+    if (!ownerId) {
+      openLoginModal();
+      return false;
+    }
+
+    const target = topicsRef.current.find((topic) => topic.id === topicId);
+    if (!target || target.ownerId !== ownerId) {
+      window.alert('只能标记你自己的话题。');
+      return false;
+    }
+
+    const previousEnabled = target.feedback?.includes(action) ?? false;
+    if (previousEnabled === enabled) return true;
+    const requestKey = `${topicId}:${action}`;
+    if (topicFeedbackRequestsRef.current.has(requestKey)) return true;
+    topicFeedbackRequestsRef.current.add(requestKey);
+    const optimisticTopics = updateTopicFeedback(topicsRef.current, topicId, action, enabled);
+    persistTopicFeedbackSnapshot(ownerId, optimisticTopics);
+
+    let saved = false;
+    try {
+      saved = enabled
+        ? await db.saveTopicFeedback(topicId, action)
+        : await db.removeTopicFeedback(topicId, action);
+    } catch (error) {
+      console.error('Topic feedback update failed:', error);
+    }
+
+    topicFeedbackRequestsRef.current.delete(requestKey);
+    if (saved) return true;
+    if (currentUserRef.current?.id === ownerId) {
+      const rollbackTopicFeedback = updateTopicFeedback(
+        topicsRef.current,
+        topicId,
+        action,
+        previousEnabled
+      );
+      persistTopicFeedbackSnapshot(ownerId, rollbackTopicFeedback);
+      window.alert('操作未保存，已恢复原状态。');
+    }
+    return false;
+  }, [openLoginModal, persistTopicFeedbackSnapshot]);
+
   const handleSaveTrendingToVault = async (card: KnowledgeCard) => {
     if (!userCanMutate(card.ownerId)) {
       window.alert(isAuthenticated ? '只能保存或移动你自己的热点内容。' : '请先登录后再操作。');
@@ -2186,7 +2268,9 @@ const App: React.FC = () => {
               <DashboardView
                 tasks={tasks}
                 trendingItems={trending}
+                topics={topics}
                 isInitialLoading={isLoading}
+                isTopicsLoading={isTopicsLoading}
                 isSyncing={isSyncing}
                 lastCollectedAt={lastCollectedAt}
                 lastSyncedAt={lastSyncedAt}
@@ -2196,6 +2280,8 @@ const App: React.FC = () => {
                 onSaveToVault={handleSaveTrendingToVault}
                 onRepairSourceUrl={handleRepairTrendingSourceUrl}
                 canManageTasks={canManageData}
+                canGiveTopicFeedback={Boolean(currentUser)}
+                onToggleTopicFeedback={handleToggleTopicFeedback}
                 canMutateTrendingItem={(card) => userCanMutate(card.ownerId)}
                 onRequireLogin={openLoginModal}
               />

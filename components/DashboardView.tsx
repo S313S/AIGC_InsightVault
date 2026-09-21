@@ -1,17 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { KnowledgeCard, TrackingTask, Platform, TaskStatus } from '../types';
-import { Flame, ArrowRight, Save, ExternalLink, Activity, LayoutGrid, Clock, Heart, TrendingUp, Bookmark, Sparkles } from './Icons';
+import { EditorialTopic, KnowledgeCard, TrackingTask, Platform, TopicFeedbackAction } from '../types';
+import { Flame, ArrowRight, Save, Activity, LayoutGrid, Heart, TrendingUp, Bookmark, Sparkles } from './Icons';
 import { hasPromptEvidence } from '../shared/promptTagging.js';
 import { fallbackCoverFromSeed, isRenderableCoverUrl, normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
 import { hasXiaohongshuXsecToken, isXiaohongshuUrl, normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
 import { getSourceUrlOpenBlockReason, resolveOpenableSourceUrl } from '../shared/sourceUrls.js';
 import { getCollectionFreshness, getCollectionLabel } from '../shared/collectionFreshness.js';
 import { getSyncLabel } from '../shared/syncFreshness.js';
+import { TopicRadarView } from './TopicRadarView';
 
 interface DashboardViewProps {
     tasks: TrackingTask[];
     trendingItems: KnowledgeCard[];
+    topics: EditorialTopic[];
     isInitialLoading: boolean;
+    isTopicsLoading: boolean;
     isSyncing: boolean;
     lastCollectedAt: string | null;
     lastSyncedAt: string | null;
@@ -21,6 +24,12 @@ interface DashboardViewProps {
     onSaveToVault: (card: KnowledgeCard) => void;
     onRepairSourceUrl: (card: KnowledgeCard) => Promise<{ updated: boolean; message: string }>;
     canManageTasks?: boolean;
+    canGiveTopicFeedback: boolean;
+    onToggleTopicFeedback: (
+        topicId: string,
+        action: TopicFeedbackAction,
+        enabled: boolean
+    ) => Promise<boolean>;
     canMutateTrendingItem?: (card: KnowledgeCard) => boolean;
     onRequireLogin?: () => void;
 }
@@ -28,7 +37,9 @@ interface DashboardViewProps {
 export const DashboardView: React.FC<DashboardViewProps> = ({
     tasks,
     trendingItems,
+    topics,
     isInitialLoading,
+    isTopicsLoading,
     isSyncing,
     lastCollectedAt,
     lastSyncedAt,
@@ -38,6 +49,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     onSaveToVault,
     onRepairSourceUrl,
     canManageTasks = false,
+    canGiveTopicFeedback,
+    onToggleTopicFeedback,
     canMutateTrendingItem = () => false,
     onRequireLogin
 }) => {
@@ -52,6 +65,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     });
     const syncLabel = getSyncLabel({ isSyncing, lastSyncedAt });
     const [showAllTrending, setShowAllTrending] = useState(false);
+    const [rawPoolOpen, setRawPoolOpen] = useState(false);
     const [repairingCardId, setRepairingCardId] = useState<string | null>(null);
 
     useEffect(() => {
@@ -92,33 +106,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
     // 1. Hot Picks Data (Top 6 items for the 2x3 grid)
     const hotPicks = uniqueTrending.slice(0, 6);
-
-    const sortedByHot = [...uniqueTrending].sort((a, b) => b.metrics.likes - a.metrics.likes);
-    const usedIds = new Set<string>();
-
-    const pickRankings = (tag: string) => {
-        const primary = sortedByHot.filter(item => item.tags.includes(tag) && !usedIds.has(item.id));
-        const selected: KnowledgeCard[] = [];
-        for (const item of primary) {
-            if (selected.length >= 3) break;
-            selected.push(item);
-            usedIds.add(item.id);
-        }
-        if (selected.length < 3) {
-            const fallback = sortedByHot.filter(item => !usedIds.has(item.id));
-            for (const item of fallback) {
-                if (selected.length >= 3) break;
-                selected.push(item);
-                usedIds.add(item.id);
-            }
-        }
-        return selected;
-    };
-
-    // 2. Categorized Rankings Data - Limited to Top 3 as requested
-    const imageGenRankings = pickRankings('Image Gen');
-    const videoGenRankings = pickRankings('Video Gen');
-    const vibeCodingRankings = pickRankings('Vibe Coding');
 
     const formatLikes = (count: number) => {
         return count >= 1000 ? (count / 1000).toFixed(1) + 'k' : count;
@@ -169,73 +156,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             setRepairingCardId(null);
         }
     };
-
-    const RankingItem = ({ item, rank }: { item: KnowledgeCard, rank: number }) => (
-        <div
-            onClick={() => openSourceUrl(item.sourceUrl)}
-            className="flex items-center gap-4 p-3 hover:bg-white/5 rounded-xl transition-colors group cursor-pointer border-b border-[#1e3a5f]/30 last:border-0"
-        >
-            {/* Rank Number */}
-            <div className={`
-            flex-shrink-0 w-6 text-center font-bold text-lg italic
-            ${rank === 1 ? 'text-red-400' : rank === 2 ? 'text-orange-400' : rank === 3 ? 'text-amber-400' : 'text-gray-500'}
-        `}>
-                {rank}
-            </div>
-
-            {/* Thumbnail */}
-            <div className="w-12 h-12 bg-[#1e3a5f]/50 rounded-lg overflow-hidden flex-shrink-0 relative">
-                <img
-                    src={safeCover(item)}
-                    alt={item.title}
-                    referrerPolicy="no-referrer"
-                    onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.src = buildFallbackCover(item);
-                    }}
-                    className="w-full h-full object-cover"
-                />
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-medium text-gray-200 truncate pr-2 group-hover:text-indigo-400 transition-colors">
-                    {item.title}
-                </h4>
-                <div className="flex items-center gap-2 mt-0.5">
-                    <span className={`text-[10px] px-1.5 rounded-sm font-medium bg-[#1e3a5f]/50 text-gray-400`}>
-                        {item.platform}
-                    </span>
-                    <span className="text-[10px] text-gray-500 truncate">
-                        @{item.author}
-                    </span>
-                </div>
-            </div>
-
-            {/* Hot Metric */}
-            <div className="flex-shrink-0 flex flex-col items-end gap-1">
-                <div className="flex items-center gap-1 text-red-400 font-bold text-sm">
-                    <Flame size={12} fill="currentColor" />
-                    {formatLikes(item.metrics.likes)}
-                </div>
-                <span className="text-[10px] text-gray-500">热度</span>
-                {item.platform === Platform.Xiaohongshu && (
-                    <button
-                        onClick={(e) => handleRepairClick(e, item)}
-                        disabled={repairingCardId === item.id}
-                        className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                            repairingCardId === item.id
-                                ? 'border-gray-600 text-gray-500 cursor-not-allowed'
-                                : 'border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/20'
-                        }`}
-                        title="打不开时点击修复链接"
-                    >
-                        {repairingCardId === item.id ? '修复中...' : '🔄 修复'}
-                    </button>
-                )}
-            </div>
-        </div>
-    );
 
     return (
         <div className="flex flex-col h-full overflow-y-auto space-y-8 pb-12">
@@ -296,6 +216,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
             </div>
 
+            <TopicRadarView
+                topics={topics}
+                isTopicsLoading={isTopicsLoading}
+                freshnessNow={freshnessNow}
+                canGiveFeedback={canGiveTopicFeedback}
+                onToggleFeedback={onToggleTopicFeedback}
+            />
+
+            {/* Raw cards stay available as evidence, but do not displace editorial lanes. */}
+            <section className="rounded-2xl border border-[#1e3a5f]/40 bg-[#0d1526]/35 p-4 sm:p-5">
+                <button
+                    type="button"
+                    aria-expanded={rawPoolOpen}
+                    aria-controls="raw-post-pool"
+                    onClick={() => setRawPoolOpen((open) => !open)}
+                    className="flex w-full items-center justify-between gap-4 text-left"
+                >
+                    <span>
+                        <span className="block text-base font-bold text-gray-100">原始帖子池</span>
+                        <span className="mt-1 block text-xs text-gray-500">保留 {uniqueTrending.length} 条原始证据，按需展开核对</span>
+                    </span>
+                    <span className="text-sm font-medium text-indigo-300">{rawPoolOpen ? '收起' : '展开'}</span>
+                </button>
+
+                <div id="raw-post-pool">
+                {rawPoolOpen && (
+                    <div className="mt-6 space-y-8">
             {/* 2. Hot Picks (Vertical Cards 2 Rows x 3 Cols) */}
             <div>
                 <div className="flex items-center justify-between mb-5">
@@ -444,64 +391,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 )}
             </div>
 
-            {/* 3. Rankings Lists (3 Columns now) */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-                {/* Image Gen Ranking */}
-                <div className="bg-[#0d1526]/60 backdrop-blur-md rounded-2xl border border-[#1e3a5f]/40 p-5 shadow-sm">
-                    <div className="flex items-center justify-between mb-4 pb-2 border-b border-[#1e3a5f]/40">
-                        <div className="flex items-center gap-2">
-                            <div className="w-1 h-5 bg-indigo-500 rounded-full"></div>
-                            <h3 className="font-bold text-gray-100">Image Gen · 热门精选</h3>
-                        </div>
-                        <span className="text-xs text-gray-500">按热度</span>
                     </div>
-
-                    <div className="space-y-1">
-                        {imageGenRankings.map((item, idx) => (
-                            <RankingItem key={item.id} item={item} rank={idx + 1} />
-                        ))}
-                        {imageGenRankings.length === 0 && <div className="text-center py-8 text-gray-500 text-sm">暂无数据</div>}
-                    </div>
+                )}
                 </div>
-
-                {/* Video Gen Ranking */}
-                <div className="bg-[#0d1526]/60 backdrop-blur-md rounded-2xl border border-[#1e3a5f]/40 p-5 shadow-sm">
-                    <div className="flex items-center justify-between mb-4 pb-2 border-b border-[#1e3a5f]/40">
-                        <div className="flex items-center gap-2">
-                            <div className="w-1 h-5 bg-purple-500 rounded-full"></div>
-                            <h3 className="font-bold text-gray-100">Video Gen · 热门精选</h3>
-                        </div>
-                        <span className="text-xs text-gray-500">按热度</span>
-                    </div>
-
-                    <div className="space-y-1">
-                        {videoGenRankings.map((item, idx) => (
-                            <RankingItem key={item.id} item={item} rank={idx + 1} />
-                        ))}
-                        {videoGenRankings.length === 0 && <div className="text-center py-8 text-gray-500 text-sm">暂无数据</div>}
-                    </div>
-                </div>
-
-                {/* Vibe Coding Ranking (New) */}
-                <div className="bg-[#0d1526]/60 backdrop-blur-md rounded-2xl border border-[#1e3a5f]/40 p-5 shadow-sm">
-                    <div className="flex items-center justify-between mb-4 pb-2 border-b border-[#1e3a5f]/40">
-                        <div className="flex items-center gap-2">
-                            <div className="w-1 h-5 bg-emerald-500 rounded-full"></div>
-                            <h3 className="font-bold text-gray-100">Vibe Coding · 热门精选</h3>
-                        </div>
-                        <span className="text-xs text-gray-500">按热度</span>
-                    </div>
-
-                    <div className="space-y-1">
-                        {vibeCodingRankings.map((item, idx) => (
-                            <RankingItem key={item.id} item={item} rank={idx + 1} />
-                        ))}
-                        {vibeCodingRankings.length === 0 && <div className="text-center py-8 text-gray-500 text-sm">暂无数据</div>}
-                    </div>
-                </div>
-
-            </div>
+            </section>
 
             {/* All Trending Modal */}
             {showAllTrending && (

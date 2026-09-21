@@ -43,7 +43,11 @@ import {
   Bell,
   Shield,
   Mail,
-  Camera
+  Camera,
+  ChevronDown,
+  BookOpen,
+  Newspaper,
+  Zap
 } from 'lucide-react';
 
 export {
@@ -91,5 +95,9 @@ export {
   Bell,
   Shield,
   Mail,
-  Camera
+  Camera,
+  ChevronDown,
+  BookOpen,
+  Newspaper,
+  Zap
 };
