@@ -26,9 +26,11 @@ export const classifyMonitorRun = ({
     const totals = platformTotals?.[platform] || {};
     return totals.completed === true || Number(totals.completedCalls || 0) > 0;
   });
+  const realErrors = (Array.isArray(platformErrors) ? platformErrors : [])
+    .filter((item) => String(item?.error || '').trim().length > 0);
   const intendedSet = new Set(intended);
   const failedPlatforms = uniquePlatforms(
-    (Array.isArray(platformErrors) ? platformErrors : [])
+    realErrors
       .map((item) => item?.platform)
       .filter((platform) => intendedSet.has(normalizePlatform(platform)))
   );
@@ -51,7 +53,7 @@ export const classifyMonitorRun = ({
     };
   }
 
-  if (failed || (failedPlatforms.length > 0 && completedPlatforms.length === 0)) {
+  if (failed || (realErrors.length > 0 && completedPlatforms.length === 0)) {
     return {
       status: 'failed',
       completedPlatforms,

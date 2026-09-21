@@ -76,6 +76,36 @@ test('classifies a run where no intended platform completed and errors were reco
   assert.match(result.explanation, /全部失败/);
 });
 
+test('classifies a system error with no completed platform as failed', () => {
+  const result = classify({
+    platformTotals: {
+      twitter: { fetched: 0, output: 0, completed: false },
+      xiaohongshu: { fetched: 0, output: 0, completed: false }
+    },
+    candidateCount: 0,
+    platformErrors: [{ platform: 'system', error: 'boom' }]
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.deepEqual(result.completedPlatforms, []);
+  assert.deepEqual(result.failedPlatforms, []);
+  assert.match(result.explanation, /运行失败/);
+});
+
+test('ignores empty error records when classifying a completed run', () => {
+  const result = classify({
+    candidateCount: 2,
+    platformErrors: [
+      {},
+      { platform: 'system', error: '   ' },
+      { platform: 'twitter' }
+    ]
+  });
+
+  assert.equal(result.status, 'healthy');
+  assert.deepEqual(result.failedPlatforms, []);
+});
+
 test('runtime guard takes precedence over platform completion and errors', () => {
   const result = classify({
     platformTotals: {
