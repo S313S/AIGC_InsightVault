@@ -42,6 +42,14 @@ import { mergeLoadedSnapshot } from './shared/loadMerge.js';
 import { resolveLoadNotice } from './shared/loadNotice.js';
 import { applyCollectionCounts } from './shared/collectionCounts.js';
 import { countNewItemIds } from './shared/syncFreshness.js';
+import {
+  buildCollectionCardCacheKey,
+  collectionCardCache,
+} from './shared/collectionCardCache.js';
+import {
+  createCollectionCardRequestPool,
+  refreshCollectionCardsCacheFirst,
+} from './shared/collectionCardLoader.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 type CollectionLoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
@@ -181,8 +189,10 @@ const App: React.FC = () => {
   const [collectionCards, setCollectionCards] = useState<KnowledgeCard[]>([]);
   const [collectionLoadStatus, setCollectionLoadStatus] = useState<CollectionLoadStatus>('idle');
   const [collectionLoadError, setCollectionLoadError] = useState('');
+  const [isCollectionRefreshing, setIsCollectionRefreshing] = useState(false);
   const collectionLoadRequestIdRef = useRef(0);
   const collectionLoadControllerRef = useRef<AbortController | null>(null);
+  const collectionRequestPoolRef = useRef(createCollectionCardRequestPool());
 
   // Collection Creation State (Inline UI)
   const [isCreatingCollection, setIsCreatingCollection] = useState(false);
@@ -881,53 +891,137 @@ const App: React.FC = () => {
     return collectionAliasMap[collectionId] || [collectionId];
   };
 
+  const getCollectionCacheOwnerId = () =>
+    currentUserRef.current?.id || loadedOwnerIdRef.current || null;
+
+  const queryCollectionCards = async (
+    ownerId: string | null,
+    aliasIds: string[]
+  ): Promise<KnowledgeCard[]> => {
+    const requestKey = buildCollectionCardCacheKey(ownerId, aliasIds);
+    return collectionRequestPoolRef.current.run(requestKey, async () => {
+      if (!isSupabaseConnected()) {
+        return cardsRef.current.filter(card => card.collections?.some(id => aliasIds.includes(id)));
+      }
+
+      const result = await withTimeoutRetryResult(
+        signal => db.getKnowledgeCardsByCollectionIds(aliasIds, signal),
+        {
+          attemptTimeouts: [12000, 18000],
+          retryDelayMs: 500,
+        },
+        []
+      );
+      if (!result.ok) {
+        throw result.reason instanceof Error
+          ? result.reason
+          : new Error(String(result.reason || 'Collection load failed'));
+      }
+      return result.value;
+    });
+  };
+
+  const invalidateCollectionCardCaches = () => {
+    void collectionCardCache.clearForOwner(getCollectionCacheOwnerId());
+  };
+
   const loadCollectionCards = async (collectionId: string) => {
     const requestId = ++collectionLoadRequestIdRef.current;
     const aliasIds = getCollectionAliasIds(collectionId);
+    const ownerId = getCollectionCacheOwnerId();
     collectionLoadControllerRef.current?.abort();
     const loadController = new AbortController();
     collectionLoadControllerRef.current = loadController;
-    setCollectionCards([]);
     setCollectionLoadError('');
-    setCollectionLoadStatus('loading');
+    const memoryRecord = collectionCardCache.peek(ownerId, aliasIds);
+    if (memoryRecord) {
+      setCollectionCards(memoryRecord.cards);
+      setCollectionLoadStatus('loaded');
+      setIsCollectionRefreshing(true);
+    } else {
+      setCollectionCards([]);
+      setCollectionLoadStatus('loading');
+      setIsCollectionRefreshing(false);
+    }
 
     try {
-      let loadedCards: KnowledgeCard[];
-      if (isSupabaseConnected()) {
-        const result = await withTimeoutRetryResult(
-          signal => db.getKnowledgeCardsByCollectionIds(aliasIds, signal),
-          {
-            attemptTimeouts: [12000, 18000],
-            retryDelayMs: 500,
-            signal: loadController.signal,
-          },
-          []
-        );
-        if (requestId !== collectionLoadRequestIdRef.current || loadController.signal.aborted) return;
-        if (!result.ok) {
-          throw result.reason instanceof Error
-            ? result.reason
-            : new Error(String(result.reason || 'Collection load failed'));
-        }
-        loadedCards = result.value;
-      } else {
-        loadedCards = cardsRef.current.filter(card => card.collections?.some(id => aliasIds.includes(id)));
-      }
+      const result = await refreshCollectionCardsCacheFirst({
+        cache: collectionCardCache,
+        userId: ownerId,
+        collectionIds: aliasIds,
+        loadFresh: () => queryCollectionCards(ownerId, aliasIds),
+        onCacheHit: (cachedCards: KnowledgeCard[]) => {
+          if (requestId !== collectionLoadRequestIdRef.current || loadController.signal.aborted) return;
+          setCollectionCards(cachedCards);
+          setCollectionLoadStatus('loaded');
+          setIsCollectionRefreshing(true);
+        },
+        onFresh: (freshCards: KnowledgeCard[]) => {
+          if (requestId !== collectionLoadRequestIdRef.current || loadController.signal.aborted) return;
+          setCollectionCards(freshCards);
+          setCollectionLoadStatus('loaded');
+          setCollectionLoadError('');
+          setIsCollectionRefreshing(false);
+        },
+      });
 
-      if (requestId !== collectionLoadRequestIdRef.current) return;
-      setCollectionCards(loadedCards);
-      setCollectionLoadStatus('loaded');
+      if (requestId !== collectionLoadRequestIdRef.current || loadController.signal.aborted) return;
+      if (result.source === 'cache') {
+        console.error('Failed to refresh collection cards:', result.refreshError);
+        setCollectionLoadError('后台更新失败，当前显示的是缓存内容。');
+        setCollectionLoadStatus('loaded');
+      }
     } catch (error) {
-      if (requestId !== collectionLoadRequestIdRef.current) return;
+      if (requestId !== collectionLoadRequestIdRef.current || loadController.signal.aborted) return;
       console.error('Failed to load collection cards:', error);
       setCollectionLoadError('收藏夹内容加载失败，请稍后重试。');
       setCollectionLoadStatus('error');
     } finally {
+      if (requestId === collectionLoadRequestIdRef.current) {
+        setIsCollectionRefreshing(false);
+      }
       if (collectionLoadControllerRef.current === loadController) {
         collectionLoadControllerRef.current = null;
       }
     }
   };
+
+  const prefetchCollectionCards = async (collectionId: string) => {
+    const aliasIds = getCollectionAliasIds(collectionId);
+    const ownerId = getCollectionCacheOwnerId();
+    if (collectionCardCache.peek(ownerId, aliasIds)) return;
+
+    const persisted = await collectionCardCache.read(ownerId, aliasIds);
+    if (persisted) return;
+
+    try {
+      const freshCards = await queryCollectionCards(ownerId, aliasIds);
+      await collectionCardCache.write(ownerId, aliasIds, freshCards);
+    } catch {
+      // Prefetching is optional; the foreground loader retains retry and error handling.
+    }
+  };
+
+  useEffect(() => {
+    if (!isSupabaseConnected() || displayCollections.length === 0) return;
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const prefetchVisibleCollections = () => {
+      displayCollections.slice(0, 3).forEach(collection => {
+        void prefetchCollectionCards(collection.id);
+      });
+    };
+
+    if (idleWindow.requestIdleCallback) {
+      const handle = idleWindow.requestIdleCallback(prefetchVisibleCollections, { timeout: 2000 });
+      return () => idleWindow.cancelIdleCallback?.(handle);
+    }
+
+    const handle = window.setTimeout(prefetchVisibleCollections, 300);
+    return () => window.clearTimeout(handle);
+  }, [displayCollections, currentUser?.id]);
 
   const closeCollectionView = () => {
     collectionLoadRequestIdRef.current += 1;
@@ -937,6 +1031,7 @@ const App: React.FC = () => {
     setCollectionCards([]);
     setCollectionLoadStatus('idle');
     setCollectionLoadError('');
+    setIsCollectionRefreshing(false);
   };
 
   const adjustCollectionItemCounts = (collectionIds: string[] | undefined, delta: number) => {
@@ -1114,6 +1209,7 @@ const App: React.FC = () => {
       if (success) {
         setCards(prev => prev.filter(c => c.id !== cardId));
         setCollectionCards(prev => prev.filter(c => c.id !== cardId));
+        invalidateCollectionCardCaches();
         adjustCollectionItemCounts(target?.collections, -1);
         setChatScope(prev => ({ ...prev, cards: prev.cards.filter(c => c.id !== cardId) }));
         setIsDetailLoading(false);
@@ -1124,6 +1220,7 @@ const App: React.FC = () => {
       // Offline mode deletion
       setCards(prev => prev.filter(c => c.id !== cardId));
       setCollectionCards(prev => prev.filter(c => c.id !== cardId));
+      invalidateCollectionCardCaches();
       adjustCollectionItemCounts(target?.collections, -1);
       setChatScope(prev => ({ ...prev, cards: prev.cards.filter(c => c.id !== cardId) }));
       setIsDetailLoading(false);
@@ -1145,6 +1242,7 @@ const App: React.FC = () => {
     };
 
     setCards(prev => [ownedCard, ...prev]);
+    invalidateCollectionCardCaches();
     adjustCollectionItemCounts(ownedCard.collections, 1);
     if (isSupabaseConnected()) {
       await db.saveCard(ownedCard, false);
@@ -1301,6 +1399,7 @@ const App: React.FC = () => {
     // Add to main cards list
     const savedCard = { ...card, id: isSupabaseConnected() ? card.id : Date.now().toString() };
     setCards(prev => [savedCard, ...prev]);
+    invalidateCollectionCardCaches();
     adjustCollectionItemCounts(savedCard.collections, 1);
     // Remove from trending list
     setTrending(prev => prev.filter(c => c.id !== card.id));
@@ -1336,6 +1435,7 @@ const App: React.FC = () => {
       || selectedCard;
     syncCollectionItemCountDiff(previousCard?.collections, updatedCard.collections);
     syncLoadedCard(updatedCard);
+    invalidateCollectionCardCaches();
 
     if (isSupabaseConnected()) {
       await db.updateCard(updatedCard);
@@ -1435,6 +1535,7 @@ const App: React.FC = () => {
     const aliasIds = getCollectionAliasIds(collectionId);
     if (window.confirm("确定要删除这个收藏夹吗？其中内容不会被删除。")) {
       setCollections(prev => prev.filter(c => !aliasIds.includes(c.id)));
+      invalidateCollectionCardCaches();
       if (currentCollectionId && aliasIds.includes(currentCollectionId)) {
         closeCollectionView();
       }
@@ -1540,6 +1641,7 @@ const App: React.FC = () => {
 
       setCollectionCards(nextCollectionCards);
       setCards(prev => prev.map(card => updatedById.get(card.id) || card));
+      invalidateCollectionCardCaches();
       for (const updatedCard of updatedCards) {
         const previousCard = collectionCards.find(card => card.id === updatedCard.id);
         const removedIds = (previousCard?.collections || [])
@@ -1577,6 +1679,7 @@ const App: React.FC = () => {
     });
 
     setCards(nextCards);
+    invalidateCollectionCardCaches();
     if (updatedCards.length > 0) {
       adjustCollectionItemCounts([targetCollectionId], updatedCards.length);
     }
@@ -1729,6 +1832,8 @@ const App: React.FC = () => {
                 <div
                   key={col.id}
                   onClick={() => handleCollectionClick(col.id)}
+                  onMouseEnter={() => void prefetchCollectionCards(col.id)}
+                  onFocus={() => void prefetchCollectionCards(col.id)}
                   className={`group relative flex items-start gap-3 p-2 -mx-2 rounded-xl cursor-pointer transition-colors ${currentCollectionId === col.id ? 'bg-indigo-500/20' : 'hover:bg-white/5'}`}
                 >
                   <div className="w-10 h-10 rounded-lg bg-[#1e3a5f]/50 overflow-hidden flex-shrink-0 border border-[#1e3a5f]/50">
@@ -1986,7 +2091,15 @@ const App: React.FC = () => {
                     </div>
                     <div>
                       <h2 className="text-lg font-bold text-gray-100">{activeCollectionName}</h2>
-                      <p className="text-xs text-gray-500">共 {activeCollectionItemCount} 条</p>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+                        <span>共 {activeCollectionItemCount} 条</span>
+                        {isCollectionRefreshing && (
+                          <span className="text-indigo-400">正在后台更新...</span>
+                        )}
+                        {!isCollectionRefreshing && collectionLoadStatus === 'loaded' && collectionLoadError && (
+                          <span className="text-amber-400">{collectionLoadError}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
 

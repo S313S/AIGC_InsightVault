@@ -46,13 +46,15 @@ test('collection counts start after collections resolve while tasks stay paralle
 
 test('collection card loading participates in cancellation and retry recovery', () => {
   const serviceBody = extractFunctionBody(serviceSource, 'getKnowledgeCardsByCollectionIds');
+  const queryBody = extractBetween(appSource, '  const queryCollectionCards =', '  const invalidateCollectionCardCaches =');
   const appBody = extractBetween(appSource, '  const loadCollectionCards =', '  const closeCollectionView =');
 
   assert.equal(serviceBody.includes('signal?: AbortSignal'), true);
   assert.equal(serviceBody.includes('.abortSignal(signal)'), true);
   assert.match(appSource, /collectionLoadControllerRef/);
-  assert.match(appBody, /withTimeoutRetryResult/);
-  assert.match(appBody, /db\.getKnowledgeCardsByCollectionIds\(aliasIds, signal\)/);
+  assert.match(queryBody, /withTimeoutRetryResult/);
+  assert.match(queryBody, /db\.getKnowledgeCardsByCollectionIds\(aliasIds, signal\)/);
+  assert.match(appBody, /loadController\.signal/);
 });
 
 test('collection view loads cards into independent request-guarded state', () => {
@@ -68,6 +70,38 @@ test('collection view distinguishes loading, failure, retry, and confirmed empty
   assert.match(appSource, /收藏夹内容加载失败/);
   assert.match(appSource, /重新加载/);
   assert.match(appSource, /collectionLoadStatus === 'loaded'/);
+});
+
+test('collection view renders cached cards before background revalidation completes', () => {
+  const appBody = extractBetween(appSource, '  const loadCollectionCards =', '  const closeCollectionView =');
+
+  assert.match(appSource, /collectionCardCache/);
+  assert.match(appSource, /refreshCollectionCardsCacheFirst/);
+  assert.match(appSource, /const \[isCollectionRefreshing, setIsCollectionRefreshing\]/);
+  assert.match(appBody, /onCacheHit/);
+  assert.match(appBody, /setCollectionLoadStatus\('loaded'\)/);
+  assert.match(appSource, /正在后台更新/);
+});
+
+test('collection requests are prefetched and deduplicated', () => {
+  const queryBody = extractBetween(appSource, '  const queryCollectionCards =', '  const invalidateCollectionCardCaches =');
+  assert.match(appSource, /createCollectionCardRequestPool/);
+  assert.match(appSource, /const prefetchCollectionCards =/);
+  assert.match(appSource, /requestIdleCallback/);
+  assert.match(appSource, /onMouseEnter=\{\(\) => void prefetchCollectionCards\(col\.id\)\}/);
+  assert.doesNotMatch(queryBody, /signal: parentSignal/);
+});
+
+test('collection mutations invalidate owner-scoped cached lists', () => {
+  assert.match(appSource, /const invalidateCollectionCardCaches =/);
+  assert.match(appSource, /collectionCardCache\.clearForOwner/);
+
+  const deleteCardBody = extractBetween(appSource, '  const handleDeleteCard =', '  const handleAddCard =');
+  const updateCardBody = extractBetween(appSource, '  const handleUpdateCard =', '  const handleCollectionClick =');
+  const removeSelectedBody = extractBetween(appSource, '  const handleRemoveSelectedFromCollection =', '  const handleBatchAddToCollection =');
+  assert.match(deleteCardBody, /invalidateCollectionCardCaches/);
+  assert.match(updateCardBody, /invalidateCollectionCardCaches/);
+  assert.match(removeSelectedBody, /invalidateCollectionCardCaches/);
 });
 
 test('collection filtering uses independently loaded collection cards', () => {
