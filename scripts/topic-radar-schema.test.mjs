@@ -16,23 +16,28 @@ const compact = (value) => value
 
 const sql = compact(schema);
 
-const getPolicy = (name) => {
-  const marker = `create policy "${name}"`;
+const getStatement = (marker, label) => {
   const start = sql.indexOf(marker);
-  assert.notEqual(start, -1, `missing ${name} policy`);
+  assert.notEqual(start, -1, `missing ${label}`);
   const end = sql.indexOf(';', start);
-  assert.notEqual(end, -1, `unterminated ${name} policy`);
+  assert.notEqual(end, -1, `unterminated ${label}`);
   return sql.slice(start, end + 1);
 };
 
+const getPolicy = (name) => {
+  const marker = `create policy "${name}"`;
+  return getStatement(marker, `${name} policy`);
+};
+
 test('topic radar migration defines the owner-scoped topic records and editorial fields', () => {
+  const topicsTable = getStatement('create table if not exists public.topics', 'topics table');
   assert.match(sql, /create table if not exists public\.topics \(/);
   assert.match(sql, /id uuid primary key default gen_random_uuid\(\)/);
   assert.match(sql, /owner_id uuid not null default auth\.uid\(\) references auth\.users \(id\)/);
   assert.match(sql, /is_public boolean not null default false/);
   assert.match(sql, /fingerprint text not null/);
-  assert.match(sql, /content_angles jsonb not null/);
-  assert.match(sql, /durable_knowledge jsonb not null/);
+  assert.match(topicsTable, /content_angles jsonb not null.*?check \( ?jsonb_typeof\(content_angles\) = 'object' and content_angles \?& array\['quick', 'viewpoint', 'tutorial'\] and jsonb_typeof\(content_angles -> 'quick'\) = 'string' and jsonb_typeof\(content_angles -> 'viewpoint'\) = 'string' and jsonb_typeof\(content_angles -> 'tutorial'\) = 'string' ?\)/);
+  assert.match(topicsTable, /durable_knowledge jsonb not null.*?check \( ?jsonb_typeof\(durable_knowledge\) = 'array' and not jsonb_path_exists\( ?durable_knowledge, '\$\[\*\] \? \(@\.type\(\) != "string"\)' ?\) ?\)/);
   assert.match(sql, /first_seen_at timestamptz not null/);
   assert.match(sql, /latest_evidence_at timestamptz not null/);
   assert.match(sql, /evidence_signature text not null/);
@@ -43,7 +48,7 @@ test('topic radar migration defines the owner-scoped topic records and editorial
   assert.match(sql, /platform_count integer not null default 0/);
 });
 
-test('topic radar migration constrains scores, trends, links, feedback, and delete direction', () => {
+test('topic radar migration constrains scores, trends, links, and feedback', () => {
   for (const score of [
     'write_score',
     'study_score',
@@ -59,7 +64,6 @@ test('topic radar migration constrains scores, trends, links, feedback, and dele
 
   assert.match(sql, /create table if not exists public\.topic_sources \(/);
   assert.match(sql, /topic_id uuid not null references public\.topics \(id\) on delete cascade/);
-  assert.match(sql, /card_id uuid not null references public\.knowledge_cards \(id\)(?! on delete cascade)/);
   assert.match(sql, /evidence_role text not null/);
   assert.match(sql, /source_type text not null/);
   assert.match(sql, /relevance (?:smallint|integer) not null[^,]*check \(relevance between 0 and 100\)/);
@@ -71,6 +75,13 @@ test('topic radar migration constrains scores, trends, links, feedback, and dele
   assert.match(sql, /unique \(owner_id, topic_id, action\)/);
 });
 
+test('deleting either parent removes only its topic-source link', () => {
+  assert.match(schema, /-- Deleting a topic removes its links, never its evidence cards\./);
+  assert.match(schema, /-- Deleting an evidence card removes its links, never their topics\./);
+  assert.match(sql, /topic_id uuid not null references public\.topics \(id\) on delete cascade/);
+  assert.match(sql, /card_id uuid not null references public\.knowledge_cards \(id\) on delete cascade/);
+});
+
 test('topic radar migration adds query indexes and enables RLS on every topic table', () => {
   for (const table of ['topics', 'topic_sources', 'topic_feedback']) {
     assert.match(sql, new RegExp(`alter table public\\.${table} enable row level security`));
@@ -79,7 +90,8 @@ test('topic radar migration adds query indexes and enables RLS on every topic ta
   assert.match(sql, /create index if not exists topics_owner_rank_idx on public\.topics \(owner_id, latest_evidence_at desc\)/);
   assert.match(sql, /create index if not exists topics_public_rank_idx on public\.topics \(is_public, latest_evidence_at desc\)/);
   assert.match(sql, /create index if not exists topic_sources_card_id_idx on public\.topic_sources \(card_id\)/);
-  assert.match(sql, /create index if not exists topic_feedback_owner_topic_idx on public\.topic_feedback \(owner_id, topic_id\)/);
+  assert.match(sql, /create index if not exists topic_feedback_topic_id_idx on public\.topic_feedback \(topic_id\)/);
+  assert.doesNotMatch(sql, /create index if not exists topic_feedback_owner_topic_idx/);
 });
 
 test('topic policies expose public or owner topics and keep writes owner-only', () => {

@@ -13,9 +13,21 @@ create table if not exists public.topics (
   summary text not null default '',
   why_now text not null default '',
   content_angles jsonb not null default '{"quick":"","viewpoint":"","tutorial":""}'::jsonb
-    check (jsonb_typeof(content_angles) = 'object'),
+    check (
+      jsonb_typeof(content_angles) = 'object'
+      and content_angles ?& array['quick', 'viewpoint', 'tutorial']
+      and jsonb_typeof(content_angles -> 'quick') = 'string'
+      and jsonb_typeof(content_angles -> 'viewpoint') = 'string'
+      and jsonb_typeof(content_angles -> 'tutorial') = 'string'
+    ),
   durable_knowledge jsonb not null default '[]'::jsonb
-    check (jsonb_typeof(durable_knowledge) = 'array'),
+    check (
+      jsonb_typeof(durable_knowledge) = 'array'
+      and not jsonb_path_exists(
+        durable_knowledge,
+        '$[*] ? (@.type() != "string")'
+      )
+    ),
   write_score smallint not null default 0 check (write_score between 0 and 100),
   study_score smallint not null default 0 check (study_score between 0 and 100),
   breaking_score smallint not null default 0 check (breaking_score between 0 and 100),
@@ -37,8 +49,10 @@ create table if not exists public.topics (
 
 create table if not exists public.topic_sources (
   id uuid primary key default gen_random_uuid(),
+  -- Deleting a topic removes its links, never its evidence cards.
   topic_id uuid not null references public.topics (id) on delete cascade,
-  card_id uuid not null references public.knowledge_cards (id),
+  -- Deleting an evidence card removes its links, never their topics.
+  card_id uuid not null references public.knowledge_cards (id) on delete cascade,
   evidence_role text not null check (btrim(evidence_role) <> ''),
   source_type text not null check (btrim(source_type) <> ''),
   relevance smallint not null default 0 check (relevance between 0 and 100),
@@ -65,8 +79,10 @@ create index if not exists topics_public_rank_idx
 create index if not exists topic_sources_card_id_idx
   on public.topic_sources (card_id);
 
-create index if not exists topic_feedback_owner_topic_idx
-  on public.topic_feedback (owner_id, topic_id);
+drop index if exists public.topic_feedback_owner_topic_idx;
+
+create index if not exists topic_feedback_topic_id_idx
+  on public.topic_feedback (topic_id);
 
 alter table public.topics enable row level security;
 alter table public.topic_sources enable row level security;
