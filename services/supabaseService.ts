@@ -10,7 +10,10 @@ import {
     QualityKeyword,
     MonitorSettings,
     XhsTokenConfig,
-    CronRunLog
+    CronRunLog,
+    EditorialTopic,
+    TopicFeedbackAction,
+    TopicSource
 } from '../types';
 import { normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
 import { normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
@@ -48,6 +51,55 @@ const COLLECTION_COUNT_SELECT_FIELDS = [
     'date',
     'collections',
 ].join(',');
+const TOPIC_SOURCES_RELATION = 'topic_sources';
+const TOPIC_EVIDENCE_RELATION = 'knowledge_cards';
+const TOPIC_FEEDBACK_RELATION = 'topic_feedback';
+const TOPIC_EVIDENCE_SELECT_FIELDS = [
+    'id',
+    'owner_id',
+    'is_public',
+    'title',
+    'source_url',
+    'platform',
+    'author',
+    'date',
+    'cover_image',
+    'metrics',
+    'content_type',
+    'ai_analysis',
+    'tags',
+    'collections',
+].join(',');
+const TOPIC_SELECT_FIELDS = [
+    'id',
+    'owner_id',
+    'is_public',
+    'fingerprint',
+    'title',
+    'summary',
+    'why_now',
+    'content_angles',
+    'durable_knowledge',
+    'write_score',
+    'study_score',
+    'breaking_score',
+    'confidence_score',
+    'preference_score',
+    'first_seen_at',
+    'latest_evidence_at',
+    'trend_direction',
+    'evidence_signature',
+    'generation_status',
+    'generated_at',
+    'created_at',
+    'updated_at',
+    'source_count',
+    'platform_count',
+    `${TOPIC_SOURCES_RELATION}(id,topic_id,card_id,evidence_role,source_type,relevance,created_at,${TOPIC_EVIDENCE_RELATION}(${TOPIC_EVIDENCE_SELECT_FIELDS}))`,
+    `${TOPIC_FEEDBACK_RELATION}(owner_id,action)`,
+].join(',');
+const TOPIC_FEEDBACK_ACTIONS = new Set<TopicFeedbackAction>(['saved', 'ignored', 'published']);
+const TOPIC_DAY_MS = 24 * 60 * 60 * 1000;
 
 type CardListOptions = {
     limit?: number;
@@ -75,6 +127,130 @@ const dbToCard = (row: any, options: { isDetailLoaded?: boolean } = {}): Knowled
     collections: row.collections || [],
     isDetailLoaded: options.isDetailLoaded ?? true,
 });
+
+const relationRows = (value: any): any[] => {
+    if (Array.isArray(value)) return value;
+    return value && typeof value === 'object' ? [value] : [];
+};
+
+const dbToEditorialTopic = (row: any, userId?: string): EditorialTopic => {
+    const seenSources = new Set<string>();
+    const sources: TopicSource[] = relationRows(row.topic_sources)
+        .map((sourceRow): TopicSource | null => {
+            const cardRow = relationRows(sourceRow?.knowledge_cards).find(candidate => (
+                userId ? candidate?.owner_id === userId : candidate?.is_public === true
+            ));
+            if (!cardRow) return null;
+            const card = dbToCard(cardRow, { isDetailLoaded: false });
+            if (!(userId ? card.ownerId === userId : card.isPublic === true)) return null;
+            if (!card.id) return null;
+            return {
+                id: String(sourceRow?.id || ''),
+                topicId: String(sourceRow?.topic_id || row.id || ''),
+                cardId: card.id,
+                evidenceRole: String(sourceRow?.evidence_role || ''),
+                sourceType: String(sourceRow?.source_type || ''),
+                relevance: Number(sourceRow?.relevance || 0),
+                createdAt: String(sourceRow?.created_at || ''),
+                card,
+            };
+        })
+        .filter((source): source is TopicSource => source !== null)
+        .sort((left, right) => (
+            right.relevance - left.relevance ||
+            left.createdAt.localeCompare(right.createdAt) ||
+            left.cardId.localeCompare(right.cardId) ||
+            left.id.localeCompare(right.id)
+        ))
+        .filter(source => {
+            const sourceKey = `${source.topicId}:${source.cardId}`;
+            if (seenSources.has(sourceKey)) return false;
+            seenSources.add(sourceKey);
+            return true;
+        });
+    const feedback = userId
+        ? relationRows(row.topic_feedback)
+            .filter(item => item?.owner_id === userId && TOPIC_FEEDBACK_ACTIONS.has(item?.action))
+            .map(item => item.action as TopicFeedbackAction)
+            .filter((action, index, values) => values.indexOf(action) === index)
+        : [];
+
+    return {
+        id: String(row.id || ''),
+        ownerId: row.owner_id || undefined,
+        isPublic: Boolean(row.is_public),
+        fingerprint: String(row.fingerprint || ''),
+        title: String(row.title || ''),
+        summary: String(row.summary || ''),
+        whyNow: String(row.why_now || ''),
+        contentAngles: row.content_angles || { quick: '', viewpoint: '', tutorial: '' },
+        durableKnowledge: row.durable_knowledge || [],
+        writeScore: Number(row.write_score || 0),
+        studyScore: Number(row.study_score || 0),
+        breakingScore: Number(row.breaking_score || 0),
+        confidenceScore: Number(row.confidence_score || 0),
+        preferenceScore: Number(row.preference_score || 0),
+        firstSeenAt: String(row.first_seen_at || ''),
+        latestEvidenceAt: row.latest_evidence_at || '',
+        trendDirection: ['rising', 'steady', 'fading', 'new'].includes(row.trend_direction)
+            ? row.trend_direction
+            : 'new',
+        evidenceSignature: String(row.evidence_signature || ''),
+        generationStatus: row.generation_status === 'generated' ? 'generated' : 'fallback',
+        generatedAt: row.generated_at || undefined,
+        createdAt: String(row.created_at || ''),
+        updatedAt: String(row.updated_at || ''),
+        sourceCount: Number(row.source_count || 0),
+        platformCount: Number(row.platform_count || 0),
+        sources,
+        feedback,
+    };
+};
+
+const safeTimestamp = (value: string): number => {
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const eligibleLaneScores = (topic: EditorialTopic, now = Date.now()): number[] => {
+    const evidenceAt = safeTimestamp(topic.latestEvidenceAt);
+    const age = evidenceAt > 0 ? now - evidenceAt : Number.POSITIVE_INFINITY;
+    if (age < 0) return [];
+    return [
+        age <= 3 * TOPIC_DAY_MS && topic.writeScore >= 50 ? topic.writeScore : null,
+        age <= 30 * TOPIC_DAY_MS && topic.studyScore >= 55 ? topic.studyScore : null,
+        age <= TOPIC_DAY_MS && topic.breakingScore >= 60 ? topic.breakingScore : null,
+    ].filter((score): score is number => score !== null);
+};
+
+const compareEditorialTopics = (left: EditorialTopic, right: EditorialTopic, now: number): number => {
+    const leftLaneScores = eligibleLaneScores(left, now);
+    const rightLaneScores = eligibleLaneScores(right, now);
+    const leftBestLane = Math.max(0, ...leftLaneScores);
+    const rightBestLane = Math.max(0, ...rightLaneScores);
+    const leftOpportunity = 0.35 * left.writeScore + 0.25 * left.studyScore + 0.20 * left.breakingScore
+        + 0.10 * left.confidenceScore + 0.10 * left.preferenceScore;
+    const rightOpportunity = 0.35 * right.writeScore + 0.25 * right.studyScore + 0.20 * right.breakingScore
+        + 0.10 * right.confidenceScore + 0.10 * right.preferenceScore;
+
+    return (
+        rightBestLane - leftBestLane ||
+        rightLaneScores.length - leftLaneScores.length ||
+        rightOpportunity - leftOpportunity ||
+        safeTimestamp(right.latestEvidenceAt) - safeTimestamp(left.latestEvidenceAt) ||
+        left.fingerprint.localeCompare(right.fingerprint) ||
+        left.id.localeCompare(right.id)
+    );
+};
+
+const throwIfAborted = (signal?: AbortSignal): void => {
+    if (!signal?.aborted) return;
+    if (signal.reason instanceof Error) throw signal.reason;
+    throw new DOMException('The operation was aborted.', 'AbortError');
+};
+
+const isValidTopicFeedbackInput = (topicId: string, action: TopicFeedbackAction): boolean =>
+    isValidUUID(topicId) && TOPIC_FEEDBACK_ACTIONS.has(action);
 
 // 判断是否是有效的 UUID
 const isValidUUID = (id: string): boolean => {
@@ -411,6 +587,110 @@ export const getTrendingCards = async (signal?: AbortSignal): Promise<KnowledgeC
 
     const cards = dedupeCards((data || []).map(row => dbToCard(row, { isDetailLoaded: false })));
     return selectLatestSnapshotCards(cards);
+};
+
+export const getEditorialTopics = async (signal?: AbortSignal): Promise<EditorialTopic[]> => {
+    throwIfAborted(signal);
+    if (!isSupabaseConnected() || !supabase) return [];
+
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) {
+        console.error('Error resolving topic reader session:', sessionError);
+        throw sessionError;
+    }
+    throwIfAborted(signal);
+    const user = sessionData.session?.user;
+
+    let topicQuery = supabase
+        .from('topics')
+        .select(TOPIC_SELECT_FIELDS)
+        .order('latest_evidence_at', { ascending: false })
+        .order('write_score', { ascending: false })
+        .order('study_score', { ascending: false })
+        .order('breaking_score', { ascending: false })
+        .order('id', { ascending: true });
+
+    if (user) {
+        topicQuery = topicQuery.eq('owner_id', user.id);
+        topicQuery = topicQuery.eq('topic_sources.knowledge_cards.owner_id', user.id);
+        topicQuery = topicQuery.eq('topic_feedback.owner_id', user.id);
+    } else {
+        topicQuery = topicQuery.eq('is_public', true);
+        topicQuery = topicQuery.eq('topic_sources.knowledge_cards.is_public', true);
+    }
+    if (signal) topicQuery = topicQuery.abortSignal(signal);
+
+    const { data, error } = await topicQuery;
+    if (error) {
+        console.error('Error fetching editorial topics:', error);
+        throw error;
+    }
+    throwIfAborted(signal);
+
+    const topicById = new Map<string, EditorialTopic>();
+    for (const row of data || []) {
+        if (user ? row?.owner_id !== user.id : row?.is_public !== true) continue;
+        const topic = dbToEditorialTopic(row, user?.id);
+        if (!topic.id || topicById.has(topic.id)) continue;
+        topicById.set(topic.id, topic);
+    }
+    const sortNow = Date.now();
+    return Array.from(topicById.values()).sort((left, right) => compareEditorialTopics(left, right, sortNow));
+};
+
+export const saveTopicFeedback = async (
+    topicId: string,
+    action: TopicFeedbackAction
+): Promise<boolean> => {
+    if (!isValidTopicFeedbackInput(topicId, action)) return false;
+    if (!isSupabaseConnected() || !supabase) return false;
+
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) {
+        logWriteError('Error resolving topic feedback session:', sessionError);
+        return false;
+    }
+    const user = sessionData.session?.user;
+    if (!user) return false;
+
+    const { error } = await supabase
+        .from('topic_feedback')
+        .upsert({ owner_id: user.id, topic_id: topicId, action }, {
+            onConflict: 'owner_id,topic_id,action',
+        });
+    if (error) {
+        logWriteError('Error saving topic feedback:', error);
+        return false;
+    }
+    return true;
+};
+
+export const removeTopicFeedback = async (
+    topicId: string,
+    action: TopicFeedbackAction
+): Promise<boolean> => {
+    if (!isValidTopicFeedbackInput(topicId, action)) return false;
+    if (!isSupabaseConnected() || !supabase) return false;
+
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) {
+        logWriteError('Error resolving topic feedback session:', sessionError);
+        return false;
+    }
+    const user = sessionData.session?.user;
+    if (!user) return false;
+
+    const { error } = await supabase
+        .from('topic_feedback')
+        .delete()
+        .eq('owner_id', user.id)
+        .eq('topic_id', topicId)
+        .eq('action', action);
+    if (error) {
+        logWriteError('Error removing topic feedback:', error);
+        return false;
+    }
+    return true;
 };
 
 export const getKnowledgeCardById = async (cardId: string): Promise<KnowledgeCard | null> => {

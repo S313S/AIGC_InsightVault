@@ -66,6 +66,7 @@ export interface TopicSource {
   sourceType: string;
   relevance: number;
   createdAt: string;
+  card?: KnowledgeCard;
 }
 
 export interface EditorialTopic {
