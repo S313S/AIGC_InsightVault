@@ -328,6 +328,9 @@ const logWriteError = (action: string, error: any) => {
     console.error(action, error);
 };
 
+const isMissingDeleteCardRpc = (error: any): boolean =>
+    ['PGRST202', '42883'].includes(String(error?.code || ''));
+
 // ============ 知识卡片 CRUD ============
 
 export const getKnowledgeCards = async (options: CardListOptions = {}): Promise<KnowledgeCard[]> => {
@@ -500,13 +503,25 @@ export const updateCard = async (card: KnowledgeCard): Promise<boolean> => {
 export const deleteCard = async (cardId: string): Promise<boolean> => {
     if (!isSupabaseConnected() || !supabase) return false;
 
+    const { data: rpcDeleted, error: rpcError } = await supabase.rpc(
+        'delete_knowledge_card_with_topic_links',
+        { p_card_id: cardId }
+    );
+
+    if (!rpcError) return rpcDeleted === true;
+
+    if (!isMissingDeleteCardRpc(rpcError)) {
+        logWriteError('Error deleting card with topic links:', rpcError);
+        return false;
+    }
+
     const { error } = await supabase
         .from('knowledge_cards')
         .delete()
         .eq('id', cardId);
 
     if (error) {
-        logWriteError('Error deleting card:', error);
+        logWriteError('Error deleting card with legacy fallback:', error);
         return false;
     }
 

@@ -84,6 +84,26 @@ test('topic deletion removes links while evidence-card deletion is restricted', 
   assert.match(sql, /add constraint topic_sources_card_id_fkey foreign key \(card_id\) references public\.knowledge_cards \(id\) on delete restrict/);
 });
 
+test('card deletion RPC owns the card, removes links first, and refreshes topic counts', () => {
+  const functionStart = sql.indexOf('create or replace function public.delete_knowledge_card_with_topic_links');
+  const functionEnd = sql.indexOf('revoke all on function public.delete_knowledge_card_with_topic_links', functionStart);
+  assert.ok(functionStart >= 0 && functionEnd > functionStart, 'delete-card function should be defined before grants');
+  const body = sql.slice(functionStart, functionEnd);
+
+  assert.match(body, /\(p_card_id uuid\) returns boolean/);
+  assert.match(body, /language plpgsql security invoker set search_path = pg_catalog, public/);
+  assert.match(body, /from public\.knowledge_cards[^;]*where id = p_card_id and owner_id = auth\.uid\(\)[^;]*for update/);
+  assert.match(body, /select coalesce\(array_agg\(distinct topic_id\)[^;]*from public\.topic_sources[^;]*where card_id = p_card_id/);
+  const linkDelete = body.indexOf('delete from public.topic_sources');
+  const cardDelete = body.indexOf('delete from public.knowledge_cards');
+  assert.ok(linkDelete >= 0 && cardDelete > linkDelete, 'topic links must be deleted before the restricted card');
+  assert.match(body, /source_count = \( select count\(\*\)[^;]*from public\.topic_sources/);
+  assert.match(body, /platform_count = \( select count\(distinct lower\(c\.platform\)\)[^;]*join public\.knowledge_cards c/);
+  assert.match(body, /where t\.id = any\(v_topic_ids\) and t\.owner_id = auth\.uid\(\)/);
+  assert.match(sql, /revoke all on function public\.delete_knowledge_card_with_topic_links\(uuid\) from public/);
+  assert.match(sql, /grant execute on function public\.delete_knowledge_card_with_topic_links\(uuid\) to authenticated/);
+});
+
 test('topic radar migration adds query indexes and enables RLS on every topic table', () => {
   for (const table of ['topics', 'topic_sources', 'topic_feedback']) {
     assert.match(sql, new RegExp(`alter table public\\.${table} enable row level security`));

@@ -72,6 +72,69 @@ alter table public.topic_sources
   add constraint topic_sources_card_id_fkey
   foreign key (card_id) references public.knowledge_cards (id) on delete restrict;
 
+create or replace function public.delete_knowledge_card_with_topic_links(p_card_id uuid)
+returns boolean
+language plpgsql
+security invoker
+set search_path = pg_catalog, public
+as $$
+declare
+  v_topic_ids uuid[] := '{}'::uuid[];
+  v_deleted_count integer := 0;
+begin
+  -- Lock and authorize before changing links. SECURITY INVOKER keeps the
+  -- surrounding RLS policies active for every statement in this transaction.
+  perform 1
+    from public.knowledge_cards
+   where id = p_card_id
+     and owner_id = auth.uid()
+   for update;
+
+  if not found then
+    return false;
+  end if;
+
+  select coalesce(array_agg(distinct topic_id), '{}'::uuid[])
+    into v_topic_ids
+    from public.topic_sources
+   where card_id = p_card_id;
+
+  delete from public.topic_sources
+   where card_id = p_card_id;
+
+  delete from public.knowledge_cards
+   where id = p_card_id
+     and owner_id = auth.uid();
+
+  get diagnostics v_deleted_count = row_count;
+  if v_deleted_count <> 1 then
+    raise exception 'Authorized knowledge card could not be deleted';
+  end if;
+
+  update public.topics t
+     set source_count = (
+           select count(*)
+             from public.topic_sources ts
+            where ts.topic_id = t.id
+         ),
+         platform_count = (
+           select count(distinct lower(c.platform))
+             from public.topic_sources ts
+             join public.knowledge_cards c on c.id = ts.card_id
+            where ts.topic_id = t.id
+              and btrim(coalesce(c.platform, '')) <> ''
+         ),
+         updated_at = now()
+   where t.id = any(v_topic_ids)
+     and t.owner_id = auth.uid();
+
+  return true;
+end;
+$$;
+
+revoke all on function public.delete_knowledge_card_with_topic_links(uuid) from public;
+grant execute on function public.delete_knowledge_card_with_topic_links(uuid) to authenticated;
+
 create table if not exists public.topic_feedback (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null default auth.uid() references auth.users (id),
