@@ -27,6 +27,22 @@ test('returns null when cards contain no valid snapshot timestamp', async () => 
   ]), null);
 });
 
+test('rejects calendar-invalid snapshot timestamps', async () => {
+  const { getLatestCollectionAt } = await loadFreshnessHelpers();
+
+  assert.equal(getLatestCollectionAt([
+    { tags: ['snapshot:2026-02-30T00:00:00.000Z'] },
+  ]), null);
+});
+
+test('rejects non-canonical timezone snapshot timestamps', async () => {
+  const { getLatestCollectionAt } = await loadFreshnessHelpers();
+
+  assert.equal(getLatestCollectionAt([
+    { tags: ['snapshot:2026-09-21T09:00:00+08:00'] },
+  ]), null);
+});
+
 test('marks a recent collection fresh and reports its age', async () => {
   const { getCollectionFreshness } = await loadFreshnessHelpers();
   const now = Date.parse('2026-09-21T12:00:00.000Z');
@@ -68,6 +84,18 @@ test('reports invalid collection timestamps as unknown', async () => {
     now: Date.parse('2026-09-21T00:00:00.000Z'),
     status: 'unknown',
   }), '采集时间未知');
+});
+
+test('reports calendar-invalid ISO timestamps as unknown', async () => {
+  const { getCollectionFreshness } = await loadFreshnessHelpers();
+
+  assert.deepEqual(getCollectionFreshness({
+    collectedAt: '2026-02-30T00:00:00.000Z',
+    now: Date.parse('2026-09-21T00:00:00.000Z'),
+  }), {
+    status: 'unknown',
+    ageMs: null,
+  });
 });
 
 test('clamps future collection timestamps to zero age', async () => {

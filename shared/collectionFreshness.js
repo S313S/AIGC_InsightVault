@@ -5,7 +5,8 @@ const DEFAULT_STALE_AFTER_MS = 36 * 60 * 60 * 1000;
 const parseIsoTimestamp = (value) => {
   if (typeof value !== 'string' || !ISO_TIMESTAMP_PATTERN.test(value)) return null;
   const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) ? timestamp : null;
+  if (!Number.isFinite(timestamp)) return null;
+  return new Date(timestamp).toISOString() === value ? timestamp : null;
 };
 
 export const getLatestCollectionAt = (cards = []) => {
