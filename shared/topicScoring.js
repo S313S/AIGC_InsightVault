@@ -537,7 +537,7 @@ const isRepositoryEvidence = (card) => {
   return isReviewedRepositoryUrl(card);
 };
 
-const isFactEvidence = (card) => isOfficialEvidence(card) || isRepositoryEvidence(card);
+export const isFactEvidence = (card) => isOfficialEvidence(card) || isRepositoryEvidence(card);
 
 const collectionSizeScore = (count) => Math.min(15, Math.max(0, count - 1) * 5);
 

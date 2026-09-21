@@ -145,6 +145,16 @@ test('normalizeTopicBrief returns only bounded schema fields', () => {
   assert.doesNotThrow(() => JSON.stringify(result));
 });
 
+test('normalization truncates at Unicode code-point boundaries', () => {
+  const title = `${'a'.repeat(TOPIC_BRIEF_FIELD_LIMITS.title - 1)}😀Z`;
+
+  const result = normalizeTopicBrief({ ...validBrief, title }, cluster);
+
+  assert.equal(Array.from(result.title).length, TOPIC_BRIEF_FIELD_LIMITS.title);
+  assert.equal(result.title.endsWith('😀'), true);
+  assert.doesNotMatch(result.title, /[\uD800-\uDFFF]$/u);
+});
+
 test('normalizeTopicBrief ignores inherited and prototype-polluting fields', () => {
   const polluted = Object.create({
     title: 'inherited title',
@@ -245,6 +255,19 @@ test('shouldRegenerateBrief accepts persisted snake_case briefs and gives camelC
     ...persisted,
     evidenceSignature: 'evidence:camel-wins',
   }, 'evidence:v2'), true);
+  assert.equal(shouldRegenerateBrief({
+    ...persisted,
+    generation_status: 'fallback',
+  }, 'evidence:v2'), true);
+  assert.equal(shouldRegenerateBrief({
+    ...persisted,
+    generation_status: 'generated',
+  }, 'evidence:v2'), false);
+  assert.equal(shouldRegenerateBrief({
+    ...persisted,
+    generation_status: 'fallback',
+    generationStatus: 'generated',
+  }, 'evidence:v2'), false);
 });
 
 test('unchanged persisted snake_case evidence bypasses the model call', async () => {
@@ -290,7 +313,11 @@ test('generateTopicBrief requests Gemini JSON mode and accepts response.text str
   assert.equal(request.model, 'gemini-2.5-flash');
   assert.equal(request.config.responseMimeType, 'application/json');
   assert.equal(typeof request.contents, 'string');
-  assert.deepEqual(result, validBrief);
+  assert.deepEqual(result, {
+    brief: validBrief,
+    generationStatus: 'generated',
+    errorKind: null,
+  });
 });
 
 test('generateTopicBrief accepts async text() response shape', async () => {
@@ -298,21 +325,31 @@ test('generateTopicBrief accepts async text() response shape', async () => {
     generateContent: async () => ({ text: async () => JSON.stringify(validBrief) }),
   });
 
-  assert.deepEqual(result, validBrief);
+  assert.deepEqual(result, {
+    brief: validBrief,
+    generationStatus: 'generated',
+    errorKind: null,
+  });
 });
 
-test('invalid, fenced, empty, and throwing provider responses use the same deterministic fallback', async () => {
+test('invalid, fenced, empty, and throwing provider responses expose safe fallback status', async () => {
   const expected = normalizeTopicBrief({}, cluster);
   const responses = [
-    async () => ({ text: '{bad json' }),
-    async () => ({ text: `\`\`\`json\n${JSON.stringify(validBrief)}\n\`\`\`` }),
-    async () => ({ text: '' }),
-    async () => { throw new Error('provider leaked details'); },
+    { generateContent: async () => ({ text: '{bad json' }), errorKind: 'invalid_response' },
+    { generateContent: async () => ({ text: `\`\`\`json\n${JSON.stringify(validBrief)}\n\`\`\`` }), errorKind: 'invalid_response' },
+    { generateContent: async () => ({ text: '' }), errorKind: 'invalid_response' },
+    { generateContent: async () => ({ text: JSON.stringify({ title: '缺少必填字段' }) }), errorKind: 'invalid_response' },
+    { generateContent: async () => { throw new Error('provider leaked details with SECRET_KEY'); }, errorKind: 'provider_failure' },
   ];
 
-  for (const generateContent of responses) {
+  for (const { generateContent, errorKind } of responses) {
     const result = await generateTopicBrief(structuredClone(cluster), { generateContent });
-    assert.deepEqual(result, expected);
+    assert.deepEqual(result, {
+      brief: expected,
+      generationStatus: 'fallback',
+      errorKind,
+    });
+    assert.doesNotMatch(JSON.stringify(result), /provider leaked|SECRET_KEY/);
   }
 });
 
@@ -323,11 +360,47 @@ test('missing server key falls back without invoking a network provider', async 
   delete process.env.VITE_GEMINI_API_KEY;
   try {
     const result = await generateTopicBrief(cluster);
-    assert.deepEqual(result, normalizeTopicBrief({}, cluster));
+    assert.deepEqual(result, {
+      brief: normalizeTopicBrief({}, cluster),
+      generationStatus: 'fallback',
+      errorKind: 'missing_key',
+    });
   } finally {
     if (oldGemini === undefined) delete process.env.GEMINI_API_KEY;
     else process.env.GEMINI_API_KEY = oldGemini;
     if (oldViteGemini === undefined) delete process.env.VITE_GEMINI_API_KEY;
     else process.env.VITE_GEMINI_API_KEY = oldViteGemini;
   }
+});
+
+test('social-only fallback attributes claims and marks them for verification', () => {
+  const result = normalizeTopicBrief({}, {
+    title: '社交平台传闻',
+    evidence: [{
+      platform: 'X',
+      sourceType: 'social',
+      rawContent: '某公司明天会发布未经证实的新模型。',
+      sourceUrl: 'https://x.com/user/status/1',
+    }],
+  });
+  const text = JSON.stringify(result);
+
+  assert.match(result.summary, /社交来源称/);
+  assert.match(text, /待核验|建议核查/);
+  assert.doesNotMatch(text, /已确认|已有可验证来源支持/);
+});
+
+test('official or repository fallback may identify verified fact evidence', () => {
+  const result = normalizeTopicBrief({}, {
+    title: 'Claude 更新',
+    evidence: [{
+      platform: 'Official',
+      sourceType: 'official',
+      rawContent: '官方更新日志列出了新的 API 参数。',
+      sourceUrl: 'https://anthropic.com/news/example',
+    }],
+  });
+
+  assert.match(JSON.stringify(result), /可验证|已确认/);
+  assert.doesNotMatch(result.summary, /社交来源称|待核验/);
 });

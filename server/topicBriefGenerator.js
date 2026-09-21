@@ -1,5 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 
+import { isFactEvidence } from '../shared/topicScoring.js';
+
 export const TOPIC_BRIEF_PROMPT_MAX_CHARS = 12_000;
 export const TOPIC_BRIEF_MAX_EVIDENCE_ITEMS = 24;
 export const TOPIC_BRIEF_MAX_KNOWLEDGE_CANDIDATES = 20;
@@ -36,16 +38,45 @@ const persistedValue = (value, camelKey, snakeKey) => (
     : ownValue(value, snakeKey)
 );
 
+const sliceCodePoints = (value, limit) => {
+  const maximum = Math.max(0, Math.trunc(Number(limit) || 0));
+  let index = 0;
+  let count = 0;
+  while (index < value.length && count < maximum) {
+    const codePoint = value.codePointAt(index);
+    index += codePoint > 0xFFFF ? 2 : 1;
+    count += 1;
+  }
+  return value.slice(0, index);
+};
+
+const sliceUtf16Safely = (value, limit) => {
+  let end = Math.min(value.length, Math.max(0, Math.trunc(Number(limit) || 0)));
+  const last = value.charCodeAt(end - 1);
+  const next = value.charCodeAt(end);
+  if (last >= 0xD800 && last <= 0xDBFF && next >= 0xDC00 && next <= 0xDFFF) end -= 1;
+  return value.slice(0, end);
+};
+
+const codePointLength = (value, maximum) => {
+  let index = 0;
+  let count = 0;
+  while (index < value.length && count <= maximum) {
+    const codePoint = value.codePointAt(index);
+    index += codePoint > 0xFFFF ? 2 : 1;
+    count += 1;
+  }
+  return count;
+};
+
 const cleanText = (value, limit) => {
   if (typeof value !== 'string') return '';
-  return value
-    .slice(0, TOPIC_BRIEF_RAW_FIELD_MAX_CHARS)
+  const normalized = sliceCodePoints(value, TOPIC_BRIEF_RAW_FIELD_MAX_CHARS)
     .normalize('NFKC')
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/gu, '')
     .replace(/\s+/gu, ' ')
-    .trim()
-    .slice(0, limit)
     .trim();
+  return sliceCodePoints(normalized, limit).trim();
 };
 
 const evidenceValues = (cluster) => (
@@ -81,7 +112,7 @@ const promptText = (value, limit) => {
   // Slice before normalization or regex work so one hostile field cannot make
   // preprocessing proportional to its full size.
   return cleanText(
-    stripEmbeddedMedia(value.slice(0, TOPIC_BRIEF_RAW_FIELD_MAX_CHARS))
+    stripEmbeddedMedia(sliceCodePoints(value, TOPIC_BRIEF_RAW_FIELD_MAX_CHARS))
       .replace(EVIDENCE_BOUNDARY_PATTERN, '[已转义证据边界]'),
     Math.min(limit, TOPIC_BRIEF_RAW_FIELD_MAX_CHARS)
   );
@@ -90,11 +121,14 @@ const promptText = (value, limit) => {
 const fallbackBrief = (cluster) => {
   const cards = evidenceCards(cluster);
   const first = cards[0] || {};
+  const factCards = cards.filter(isFactEvidence);
+  const hasFactEvidence = factCards.length > 0;
+  const summaryCard = factCards[0] || first;
   const title = cleanText(cluster?.title, TOPIC_BRIEF_FIELD_LIMITS.title) ||
     cleanText(first.title, TOPIC_BRIEF_FIELD_LIMITS.title) ||
     '待研判的 AI 话题';
   const evidenceSummary = cleanText(
-    first.rawContent ?? first.raw_content ?? first.summary ?? first.title,
+    summaryCard.rawContent ?? summaryCard.raw_content ?? summaryCard.summary ?? summaryCard.title,
     TOPIC_BRIEF_FIELD_LIMITS.summary
   );
   const count = cards.length;
@@ -104,16 +138,30 @@ const fallbackBrief = (cluster) => {
 
   return {
     title,
-    summary: evidenceSummary || `围绕“${title}”的现有证据仍需进一步核验与整理。`,
-    whyNow: count > 0
-      ? `当前已收集 ${count} 条证据，覆盖 ${platformCount || 1} 个来源，值得及时核验。`
-      : `该话题已进入候选池，需补充可靠证据后再判断时效性。`,
-    contentAngles: {
-      quick: `快速说明“${title}”发生了什么，以及哪些信息已经确认。`,
-      viewpoint: `分析“${title}”对 AI 创作者的实际影响与适用边界。`,
-      tutorial: `基于可验证证据整理“${title}”的上手步骤与检查清单。`,
-    },
-    durableKnowledge: [`沉淀“${title}”中可复用的方法、限制与验证要点。`],
+    summary: hasFactEvidence
+      ? evidenceSummary || `已有可验证来源涉及“${title}”，仍需按原始资料整理具体变更。`
+      : evidenceSummary
+        ? `社交来源称：${evidenceSummary}；该说法待核验。`
+        : `当前仅有关于“${title}”的社交线索，具体说法待核验。`,
+    whyNow: hasFactEvidence
+      ? `当前已收集 ${count} 条证据，其中 ${factCards.length} 条来自可验证的一手或代码仓库来源。`
+      : count > 0
+        ? `当前仅收集到 ${count} 条社交来源线索，热度与事实均待核验，建议先核查官方资料。`
+        : `该话题已进入候选池，需补充可靠证据后再判断时效性。`,
+    contentAngles: hasFactEvidence
+      ? {
+        quick: `快速说明“${title}”发生了什么，以及哪些信息已有可验证来源支持。`,
+        viewpoint: `基于可信来源分析“${title}”对 AI 创作者的实际影响与适用边界。`,
+        tutorial: `基于可验证证据整理“${title}”的上手步骤与检查清单。`,
+      }
+      : {
+        quick: `先建议核查“${title}”的官方公告，再区分已知信息与社交说法。`,
+        viewpoint: `在事实待核验的前提下，讨论“${title}”可能涉及的问题与边界。`,
+        tutorial: `待关键事实核验后，再依据可靠资料整理“${title}”的操作步骤。`,
+      },
+    durableKnowledge: hasFactEvidence
+      ? [`基于可验证的一手证据，沉淀“${title}”中可复用的方法、限制与验证要点。`]
+      : [`在官方公告、文档或代码仓库核验前，不将“${title}”的社交说法作为确认事实。`],
   };
 };
 
@@ -212,7 +260,7 @@ const evidenceText = (cluster, maxChars) => {
     emitted += 1;
     const separator = result ? '\n' : '';
     const line = `${separator}${JSON.stringify({ evidence: emitted, ...record })}`;
-    result += line.slice(0, maxChars - result.length);
+    result += sliceUtf16Safely(line, maxChars - result.length);
   }
 
   return result;
@@ -233,15 +281,18 @@ ${EVIDENCE_START}
 `;
   const suffix = `\n${EVIDENCE_END}`;
   const available = Math.max(0, TOPIC_BRIEF_PROMPT_MAX_CHARS - instructions.length - suffix.length);
-  return `${instructions}${evidenceText(cluster, available)}${suffix}`
-    .slice(0, TOPIC_BRIEF_PROMPT_MAX_CHARS);
+  return sliceUtf16Safely(
+    `${instructions}${evidenceText(cluster, available)}${suffix}`,
+    TOPIC_BRIEF_PROMPT_MAX_CHARS
+  );
 };
 
 const isBoundedRequiredString = (value, limit) => (
   typeof value === 'string' &&
+  value.length <= limit * 2 &&
   value === value.trim() &&
   value.length > 0 &&
-  value.length <= limit
+  codePointLength(value, limit) <= limit
 );
 
 const hasCompleteBrief = (topic) => {
@@ -271,9 +322,11 @@ const hasCompleteBrief = (topic) => {
 /** Return false only when both cached evidence and cached brief are reusable. */
 export const shouldRegenerateBrief = (existingTopic, evidenceSignature) => {
   const cachedSignature = persistedValue(existingTopic, 'evidenceSignature', 'evidence_signature');
+  const generationStatus = persistedValue(existingTopic, 'generationStatus', 'generation_status');
   return typeof evidenceSignature !== 'string' ||
     evidenceSignature.length === 0 ||
     cachedSignature !== evidenceSignature ||
+    (generationStatus !== undefined && generationStatus !== 'generated') ||
     !hasCompleteBrief(existingTopic);
 };
 
@@ -299,27 +352,44 @@ const parseStrictJsonObject = (value) => {
   }
 };
 
-const defaultGenerateContent = async (request) => {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-  if (!apiKey) throw new Error('Gemini API key is not configured for topic brief generation');
+const defaultGenerateContent = (apiKey) => async (request) => {
   const ai = new GoogleGenAI({ apiKey });
   return ai.models.generateContent(request);
 };
 
 /** Generate a brief, falling back deterministically for every provider failure. */
-export const generateTopicBrief = async (cluster, { generateContent = defaultGenerateContent } = {}) => {
+export const generateTopicBrief = async (cluster, options = {}) => {
   const fallback = normalizeTopicBrief({}, cluster);
+  const fallbackResult = (errorKind) => ({
+    brief: fallback,
+    generationStatus: 'fallback',
+    errorKind,
+  });
+  const hasInjectedProvider = typeof options?.generateContent === 'function';
+  let generateContent = options?.generateContent;
+
+  if (!hasInjectedProvider) {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    if (!apiKey) return fallbackResult('missing_key');
+    generateContent = defaultGenerateContent(apiKey);
+  }
+
   try {
-    if (typeof generateContent !== 'function') return fallback;
+    if (typeof generateContent !== 'function') return fallbackResult('provider_failure');
     const response = await generateContent({
       model: 'gemini-2.5-flash',
       contents: buildTopicBriefPrompt(cluster),
       config: { responseMimeType: 'application/json' },
     });
     const parsed = parseStrictJsonObject(await readResponseText(response));
-    return parsed ? normalizeTopicBrief(parsed, cluster) : fallback;
+    if (!parsed || !hasCompleteBrief(parsed)) return fallbackResult('invalid_response');
+    return {
+      brief: normalizeTopicBrief(parsed, cluster),
+      generationStatus: 'generated',
+      errorKind: null,
+    };
   } catch {
-    return fallback;
+    return fallbackResult('provider_failure');
   }
 };
 
