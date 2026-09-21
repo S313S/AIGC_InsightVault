@@ -54,6 +54,47 @@ export interface KnowledgeCard {
   isDetailLoaded?: boolean;
 }
 
+export type TopicTrendDirection = 'rising' | 'steady' | 'fading' | 'new';
+export type TopicFeedbackAction = 'saved' | 'ignored' | 'published';
+
+export interface TopicSource {
+  id: string;
+  topicId: string;
+  cardId: string;
+  evidenceRole: string;
+  sourceType: string;
+  relevance: number;
+  createdAt: string;
+}
+
+export interface EditorialTopic {
+  id: string;
+  ownerId?: string;
+  isPublic: boolean;
+  fingerprint: string;
+  title: string;
+  summary: string;
+  whyNow: string;
+  contentAngles: { quick: string; viewpoint: string; tutorial: string };
+  durableKnowledge: string[];
+  writeScore: number;
+  studyScore: number;
+  breakingScore: number;
+  confidenceScore: number;
+  preferenceScore: number;
+  firstSeenAt: string;
+  latestEvidenceAt: string;
+  trendDirection: TopicTrendDirection;
+  evidenceSignature: string;
+  generatedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  sourceCount: number;
+  platformCount: number;
+  sources?: TopicSource[];
+  feedback?: TopicFeedbackAction[];
+}
+
 export interface TrackingTask {
   id: string;
   ownerId?: string;
