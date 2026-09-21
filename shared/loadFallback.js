@@ -1,6 +1,7 @@
 export const resolveLoadFallback = ({
   cards,
   trending,
+  topics,
   collections,
   tasks,
   authUser,
@@ -9,11 +10,14 @@ export const resolveLoadFallback = ({
   storedSnapshot,
 }) => {
   const hasCloudData = cards.length > 0 || trending.length > 0 || collections.length > 0;
+  const resolveTopics = (fallbackTopics) =>
+    Array.isArray(topics) ? topics : fallbackTopics || [];
 
   if (hasCloudData) {
     return {
       cards,
       trending,
+      topics: resolveTopics([]),
       collections,
       tasks,
       usedFallback: false,
@@ -29,6 +33,7 @@ export const resolveLoadFallback = ({
     return {
       cards: previousSnapshot.cards,
       trending: previousSnapshot.trending,
+      topics: resolveTopics(previousSnapshot.topics),
       collections: previousSnapshot.collections,
       tasks: previousSnapshot.tasks,
       usedFallback: true,
@@ -44,6 +49,7 @@ export const resolveLoadFallback = ({
     return {
       cards: storedSnapshot.cards,
       trending: storedSnapshot.trending,
+      topics: resolveTopics(storedSnapshot.topics),
       collections: storedSnapshot.collections,
       tasks: storedSnapshot.tasks,
       usedFallback: true,
@@ -54,6 +60,7 @@ export const resolveLoadFallback = ({
     return {
       cards: [],
       trending: [],
+      topics: resolveTopics([]),
       collections: [],
       tasks: [],
       usedFallback: true,
@@ -63,6 +70,7 @@ export const resolveLoadFallback = ({
   return {
     cards: offlineSnapshot.cards,
     trending: offlineSnapshot.trending,
+    topics: resolveTopics(offlineSnapshot.topics),
     collections: offlineSnapshot.collections,
     tasks,
     usedFallback: true,

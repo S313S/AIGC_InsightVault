@@ -9,7 +9,7 @@ import { MonitoringView } from './components/MonitoringView';
 import { DashboardView } from './components/DashboardView';
 import { SettingsModal } from './components/SettingsModal';
 import { INITIAL_DATA, INITIAL_TASKS, TRENDING_DATA, INITIAL_COLLECTIONS } from './mockData';
-import { AuthUser, KnowledgeCard, FilterState, TrackingTask, Collection, ContentType, Platform, SocialSearchResult, TaskStatus, XhsMissingTokenItem, XhsTokenConfig } from './types';
+import { AuthUser, KnowledgeCard, EditorialTopic, FilterState, TrackingTask, Collection, ContentType, Platform, SocialSearchResult, TaskStatus, XhsMissingTokenItem, XhsTokenConfig } from './types';
 import { isSupabaseConnected } from './services/supabaseClient';
 import * as db from './services/supabaseService';
 import * as auth from './services/authService';
@@ -68,6 +68,7 @@ const CARD_PAGE_SIZE = 60;
 type LoadedSnapshot = {
   cards: KnowledgeCard[];
   trending: KnowledgeCard[];
+  topics: EditorialTopic[];
   collections: Collection[];
   tasks: TrackingTask[];
 };
@@ -75,6 +76,7 @@ type LoadedSnapshot = {
 const EMPTY_SNAPSHOT: LoadedSnapshot = {
   cards: [],
   trending: [],
+  topics: [],
   collections: [],
   tasks: [],
 };
@@ -93,6 +95,7 @@ const snapshotHasAnyData = (snapshot: LoadedSnapshot | null | undefined) =>
     (
       snapshot.cards.length > 0 ||
       snapshot.trending.length > 0 ||
+      snapshot.topics.length > 0 ||
       snapshot.collections.length > 0 ||
       snapshot.tasks.length > 0
     )
@@ -145,6 +148,7 @@ const App: React.FC = () => {
   const [cards, setCards] = useState<KnowledgeCard[]>(bootstrapSnapshot.cards);
   const [tasks, setTasks] = useState<TrackingTask[]>(bootstrapSnapshot.tasks);
   const [trending, setTrending] = useState<KnowledgeCard[]>(bootstrapSnapshot.trending);
+  const [topics, setTopics] = useState<EditorialTopic[]>(bootstrapSnapshot.topics);
   const [collections, setCollections] = useState<Collection[]>(bootstrapSnapshot.collections);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [selectedCard, setSelectedCard] = useState<KnowledgeCard | null>(null);
@@ -170,6 +174,7 @@ const App: React.FC = () => {
   const tasksRef = useRef<TrackingTask[]>(bootstrapSnapshot.tasks);
   const cardsRef = useRef<KnowledgeCard[]>(bootstrapSnapshot.cards);
   const trendingRef = useRef<KnowledgeCard[]>(bootstrapSnapshot.trending);
+  const topicsRef = useRef<EditorialTopic[]>(bootstrapSnapshot.topics);
   const lastCollectedAtRef = useRef<string | null>(bootstrapRecord?.collectedAt || null);
   const collectionsRef = useRef<Collection[]>(bootstrapSnapshot.collections);
   const lastSuccessfulDataRef = useRef<LoadedSnapshot | null>(bootstrapHasData ? bootstrapSnapshot : null);
@@ -251,6 +256,7 @@ const App: React.FC = () => {
         const offlineSnapshot = {
           cards: INITIAL_DATA.map(toOfflinePublicCard),
           trending: TRENDING_DATA.map(toOfflinePublicCard),
+          topics: [],
           collections: INITIAL_COLLECTIONS.map(toOfflinePublicCollection),
           tasks: [],
         };
@@ -260,6 +266,7 @@ const App: React.FC = () => {
         const liveSnapshot = {
           cards: cardsRef.current,
           trending: trendingRef.current,
+          topics: topicsRef.current,
           collections: collectionsRef.current,
           tasks: tasksRef.current,
         };
@@ -274,10 +281,12 @@ const App: React.FC = () => {
         const applyLoadedSnapshot = (snapshot: LoadedSnapshot) => {
           cardsRef.current = snapshot.cards;
           trendingRef.current = snapshot.trending;
+          topicsRef.current = snapshot.topics;
           collectionsRef.current = snapshot.collections;
           tasksRef.current = snapshot.tasks;
           setCards(snapshot.cards);
           setTrending(snapshot.trending);
+          setTopics(snapshot.topics);
           setCollections(snapshot.collections);
           setTasks(snapshot.tasks);
           setChatScope({ cards: snapshot.cards, title: '全部知识库' });
@@ -298,17 +307,20 @@ const App: React.FC = () => {
           setIsLoading(false);
         }
 
-        const [cardsResult, trendingResult] = await Promise.allSettled([
+        const [cardsResult, trendingResult, topicsResult] = await Promise.allSettled([
           runCloudRead(signal => db.getKnowledgeCards({ signal }), []),
           runCloudRead(signal => db.getTrendingCards(signal), []),
+          runCloudRead(signal => db.getEditorialTopics(signal), []),
         ]);
 
         if (requestId !== loadRequestIdRef.current) return false;
 
         const cardsLoad = getLoadResult(cardsResult, [], 'Loading knowledge cards');
         const trendingLoad = getLoadResult(trendingResult, [], 'Loading trending cards');
+        const topicsLoad = getLoadResult(topicsResult, [], 'Loading editorial topics');
         const dbCards = cardsLoad.value;
         const dbTrending = trendingLoad.value;
+        const dbTopics = topicsLoad.value;
         const trendingSnapshot = resolveTrendingSnapshot({
           ok: trendingLoad.ok,
           cards: dbTrending,
@@ -316,7 +328,7 @@ const App: React.FC = () => {
           previousCollectedAt: baselineCollectedAt,
         });
         const collectedAt = trendingSnapshot.collectedAt;
-        const primaryHadFailure = !cardsLoad.ok || !trendingLoad.ok;
+        const primaryHadFailure = !cardsLoad.ok || !trendingLoad.ok || !topicsLoad.ok;
         if (trendingLoad.ok) {
           lastCollectedAtRef.current = collectedAt;
           setLastCollectedAt(collectedAt);
@@ -330,6 +342,7 @@ const App: React.FC = () => {
         const primaryResolved = resolveLoadFallback({
           cards: dbCards,
           trending: dbTrending,
+          topics: dbTopics,
           collections: [],
           tasks: [],
           authUser,
@@ -340,6 +353,7 @@ const App: React.FC = () => {
         const primarySnapshot = mergeLoadedSnapshot(baselineSnapshot, {
           cards: preserveOnFailedLoad(cardsLoad, primaryResolved.cards, hasBaselineData),
           trending: preserveOnFailedLoad(trendingLoad, trendingSnapshot.cards, hasBaselineData),
+          topics: preserveOnFailedLoad(topicsLoad, dbTopics, baselineSnapshot.topics.length > 0),
         });
 
         applyLoadedSnapshot(primarySnapshot);
@@ -347,7 +361,7 @@ const App: React.FC = () => {
         if (!primaryResolved.usedFallback) {
           lastSuccessfulDataRef.current = primarySnapshot;
         }
-        if (trendingLoad.ok || !primaryResolved.usedFallback) {
+        if (trendingLoad.ok || topicsLoad.ok || !primaryResolved.usedFallback) {
           writeStoredSnapshot(targetOwnerId, primarySnapshot, { collectedAt });
         }
 
@@ -455,6 +469,7 @@ const App: React.FC = () => {
       lastSuccessfulDataRef.current = {
         cards: offlineCards,
         trending: offlineTrending,
+        topics: [],
         collections: INITIAL_COLLECTIONS.map(toOfflinePublicCollection),
         tasks: [],
       };
@@ -582,11 +597,15 @@ const App: React.FC = () => {
   }, [trending]);
 
   useEffect(() => {
+    topicsRef.current = topics;
+  }, [topics]);
+
+  useEffect(() => {
     collectionsRef.current = collections;
   }, [collections]);
 
   useEffect(() => {
-    const snapshot = { cards, trending, collections, tasks };
+    const snapshot = { cards, trending, topics, collections, tasks };
     if (!shouldPersistSnapshot({
       snapshot,
       userId: currentUser?.id || null,
@@ -598,7 +617,7 @@ const App: React.FC = () => {
 
     lastSuccessfulDataRef.current = snapshot;
     writeStoredSnapshot(currentUser?.id || null, snapshot);
-  }, [cards, trending, collections, tasks, currentUser?.id, isLoading]);
+  }, [cards, trending, topics, collections, tasks, currentUser?.id, isLoading]);
 
   const inferCategoryTag = (text: string) => {
     const t = (text || '').toLowerCase();

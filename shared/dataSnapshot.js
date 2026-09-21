@@ -18,6 +18,66 @@ const getBrowserStorage = () => {
 
 export const serializeSnapshot = (snapshot) => JSON.stringify(snapshot);
 
+const isPlainObject = (value) =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const isNonEmptyString = (value) =>
+  typeof value === 'string' && value.trim().length > 0;
+
+const isFiniteScore = (value) =>
+  typeof value === 'number' && Number.isFinite(value);
+
+const isEditorialTopicSnapshotItem = (topic) => {
+  if (!isPlainObject(topic) || typeof topic.isPublic !== 'boolean') return false;
+
+  const requiredStrings = [
+    'id',
+    'fingerprint',
+    'title',
+    'summary',
+    'whyNow',
+    'firstSeenAt',
+    'latestEvidenceAt',
+    'evidenceSignature',
+    'createdAt',
+    'updatedAt',
+  ];
+  if (!requiredStrings.every((key) => isNonEmptyString(topic[key]))) return false;
+
+  const scoreFields = [
+    'writeScore',
+    'studyScore',
+    'breakingScore',
+    'confidenceScore',
+    'preferenceScore',
+    'sourceCount',
+    'platformCount',
+  ];
+  if (!scoreFields.every((key) => isFiniteScore(topic[key]))) return false;
+
+  if (!isPlainObject(topic.contentAngles)) return false;
+  if (!['quick', 'viewpoint', 'tutorial'].every((key) => typeof topic.contentAngles[key] === 'string')) {
+    return false;
+  }
+  if (!Array.isArray(topic.durableKnowledge) || !topic.durableKnowledge.every(isNonEmptyString)) {
+    return false;
+  }
+  if (!['rising', 'steady', 'fading', 'new'].includes(topic.trendDirection)) return false;
+  if (!['generated', 'fallback'].includes(topic.generationStatus)) return false;
+  if (topic.ownerId !== undefined && typeof topic.ownerId !== 'string') return false;
+  if (topic.generatedAt !== undefined && typeof topic.generatedAt !== 'string') return false;
+  if (topic.sources !== undefined && !Array.isArray(topic.sources)) return false;
+  if (
+    topic.feedback !== undefined &&
+    (!Array.isArray(topic.feedback) ||
+      !topic.feedback.every((action) => ['saved', 'ignored', 'published'].includes(action)))
+  ) {
+    return false;
+  }
+
+  return true;
+};
+
 export const deserializeSnapshot = (value) => {
   if (!value) return null;
 
@@ -32,7 +92,10 @@ export const deserializeSnapshot = (value) => {
     ) {
       return null;
     }
-    return parsed;
+    const topics = Array.isArray(parsed.topics)
+      ? parsed.topics.filter(isEditorialTopicSnapshotItem)
+      : [];
+    return { ...parsed, topics };
   } catch {
     return null;
   }
@@ -41,6 +104,7 @@ export const deserializeSnapshot = (value) => {
 const snapshotArrays = (snapshot) => [
   snapshot?.cards,
   snapshot?.trending,
+  snapshot?.topics,
   snapshot?.collections,
   snapshot?.tasks,
 ].filter(Array.isArray);
