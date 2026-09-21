@@ -90,15 +90,60 @@ const evidenceIdentity = (card) => {
   ].map(normalizeText).join('\u0000')}`;
 };
 
-const stableCardKey = (card) => [
+const stableObservationKey = (card) => [
   evidenceIdentity(card),
-  normalizeText(card?.id || card?.cardId || card?.card_id),
   normalizeText(card?.platform),
   normalizeText(card?.author || card?.account || card?.handle),
   normalizeText(card?.title),
+  normalizeText(card?.rawContent || card?.raw_content),
+  normalizeText(card?.summary),
+  normalizeText(card?.suggestedTitle),
+  normalizeText(card?.aiAnalysis?.summary),
+  asArray(card?.tags).map(normalizeText).sort().join(','),
+  asArray(card?.aiAnalysis?.usageScenarios).map(normalizeText).sort().join(','),
+  asArray(card?.aiAnalysis?.coreKnowledge).map(normalizeText).sort().join(','),
+  normalizeText(card?.sourceType || card?.source_type || card?.evidenceRole || card?.evidence_role),
+  CARD_TIME_FIELDS.map((field) => normalizeText(card?.[field])).join(','),
+  ['likes', 'bookmarks', 'comments', 'shares', 'retweets', 'reposts']
+    .map((field) => String(Number(card?.metrics?.[field]) || 0)).join(','),
 ].join('\u0000');
 
-const cardsForCluster = (cluster) => {
+const informationCompleteness = (card) => [
+  card?.title,
+  card?.rawContent,
+  card?.raw_content,
+  card?.summary,
+  card?.suggestedTitle,
+  card?.aiAnalysis?.summary,
+  ...asArray(card?.tags),
+  ...asArray(card?.aiAnalysis?.usageScenarios),
+  ...asArray(card?.aiAnalysis?.coreKnowledge),
+].map(normalizeText).reduce((total, value) => total + value.length, 0);
+
+const mergeEvidenceObservations = (values, now, timezoneOffsetMinutes) => {
+  const richest = [...values].sort((left, right) => (
+    informationCompleteness(right) - informationCompleteness(left) ||
+    (stableObservationKey(left) < stableObservationKey(right) ? -1 : stableObservationKey(left) > stableObservationKey(right) ? 1 : 0)
+  ))[0];
+  const latest = values
+    .map((card) => ({ card, timestamp: readCardTime(card, now, timezoneOffsetMinutes) }))
+    .filter(({ timestamp }) => timestamp !== null && timestamp <= now)
+    .sort((left, right) => {
+      if (right.timestamp !== left.timestamp) return right.timestamp - left.timestamp;
+      const leftKey = stableObservationKey(left.card);
+      const rightKey = stableObservationKey(right.card);
+      return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+    })[0] || null;
+  const merged = {
+    ...richest,
+    metrics: { ...(latest?.card?.metrics || richest?.metrics || {}) },
+  };
+  for (const field of CARD_TIME_FIELDS) delete merged[field];
+  if (latest) merged.publishedAt = new Date(latest.timestamp).toISOString();
+  return merged;
+};
+
+const cardsForCluster = (cluster, now, timezoneOffsetMinutes) => {
   const groups = new Map();
   for (const card of rawCardsForCluster(cluster)) {
     const key = evidenceIdentity(card);
@@ -107,11 +152,9 @@ const cardsForCluster = (cluster) => {
     groups.set(key, values);
   }
   let representatives = [...groups.values()]
-    .map((values) => [...values].sort((left, right) => (
-      stableCardKey(left) < stableCardKey(right) ? -1 : stableCardKey(left) > stableCardKey(right) ? 1 : 0
-    ))[0])
+    .map((values) => mergeEvidenceObservations(values, now, timezoneOffsetMinutes))
     .sort((left, right) => (
-      stableCardKey(left) < stableCardKey(right) ? -1 : stableCardKey(left) > stableCardKey(right) ? 1 : 0
+      stableObservationKey(left) < stableObservationKey(right) ? -1 : stableObservationKey(left) > stableObservationKey(right) ? 1 : 0
     ));
 
   // Task 5 evidenceKeys are the authoritative distinct-identity count. When
@@ -373,15 +416,45 @@ const normalizedSourceType = (card) => normalizeText(
   card?.sourceType || card?.source_type || card?.evidenceRole || card?.evidence_role
 );
 
+const normalizedPlatformKind = (card) => normalizeText(card?.platform)
+  .replace(/^platform[.:/]/u, '');
+
+const OFFICIAL_HOSTS = new Set([
+  'ai.google.dev',
+  'anthropic.com',
+  'blog.google',
+  'cohere.com',
+  'deepmind.google',
+  'mistral.ai',
+  'openai.com',
+  'stability.ai',
+  'x.ai',
+]);
+
+const sourceHostname = (card) => {
+  try {
+    return new URL(card?.sourceUrl || card?.source_url).hostname.toLowerCase().replace(/^www\./u, '');
+  } catch {
+    return '';
+  }
+};
+
+const isOfficialHostname = (hostname) => [...OFFICIAL_HOSTS].some(
+  (officialHost) => hostname === officialHost || hostname.endsWith(`.${officialHost}`)
+);
+
 const isOfficialEvidence = (card) => (
+  normalizedPlatformKind(card) === 'official' ||
   /\b(?:official|first.party|company.blog|changelog)\b/u.test(normalizedSourceType(card)) ||
-  /(?:官方|一手)/u.test(normalizedSourceType(card))
+  /(?:官方|一手)/u.test(normalizedSourceType(card)) ||
+  isOfficialHostname(sourceHostname(card))
 );
 
 const isRepositoryEvidence = (card) => {
   const sourceType = normalizedSourceType(card);
   const url = normalizeText(card?.sourceUrl || card?.source_url);
-  return /\b(?:repository|repo|github|gitlab)\b/u.test(sourceType) ||
+  return normalizedPlatformKind(card) === 'github' ||
+    /\b(?:repository|repo|github|gitlab)\b/u.test(sourceType) ||
     /https?:\/\/(?:www\.)?(?:github|gitlab)\.com\//u.test(url);
 };
 
@@ -397,14 +470,34 @@ const practicalSignals = (text) => Object.fromEntries(
   Object.entries(PRACTICAL_SIGNAL_PATTERNS).map(([key, pattern]) => [key, pattern.test(text)])
 );
 
-const hasSubstantiveContent = (cards) => cards.some((card) => {
+const structuredEvidence = (card) => {
   const text = cardText(card);
-  if (matchesAny(text, FACTUAL_RELEASE_PATTERNS)) return true;
   const practical = practicalSignals(text);
-  if (practical.tutorial || practical.benchmark || practical.caseStudy || practical.repository) return true;
-  const supportingCount = [practical.code, practical.steps, practical.workflow].filter(Boolean).length;
-  return supportingCount >= 2 || (supportingCount >= 1 && matchesAny(text, ANALYSIS_PATTERNS));
+  const numericValues = text.match(/\b\d+(?:\.\d+)?(?:%|ms|s|x)?\b/gu) || [];
+  const quantitativeBenchmark = practical.benchmark && numericValues.length >= 2 &&
+    /\b(?:vs\.?|versus|median|average|mean|p\d{2}|result|latency|accuracy|throughput)\b|(?:对比|结果|延迟|准确率|吞吐)/iu.test(text);
+  const numberedProcedure = /(?:\bstep\s*\d+\b|(?:^|[\s；;。])\d+[.)、]\s*|步骤\s*[一二三四五六七八九十\d]+|[一二三四五六七八九十两\d]+个步骤)/iu.test(text);
+  const codeStructure = /```|\b(?:const|let|function|import|from|curl|npm|pnpm|pip)\s+[^\s]/iu.test(text);
+  const problemMethodResult = (
+    /\bproblem\b|问题/u.test(text) &&
+    /\bmethod\b|方法/u.test(text) &&
+    /\bresult\b|结果/u.test(text)
+  );
+  return {
+    factualRelease: matchesAny(text, FACTUAL_RELEASE_PATTERNS),
+    quantitativeBenchmark,
+    structured: numberedProcedure || codeStructure || problemMethodResult || quantitativeBenchmark,
+  };
+};
+
+const hasSubstantiveContent = (cards) => cards.some((card) => {
+  const structure = structuredEvidence(card);
+  return structure.factualRelease || structure.structured;
 });
+
+const hasQuantitativeBenchmark = (cards) => cards.some(
+  (card) => structuredEvidence(card).quantitativeBenchmark
+);
 
 const scorePreference = (cluster, cards, text, preferenceSignals) => {
   if (!preferenceSignals || typeof preferenceSignals !== 'object') return 50;
@@ -438,6 +531,8 @@ const scorePreference = (cluster, cards, text, preferenceSignals) => {
  * Account identity is read from author/account/accountId/handle/username and
  * always wins over the platform fallback. Unknown baselines get a conservative
  * neutral-low percentile; absolute likes or follower counts are never gates.
+ * `timezoneOffsetMinutes` is minutes east of UTC and makes unzoned source
+ * timestamps deterministic; otherwise the explicit `now` offset or UTC wins.
  */
 export const scoreTopicCluster = (
   cluster,
@@ -445,40 +540,42 @@ export const scoreTopicCluster = (
 ) => {
   const sourceTimezoneOffset = resolveTimezoneOffset(timezoneOffsetMinutes, now);
   const nowTimestamp = resolveNow(now, sourceTimezoneOffset);
-  const cards = cardsForCluster(cluster);
-  const socialEvidence = cards.filter((card) => !isFactEvidence(card));
-  // A lone item is scored independently of its role so toggling sourceType
-  // cannot create momentum. Once attention evidence exists, attached fact
-  // evidence is excluded from every momentum input.
-  const attentionCards = socialEvidence.length > 0 ? socialEvidence : cards;
+  const cards = cardsForCluster(cluster, nowTimestamp, sourceTimezoneOffset);
+  const attentionCards = cards.filter((card) => !isFactEvidence(card));
+  // A fact-only topic can be a time-sensitive release candidate, but one
+  // deterministic fact representative supplies only date/content. It never
+  // supplies engagement or a cross-platform propagation bonus.
+  const breakingCards = attentionCards.length > 0 ? attentionCards : cards.slice(0, 1);
   const text = clusterText(cluster, cards);
-  const attentionText = attentionCards.map(cardText).filter(Boolean).join(' ');
+  const breakingText = breakingCards.map(cardText).filter(Boolean).join(' ');
   const latestPublishedAt = cards
     .map((card) => readCardTime(card, nowTimestamp, sourceTimezoneOffset))
     .filter((timestamp) => timestamp !== null && timestamp <= nowTimestamp)
     .sort((left, right) => right - left)[0] ?? null;
-  const latestAttentionAt = attentionCards
+  const latestBreakingAt = breakingCards
     .map((card) => readCardTime(card, nowTimestamp, sourceTimezoneOffset))
     .filter((timestamp) => timestamp !== null && timestamp <= nowTimestamp)
     .sort((left, right) => right - left)[0] ?? null;
   const age = latestPublishedAt === null ? null : nowTimestamp - latestPublishedAt;
-  const attentionAge = latestAttentionAt === null ? null : nowTimestamp - latestAttentionAt;
+  const breakingAge = latestBreakingAt === null ? null : nowTimestamp - latestBreakingAt;
   const platforms = platformCount(cards);
   const attentionPlatforms = platformCount(attentionCards);
-  const engagement = averageEngagementPercentile(attentionCards, sourceBaselines);
+  const engagement = attentionCards.length > 0
+    ? averageEngagementPercentile(attentionCards, sourceBaselines)
+    : 0;
   const breakingSignal = matchesAny(text, BREAKING_PATTERNS);
   const handsOnSignal = matchesAny(text, HANDS_ON_PATTERNS);
   const analysisSignal = matchesAny(text, ANALYSIS_PATTERNS);
   const practical = practicalSignals(text);
   const practicalCount = Object.values(practical).filter(Boolean).length;
   const lowValue = matchesAny(text, LOW_VALUE_PATTERNS);
-  const attentionBreakingSignal = matchesAny(attentionText, BREAKING_PATTERNS);
-  const attentionHandsOnSignal = matchesAny(attentionText, HANDS_ON_PATTERNS);
-  const attentionLowValue = matchesAny(attentionText, LOW_VALUE_PATTERNS);
+  const momentumBreakingSignal = matchesAny(breakingText, BREAKING_PATTERNS);
+  const momentumHandsOnSignal = matchesAny(breakingText, HANDS_ON_PATTERNS);
+  const momentumLowValue = matchesAny(breakingText, LOW_VALUE_PATTERNS);
   const officialCount = cards.filter(isOfficialEvidence).length;
   const repositoryCount = cards.filter(isRepositoryEvidence).length;
   const hasSubstantiveEvidence = hasSubstantiveContent(cards);
-  const hasSubstantiveAttention = hasSubstantiveContent(attentionCards);
+  const hasSubstantiveBreaking = hasSubstantiveContent(breakingCards);
 
   let writeScore = 15 + collectionSizeScore(cards.length) + engagement * 0.12;
   if (breakingSignal) writeScore += 20;
@@ -495,23 +592,24 @@ export const scoreTopicCluster = (
   if (practical.caseStudy) studyScore += 15;
   if (practical.repository) studyScore += 10;
   if (practical.workflow) studyScore += 10;
+  if (hasQuantitativeBenchmark(cards)) studyScore += 35;
   if (text.length >= 240) studyScore += 8;
 
   // Broad launch/hands-on wording also appears in memes and reaction posts. It
   // cannot override the low-value cap without reusable or concrete factual evidence.
   if (lowValue && !hasSubstantiveEvidence) {
-    writeScore = Math.min(writeScore, 25);
-    studyScore = Math.min(studyScore, 15);
+    writeScore = 25;
+    studyScore = 15;
   }
 
   let breakingScore = 0;
-  if (attentionAge !== null && attentionAge >= 0 && attentionAge <= LANE_WINDOWS.breaking) {
-    const recency = (1 - attentionAge / LANE_WINDOWS.breaking) * 15;
+  if (breakingAge !== null && breakingAge >= 0 && breakingAge <= LANE_WINDOWS.breaking) {
+    const recency = (1 - breakingAge / LANE_WINDOWS.breaking) * 15;
     breakingScore = 20 + engagement * 0.2 + recency;
-    if (attentionBreakingSignal) breakingScore += 30;
-    if (attentionHandsOnSignal) breakingScore += 15;
+    if (momentumBreakingSignal) breakingScore += 30;
+    if (momentumHandsOnSignal) breakingScore += 15;
     if (attentionPlatforms >= 2) breakingScore += 15;
-    if (attentionLowValue && !hasSubstantiveAttention) breakingScore = 0;
+    if (momentumLowValue && !hasSubstantiveBreaking) breakingScore = 0;
   }
 
   let confidenceScore = 25 + collectionSizeScore(cards.length);
@@ -545,7 +643,7 @@ export const scoreTopicCluster = (
     laneEligibility: {
       write: age !== null && age >= 0 && age <= LANE_WINDOWS.write && writeScore >= 50,
       study: age !== null && age >= 0 && age <= LANE_WINDOWS.study && studyScore >= 55,
-      breaking: attentionAge !== null && attentionAge >= 0 && attentionAge <= LANE_WINDOWS.breaking && breakingScore >= 60,
+      breaking: breakingAge !== null && breakingAge >= 0 && breakingAge <= LANE_WINDOWS.breaking && breakingScore >= 60,
     },
   };
 };

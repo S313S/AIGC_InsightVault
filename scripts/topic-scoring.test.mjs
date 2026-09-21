@@ -151,17 +151,17 @@ test('adding official or repository facts does not manufacture social momentum',
     rawContent: 'Launch demo shows multiple agents collaborating on a coding task.',
   });
   const officialCard = evidence('fact-official', 'Claude Code Agent Teams changelog', {
-    platform: 'OfficialBlog',
-    sourceType: 'official',
+    platform: 'Platform.Official',
+    sourceType: undefined,
     sourceUrl: 'https://example.com/changelog/agent-teams',
     date: '刚刚',
     rawContent: 'Official changelog documents availability, API parameters, rollout regions, and model limits.',
     metrics: { likes: 9_000_000, bookmarks: 1_000_000, comments: 500_000, shares: 300_000 },
   });
   const repositoryCard = evidence('fact-repo', 'Claude Code Agent Teams repository release', {
-    platform: 'GitHub',
-    sourceType: 'repository',
-    sourceUrl: 'https://github.com/example/agent-teams/releases/tag/v3.1',
+    platform: 'github',
+    sourceType: undefined,
+    sourceUrl: 'https://example.com/releases/tag/v3.1',
     date: '刚刚',
     rawContent: 'Release notes include implementation details and benchmark fixtures.',
     metrics: { likes: 8_000_000, bookmarks: 800_000, comments: 400_000, shares: 200_000 },
@@ -178,6 +178,36 @@ test('adding official or repository facts does not manufacture social momentum',
   assert.equal(withFacts.breakingScore, social.breakingScore);
   assert.equal(withFacts.laneEligibility.breaking, social.laneEligibility.breaking);
   assert.ok(withFacts.confidenceScore > social.confidenceScore);
+});
+
+test('pure fact clusters never gain momentum from a second fact platform', () => {
+  const official = evidence('pure-official', 'Gemini 4 正式发布', {
+    platform: 'Official',
+    sourceType: undefined,
+    sourceUrl: 'https://deepmind.google/models/gemini-4',
+    rawContent: 'Release notes document Gemini version 4 availability, API parameters, regions, and access scope.',
+    metrics: { likes: 9_000_000, bookmarks: 1_000_000, comments: 500_000, shares: 300_000 },
+  });
+  const github = evidence('pure-github', 'Gemini 4 SDK release', {
+    platform: 'Platform.GitHub',
+    sourceType: undefined,
+    sourceUrl: 'https://example.com/gemini-sdk-v4',
+    rawContent: 'Release notes document Gemini version 4 availability, API parameters, regions, and access scope.',
+    metrics: { likes: 8_000_000, bookmarks: 800_000, comments: 400_000, shares: 200_000 },
+  });
+  const oneFact = scoreTopicCluster(cluster('pure-fact-one', [official]), {
+    now: NOW,
+    sourceBaselines: baselines,
+  });
+  const twoFacts = scoreTopicCluster(cluster('pure-fact-two', [official, github]), {
+    now: NOW,
+    sourceBaselines: baselines,
+  });
+
+  assert.ok(oneFact.breakingScore >= 60, oneFact.breakingScore);
+  assert.equal(twoFacts.breakingScore, oneFact.breakingScore);
+  assert.equal(twoFacts.laneEligibility.breaking, oneFact.laneEligibility.breaking);
+  assert.ok(twoFacts.confidenceScore > oneFact.confidenceScore);
 });
 
 test('uses per-source percentiles instead of absolute engagement dominance', () => {
@@ -256,8 +286,8 @@ test('official or repository evidence raises confidence without directly raising
 
   assert.ok(official.confidenceScore > social.confidenceScore);
   assert.ok(repository.confidenceScore > social.confidenceScore);
-  assert.equal(official.breakingScore, social.breakingScore);
-  assert.equal(repository.breakingScore, social.breakingScore);
+  assert.ok(official.breakingScore <= social.breakingScore);
+  assert.ok(repository.breakingScore <= social.breakingScore);
 });
 
 test('rejects invalid or unparseable publication times from breaking eligibility', () => {
@@ -372,6 +402,36 @@ test('does not let one broad comparison or code word wash low-value entertainmen
   }
 });
 
+test('does not let isolated tutorial, benchmark, or case-study labels wash entertainment', () => {
+  for (const [name, title] of [
+    ['tutorial-benchmark', 'Sora 3 爆笑教程 benchmark 实测'],
+    ['case-study', 'Sora 3 发布后的搞笑 case study'],
+  ]) {
+    const result = scoreTopicCluster(cluster(`label-${name}`, [
+      evidence(`label-${name}-1`, title, {
+        rawContent: '纯娱乐段子和表情包合集，围观抽奖，没有步骤、数据或可验证结果。',
+        metrics: { likes: 2_000_000, bookmarks: 50_000, comments: 90_000, shares: 40_000 },
+      }),
+    ]), { now: NOW, sourceBaselines: baselines });
+
+    assert.ok(result.writeScore < 40, `${name}: ${result.writeScore}`);
+    assert.equal(result.breakingScore, 0, name);
+    assert.equal(result.laneEligibility.breaking, false, name);
+  }
+});
+
+test('keeps a quantitative benchmark with concrete method and results substantive', () => {
+  const result = scoreTopicCluster(cluster('real-benchmark', [
+    evidence('real-benchmark-1', 'Sora 3 latency benchmark', {
+      rawContent: 'Method: test Sora 3 versus Sora 2 on 100 prompts. Result: median latency was 12.4s versus 18.9s.',
+      tags: ['benchmark', 'comparison'],
+    }),
+  ]), { now: NOW, sourceBaselines: baselines });
+
+  assert.ok(result.studyScore >= 55, result.studyScore);
+  assert.equal(result.laneEligibility.study, true);
+});
+
 test('deduplicates raw cards by stable evidence identity before counting reach or engagement', () => {
   const canonical = evidence('canonical', 'Claude Code Agent Teams 正式发布实测', {
     sourceUrl: 'https://x.com/example/status/42',
@@ -394,6 +454,45 @@ test('deduplicates raw cards by stable evidence identity before counting reach o
   assert.equal(repeated.breakingScore, one.breakingScore);
   assert.equal(repeated.confidenceScore, one.confidenceScore);
   assert.deepEqual(repeated.laneEligibility, one.laneEligibility);
+});
+
+test('merges repeated observations using latest time and metrics plus the richest stable body', () => {
+  const olderRich = evidence('z-old-id', 'Claude Code migration release tutorial', {
+    sourceUrl: 'https://example.com/same-evidence',
+    publishedAt: '2026-09-21T01:00:00Z',
+    date: undefined,
+    rawContent: '完整教程：步骤 1 诊断；步骤 2 修改。包含代码实现、benchmark、真实项目实践案例和 GitHub repo。',
+    tags: ['教程', '代码', 'benchmark'],
+    metrics: { likes: 5, bookmarks: 1, comments: 0, shares: 0 },
+  });
+  const latestBrief = evidence('a-new-id', 'Claude Code migration update', {
+    sourceUrl: 'https://example.com/same-evidence',
+    publishedAt: '2026-09-21T03:00:00Z',
+    date: undefined,
+    rawContent: 'Latest observation.',
+    metrics: { likes: 160, bookmarks: 20, comments: 10, shares: 5 },
+  });
+  const score = (cards) => scoreTopicCluster(cluster('observation-merge', cards, {
+    evidenceKeys: ['evidence:same'],
+  }), { now: NOW, sourceBaselines: baselines });
+  const forward = score([olderRich, latestBrief]);
+  const reverseWithSwappedIds = score([
+    { ...structuredClone(latestBrief), id: olderRich.id },
+    { ...structuredClone(olderRich), id: latestBrief.id },
+  ]);
+  const summarizeScore = (result) => ({
+    writeScore: result.writeScore,
+    studyScore: result.studyScore,
+    breakingScore: result.breakingScore,
+    confidenceScore: result.confidenceScore,
+    latestPublishedAt: result.latestPublishedAt,
+    laneEligibility: result.laneEligibility,
+  });
+
+  assert.deepEqual(summarizeScore(forward), summarizeScore(reverseWithSwappedIds));
+  assert.equal(forward.latestPublishedAt, '2026-09-21T03:00:00.000Z');
+  assert.ok(forward.studyScore >= 75, forward.studyScore);
+  assert.ok(forward.breakingScore >= 85, forward.breakingScore);
 });
 
 test('clamps every score and remains deterministic without mutating inputs', () => {
