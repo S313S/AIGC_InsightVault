@@ -6,6 +6,7 @@ export const TOPIC_BRIEF_PROMPT_MAX_CHARS = 12_000;
 export const TOPIC_BRIEF_MAX_EVIDENCE_ITEMS = 24;
 export const TOPIC_BRIEF_MAX_KNOWLEDGE_CANDIDATES = 20;
 export const TOPIC_BRIEF_RAW_FIELD_MAX_CHARS = 8_000;
+export const DEFAULT_TOPIC_BRIEF_TIMEOUT_MS = 9_000;
 
 export const TOPIC_BRIEF_FIELD_LIMITS = Object.freeze({
   title: 80,
@@ -376,6 +377,25 @@ const defaultGenerateContent = (apiKey) => async (request) => {
   return ai.models.generateContent(request);
 };
 
+const withProviderTimeout = async (work, timeoutMs) => {
+  const duration = Math.max(1, Math.trunc(Number(timeoutMs) || DEFAULT_TOPIC_BRIEF_TIMEOUT_MS));
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(work),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error('Topic brief provider timed out');
+          error.code = 'TOPIC_BRIEF_TIMEOUT';
+          reject(error);
+        }, duration);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 /** Generate a brief, falling back deterministically for every provider failure. */
 export const generateTopicBrief = async (cluster, options = {}) => {
   const fallback = normalizeTopicBrief({}, cluster);
@@ -395,11 +415,11 @@ export const generateTopicBrief = async (cluster, options = {}) => {
 
   try {
     if (typeof generateContent !== 'function') return fallbackResult('provider_failure');
-    const response = await generateContent({
+    const response = await withProviderTimeout(() => generateContent({
       model: 'gemini-2.5-flash',
       contents: buildTopicBriefPrompt(cluster),
       config: { responseMimeType: 'application/json' },
-    });
+    }), options?.timeoutMs);
     const parsed = parseStrictJsonObject(await readResponseText(response));
     if (!parsed || !hasCompleteBrief(parsed)) return fallbackResult('invalid_response');
     return {
@@ -407,8 +427,8 @@ export const generateTopicBrief = async (cluster, options = {}) => {
       generationStatus: 'generated',
       errorKind: null,
     };
-  } catch {
-    return fallbackResult('provider_failure');
+  } catch (error) {
+    return fallbackResult(error?.code === 'TOPIC_BRIEF_TIMEOUT' ? 'timeout' : 'provider_failure');
   }
 };
 

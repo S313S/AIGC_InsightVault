@@ -4,8 +4,10 @@ import { readFile } from 'node:fs/promises';
 
 import { clusterTopicCandidates } from '../shared/topicClustering.js';
 import {
+  anchorRelativePublicationTime,
   buildSourceBaselines,
   rebuildTopicRadar,
+  selectBriefGenerationFingerprints,
   TopicRadarPipelineError,
 } from '../server/topicRadarPipeline.js';
 
@@ -83,14 +85,17 @@ class FakeQuery {
     this.options = null;
     this.singleRow = false;
     this.limitValue = null;
+    this.rangeValue = null;
   }
 
   select(columns) { this.selected = columns; return this; }
   eq(column, value) { this.filters.push({ kind: 'eq', column, value }); return this; }
   in(column, values) { this.filters.push({ kind: 'in', column, values }); return this; }
   gte(column, value) { this.filters.push({ kind: 'gte', column, value }); return this; }
+  contains(column, value) { this.filters.push({ kind: 'contains', column, value }); return this; }
   order(column, options) { this.orderBy = { column, options }; return this; }
   limit(value) { this.limitValue = value; return this; }
+  range(from, to) { this.rangeValue = { from, to }; return this; }
   single() { this.singleRow = true; return this; }
   maybeSingle() { this.singleRow = true; return this; }
   insert(payload) { this.operation = 'insert'; this.payload = payload; return this; }
@@ -112,6 +117,8 @@ class FakeQuery {
     if (failure) return { data: null, error: { message: failure } };
     if (this.operation === 'delete') {
       this.client.deleteCalls += 1;
+      const rows = this.client.tables[this.table] || [];
+      this.client.tables[this.table] = rows.filter((row) => !this.matches(row));
       return { data: null, error: null };
     }
     if (this.operation === 'select') {
@@ -121,6 +128,7 @@ class FakeQuery {
         rows.sort((left, right) => String(left[this.orderBy.column] || '').localeCompare(String(right[this.orderBy.column] || '')) * direction);
       }
       if (this.limitValue !== null) rows = rows.slice(0, this.limitValue);
+      if (this.rangeValue !== null) rows = rows.slice(this.rangeValue.from, this.rangeValue.to + 1);
       return { data: this.singleRow ? rows[0] ?? null : structuredClone(rows), error: null };
     }
 
@@ -152,6 +160,10 @@ class FakeQuery {
       if (filter.kind === 'eq') return row[filter.column] === filter.value;
       if (filter.kind === 'in') return filter.values.includes(row[filter.column]);
       if (filter.kind === 'gte') return String(row[filter.column] || '') >= String(filter.value);
+      if (filter.kind === 'contains') {
+        const values = Array.isArray(row[filter.column]) ? row[filter.column] : [];
+        return filter.value.every((value) => values.includes(value));
+      }
       return true;
     });
   }
@@ -490,6 +502,172 @@ test('stable evidence timestamps do not advance on rerun and only move for newer
 
   assert.equal(advanced.first_seen_at, initial.first_seen_at);
   assert.equal(advanced.latest_evidence_at, '2026-09-22T07:00:00.000Z');
+});
+
+test('current snapshot includes an old-created refreshed card outside the background window', async () => {
+  const snapshotTag = 'snapshot:2026-09-21T08:00:00.000Z';
+  const refreshed = card({
+    id: 'old-current-card',
+    created_at: '2026-01-01T08:00:00.000Z',
+    date: '2026-09-21T07:00:00.000Z',
+    tags: ['Claude Code', snapshotTag],
+  });
+  const supabase = new FakeSupabase({ knowledge_cards: [refreshed] });
+
+  const result = await run(supabase, { currentSnapshotTag: snapshotTag });
+
+  assert.equal(result.cardsAccepted, 1);
+  assert.equal(result.topicsInserted, 1);
+  assert.equal(supabase.tables.topic_sources[0].card_id, refreshed.id);
+});
+
+test('relative publication time is anchored to stable observation time, not process now', async () => {
+  const relative = card({
+    date: '2小时前',
+    created_at: '2026-09-20T07:05:00.000Z',
+  });
+  const normalized = anchorRelativePublicationTime({
+    ...relative,
+    sourceUrl: relative.source_url,
+    createdAt: relative.created_at,
+  });
+  assert.equal(normalized.publishedAt, '2026-09-20T05:05:00.000Z');
+
+  const firstDb = new FakeSupabase({ knowledge_cards: [relative] });
+  const secondDb = new FakeSupabase({ knowledge_cards: [relative] });
+  await run(firstDb, { now: '2026-09-20T08:00:00.000Z' });
+  await run(secondDb, { now: '2026-09-21T08:00:00.000Z' });
+
+  assert.ok(firstDb.tables.topics[0].breaking_score > secondDb.tables.topics[0].breaking_score);
+  assert.equal(firstDb.tables.topics[0].latest_evidence_at, secondDb.tables.topics[0].latest_evidence_at);
+});
+
+test('existing source and card paging restores more than one page and batch', async () => {
+  const current = card({ id: 'current-card' });
+  const old = existingTopic({ source_count: 121, platform_count: 1 });
+  const historicalCards = Array.from({ length: 121 }, (_, index) => card({
+    id: `historical-${String(index).padStart(3, '0')}`,
+    is_trending: false,
+    source_url: index === 0
+      ? `${current.source_url}?utm_source=archive`
+      : `https://x.com/archive/status/${1000 + index}`,
+    created_at: '2026-01-01T08:00:00.000Z',
+    date: '2026-01-01T07:00:00.000Z',
+  }));
+  const supabase = new FakeSupabase({
+    knowledge_cards: [current, ...historicalCards],
+    topics: [old],
+    topic_sources: historicalCards.map((value, index) => ({
+      id: `source-${index}`,
+      topic_id: old.id,
+      card_id: value.id,
+      evidence_role: 'attention',
+      source_type: 'social',
+      relevance: 80,
+    })),
+  });
+
+  const result = await run(supabase, { queryPageSize: 40, queryBatchSize: 25 });
+
+  assert.equal(result.truncated, false);
+  assert.equal(result.topicsUpdated, 1);
+  assert.equal(supabase.tables.topics[0].source_count, 122);
+  const sourceReadCalls = supabase.calls.filter((call) => call.table === 'topic_sources' && call.operation === 'select');
+  const referencedCardReads = supabase.calls.filter((call) => call.table === 'knowledge_cards' &&
+    call.operation === 'select' && call.filters.some((filter) => filter.kind === 'in' && filter.column === 'id'));
+  assert.ok(sourceReadCalls.length > 3);
+  assert.ok(referencedCardReads.length > 4);
+});
+
+test('association safety-limit truncation is reported and fails closed before topic writes', async () => {
+  const old = existingTopic();
+  const supabase = new FakeSupabase({
+    knowledge_cards: [card()],
+    topics: [old],
+    topic_sources: [
+      { id: 'source-a', topic_id: old.id, card_id: card().id },
+      { id: 'source-b', topic_id: old.id, card_id: 'missing-card' },
+    ],
+  });
+
+  const result = await run(supabase, { queryPageSize: 1, queryMaxRows: 1 });
+
+  assert.equal(result.status, 'partial_failure');
+  assert.equal(result.truncated, true);
+  assert.equal(result.reason, 'read_truncated');
+  assert.equal(supabase.calls.some((call) => call.table === 'topics' && call.operation === 'upsert'), false);
+});
+
+test('model selection is capped and rotates the non-priority tail by UTC date', async () => {
+  const candidates = Array.from({ length: 30 }, (_, index) => ({
+    fingerprint: `topic-${String(index).padStart(2, '0')}`,
+    opportunityScore: 100 - index,
+    existingTopic: index < 3 ? { generation_status: 'fallback' } : null,
+  }));
+  const dayOne = selectBriefGenerationFingerprints(candidates, {
+    maxModelCalls: 12,
+    now: '2026-09-21T08:00:00.000Z',
+  });
+  const dayTwo = selectBriefGenerationFingerprints(candidates, {
+    maxModelCalls: 12,
+    now: '2026-09-22T08:00:00.000Z',
+  });
+
+  assert.equal(dayOne.size, 12);
+  assert.equal(dayTwo.size, 12);
+  assert.ok(['topic-00', 'topic-01', 'topic-02'].every((value) => dayOne.has(value)));
+  assert.notDeepEqual([...dayOne].sort(), [...dayTwo].sort());
+});
+
+test('pipeline caps model calls for 30 topics while persisting every fallback', async () => {
+  const cards = Array.from({ length: 30 }, (_, index) => card({
+    id: `budget-card-${index}`,
+    source_url: `https://x.com/budget/status/${1000 + index}`,
+    title: `BudgetProduct${index} 2 正式发布`,
+    raw_content: `BudgetProduct${index} 2 正式发布。`,
+    ai_analysis: { summary: `BudgetProduct${index} 2` },
+    tags: [`BudgetProduct${index}`],
+  }));
+  const supabase = new FakeSupabase({ knowledge_cards: cards });
+  let modelCalls = 0;
+
+  const result = await run(supabase, {
+    maxModelCalls: 12,
+    generateContent: async () => {
+      modelCalls += 1;
+      return { text: JSON.stringify(validBrief(`生成 ${modelCalls}`)) };
+    },
+  });
+
+  assert.equal(modelCalls, 12);
+  assert.equal(supabase.tables.topics.length, 30);
+  assert.equal(result.briefsGenerated, 12);
+  assert.equal(result.briefsFallback, 18);
+  assert.equal(result.errors.filter((value) => value.errorKind === 'model_budget_exhausted').length, 18);
+});
+
+test('one timed-out model call falls back and later topics still run', async () => {
+  const cards = [
+    card({ id: 'timeout-a', source_url: 'https://x.com/a/status/1', title: 'TimeoutAlpha 2 正式发布', raw_content: 'TimeoutAlpha 2 正式发布。', tags: ['TimeoutAlpha'], ai_analysis: { summary: 'TimeoutAlpha 2' } }),
+    card({ id: 'timeout-b', source_url: 'https://x.com/b/status/2', title: 'TimeoutBeta 2 正式发布', raw_content: 'TimeoutBeta 2 正式发布。', tags: ['TimeoutBeta'], ai_analysis: { summary: 'TimeoutBeta 2' } }),
+  ];
+  const supabase = new FakeSupabase({ knowledge_cards: cards });
+  let modelCalls = 0;
+  const result = await run(supabase, {
+    maxModelCalls: 2,
+    modelTimeoutMs: 5,
+    generateContent: async () => {
+      modelCalls += 1;
+      if (modelCalls === 1) return new Promise(() => {});
+      return { text: JSON.stringify(validBrief('超时后的后续成功')) };
+    },
+  });
+
+  assert.equal(modelCalls, 2);
+  assert.equal(result.briefsFallback, 1);
+  assert.equal(result.briefsGenerated, 1);
+  assert.equal(result.errors.some((value) => value.errorKind === 'timeout'), true);
+  assert.equal(supabase.tables.topics.length, 2);
 });
 
 test('old topics are retained and repeated runs are idempotent', async () => {

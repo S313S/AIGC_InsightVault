@@ -425,7 +425,7 @@ test('cron results persist and return run health for collection outcome paths', 
 
   assert.match(source, /mode: 'rebuild'[\s\S]{0,300}?runHealth/);
   assert.match(source, /reason: 'auto_update_disabled'[\s\S]{0,300}?runHealth/);
-  assert.match(source, /\.json\(\{ error: err\.message \|\| 'Cron monitor failed', runHealth \}\)/);
+  assert.match(source, /\.json\(\{ error: err\.message \|\| 'Cron monitor failed', topicRadar, runHealth \}\)/);
   assert.ok((source.match(/responsePayload\.runHealth = runHealth/g) || []).length >= 2,
     'zero-candidate and normal responses should expose runHealth');
   assert.ok((source.match(/resultSummary = \{[\s\S]{0,240}?runHealth/g) || []).length >= 3,

@@ -1,4 +1,8 @@
-import { generateTopicBrief, shouldRegenerateBrief } from './topicBriefGenerator.js';
+import {
+  generateTopicBrief,
+  normalizeTopicBrief,
+  shouldRegenerateBrief,
+} from './topicBriefGenerator.js';
 import { clusterTopicCandidates } from '../shared/topicClustering.js';
 import {
   buildEvidenceFingerprint,
@@ -9,8 +13,12 @@ import { isFactEvidence, scoreTopicCluster } from '../shared/topicScoring.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CARD_LOOKBACK_DAYS = 35;
-const MAX_CARDS = 500;
-const MAX_TOPICS = 500;
+const DEFAULT_QUERY_PAGE_SIZE = 100;
+const DEFAULT_QUERY_BATCH_SIZE = 50;
+const DEFAULT_QUERY_MAX_ROWS = 5_000;
+const DEFAULT_MAX_MODEL_CALLS = 12;
+const DEFAULT_MODEL_TIMEOUT_MS = 9_000;
+const DEFAULT_PIPELINE_DEADLINE_MS = 45_000;
 
 const CARD_COLUMNS = [
   'id', 'owner_id', 'is_public', 'source_url', 'title', 'author', 'platform',
@@ -150,6 +158,37 @@ const evidenceContentTime = (card) => readStableFieldTime(card, [
   'publishedAt', 'published_at', 'publishTime', 'publish_time', 'date',
 ]) ?? evidenceDiscoveryTime(card);
 
+const relativePublicationDelta = (value) => {
+  if (typeof value !== 'string') return null;
+  const text = value.normalize('NFKC').trim().toLowerCase();
+  if (['刚刚', '刚才', 'just now'].includes(text)) return 0;
+  const match = /^(\d+(?:\.\d+)?)\s*(分钟|小时|天)前$/u.exec(text);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  const multiplier = match[2] === '分钟'
+    ? 60 * 1000
+    : match[2] === '小时'
+      ? 60 * 60 * 1000
+      : DAY_MS;
+  return Number.isFinite(amount) ? amount * multiplier : null;
+};
+
+/** Resolve source-relative publication text against the card's stable observation. */
+export const anchorRelativePublicationTime = (card) => {
+  if (!card || typeof card !== 'object') return card;
+  if (readStableFieldTime(card, ['publishedAt', 'published_at', 'publishTime', 'publish_time']) !== null) {
+    return card;
+  }
+  for (const field of ['date', 'publishedAt', 'published_at', 'publishTime', 'publish_time']) {
+    const delta = relativePublicationDelta(card[field]);
+    if (delta === null) continue;
+    const anchor = evidenceDiscoveryTime(card);
+    if (anchor === null) return card;
+    return { ...card, publishedAt: new Date(anchor - delta).toISOString() };
+  }
+  return card;
+};
+
 const resolveNow = (value) => {
   const timestamp = value === undefined ? Date.now() : safeDate(value);
   if (timestamp === null) throw new TypeError('rebuildTopicRadar requires a valid `now` value');
@@ -226,6 +265,30 @@ const maximumTimestamp = (...values) => {
   return timestamps.length > 0 ? Math.max(...timestamps) : null;
 };
 
+const chunkValues = (values, size) => {
+  const result = [];
+  for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size));
+  return result;
+};
+
+const positiveInteger = (value, fallback) => {
+  const numeric = Math.trunc(Number(value));
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+};
+
+const readPaged = async ({ makeQuery, stage, pageSize, maxRows }) => {
+  const rows = [];
+  while (rows.length < maxRows) {
+    const size = Math.min(pageSize, maxRows - rows.length);
+    const result = await makeQuery().range(rows.length, rows.length + size - 1);
+    if (result?.error) fail(stage, errorMessage(result, `Failed during ${stage}`));
+    const page = asArray(result?.data);
+    rows.push(...page);
+    if (page.length < size) return { rows, truncated: false };
+  }
+  return { rows, truncated: true };
+};
+
 const buildExistingTopics = (topics, sources, cardsById) => {
   const sourcesByTopic = new Map();
   for (const source of sources) {
@@ -251,50 +314,103 @@ const buildExistingTopics = (topics, sources, cardsById) => {
   });
 };
 
-const readCards = async (supabase, ownerId, cutoffIso) => {
-  const result = await supabase
-    .from('knowledge_cards')
-    .select(CARD_COLUMNS)
-    .eq('owner_id', ownerId)
-    .eq('is_trending', true)
-    .gte('created_at', cutoffIso)
-    .order('created_at', { ascending: false })
-    .limit(MAX_CARDS);
-  if (result?.error) fail('cards_read', errorMessage(result, 'Failed to read topic cards'));
-  return asArray(result?.data);
+const readCards = async (
+  supabase,
+  ownerId,
+  cutoffIso,
+  currentSnapshotTag,
+  { pageSize, maxRows }
+) => {
+  const recent = await readPaged({
+    makeQuery: () => supabase
+      .from('knowledge_cards')
+      .select(CARD_COLUMNS)
+      .eq('owner_id', ownerId)
+      .eq('is_trending', true)
+      .gte('created_at', cutoffIso)
+      .order('created_at', { ascending: false }),
+    stage: 'cards_read',
+    pageSize,
+    maxRows,
+  });
+  let current = { rows: [], truncated: false };
+  if (cleanText(currentSnapshotTag)) {
+    current = await readPaged({
+      makeQuery: () => supabase
+        .from('knowledge_cards')
+        .select(CARD_COLUMNS)
+        .eq('owner_id', ownerId)
+        .eq('is_trending', true)
+        .contains('tags', [currentSnapshotTag])
+        .order('created_at', { ascending: false }),
+      stage: 'current_snapshot_cards_read',
+      pageSize,
+      maxRows,
+    });
+  }
+  const byId = new Map([...recent.rows, ...current.rows].map((row) => [row.id, row]));
+  return { rows: [...byId.values()], truncated: recent.truncated || current.truncated };
 };
 
-const readTopics = async (supabase, ownerId) => {
-  const result = await supabase
+const readTopics = (supabase, ownerId, { pageSize, maxRows }) => readPaged({
+  makeQuery: () => supabase
     .from('topics')
     .select(TOPIC_COLUMNS)
     .eq('owner_id', ownerId)
-    .order('latest_evidence_at', { ascending: false })
-    .limit(MAX_TOPICS);
-  if (result?.error) fail('topics_read', errorMessage(result, 'Failed to read existing topics'));
-  return asArray(result?.data);
+    .order('latest_evidence_at', { ascending: false }),
+  stage: 'topics_read',
+  pageSize,
+  maxRows,
+});
+
+const readSources = async (supabase, topicIds, { pageSize, batchSize, maxRows }) => {
+  if (topicIds.length === 0) return { rows: [], truncated: false };
+  const rows = [];
+  for (const topicBatch of chunkValues(topicIds, batchSize)) {
+    const remaining = maxRows - rows.length;
+    if (remaining <= 0) return { rows, truncated: true };
+    const batch = await readPaged({
+      makeQuery: () => supabase
+        .from('topic_sources')
+        .select(SOURCE_COLUMNS)
+        .in('topic_id', topicBatch)
+        .order('id', { ascending: true }),
+      stage: 'topic_sources_read',
+      pageSize,
+      maxRows: remaining,
+    });
+    rows.push(...batch.rows);
+    if (batch.truncated) return { rows, truncated: true };
+  }
+  return { rows, truncated: false };
 };
 
-const readSources = async (supabase, topicIds) => {
-  if (topicIds.length === 0) return [];
-  const result = await supabase
-    .from('topic_sources')
-    .select(SOURCE_COLUMNS)
-    .in('topic_id', topicIds);
-  if (result?.error) fail('topic_sources_read', errorMessage(result, 'Failed to read topic sources'));
-  return asArray(result?.data);
-};
-
-const readReferencedCards = async (supabase, ownerId, cardIds) => {
-  if (cardIds.length === 0) return [];
-  const result = await supabase
-    .from('knowledge_cards')
-    .select(CARD_COLUMNS)
-    .eq('owner_id', ownerId)
-    .in('id', cardIds)
-    .limit(MAX_CARDS);
-  if (result?.error) fail('source_cards_read', errorMessage(result, 'Failed to read source cards'));
-  return asArray(result?.data);
+const readReferencedCards = async (
+  supabase,
+  ownerId,
+  cardIds,
+  { pageSize, batchSize, maxRows }
+) => {
+  if (cardIds.length === 0) return { rows: [], truncated: false };
+  const rows = [];
+  for (const cardBatch of chunkValues(cardIds, batchSize)) {
+    const remaining = maxRows - rows.length;
+    if (remaining <= 0) return { rows, truncated: true };
+    const batch = await readPaged({
+      makeQuery: () => supabase
+        .from('knowledge_cards')
+        .select(CARD_COLUMNS)
+        .eq('owner_id', ownerId)
+        .in('id', cardBatch)
+        .order('id', { ascending: true }),
+      stage: 'source_cards_read',
+      pageSize,
+      maxRows: remaining,
+    });
+    rows.push(...batch.rows);
+    if (batch.truncated) return { rows, truncated: true };
+  }
+  return { rows, truncated: false };
 };
 
 const upsertTopic = async (supabase, ownerId, row) => {
@@ -318,6 +434,43 @@ const upsertSources = async (supabase, rows) => {
   if (result?.error) fail('topic_sources_upsert', errorMessage(result, 'Failed to persist topic sources'));
 };
 
+const generationPriority = (candidate) => {
+  const existing = candidate?.existingTopic;
+  if (existing?.generation_status === 'fallback') return 0;
+  if (!existing) return 1;
+  return 2;
+};
+
+/** Select a bounded daily generation set with a rotating tail to avoid starvation. */
+export const selectBriefGenerationFingerprints = (
+  candidates,
+  { maxModelCalls = DEFAULT_MAX_MODEL_CALLS, now } = {}
+) => {
+  const limit = Math.max(0, Math.trunc(Number(maxModelCalls) || 0));
+  if (limit === 0) return new Set();
+  const ordered = asArray(candidates)
+    .filter((candidate) => cleanId(candidate?.fingerprint))
+    .sort((left, right) => (
+      generationPriority(left) - generationPriority(right) ||
+      (safeDate(left?.existingTopic?.generated_at) ?? 0) - (safeDate(right?.existingTopic?.generated_at) ?? 0) ||
+      Number(right?.opportunityScore || 0) - Number(left?.opportunityScore || 0) ||
+      left.fingerprint.localeCompare(right.fingerprint, 'en')
+    ));
+  if (ordered.length <= limit) return new Set(ordered.map((candidate) => candidate.fingerprint));
+
+  const prioritySlots = Math.max(1, Math.floor(limit * 2 / 3));
+  const selected = ordered.slice(0, prioritySlots);
+  const tail = ordered.slice(prioritySlots);
+  const rotatingSlots = limit - selected.length;
+  const timestamp = safeDate(now) ?? Date.now();
+  const day = Math.floor(timestamp / DAY_MS);
+  const offset = tail.length > 0 ? (day * Math.max(1, rotatingSlots)) % tail.length : 0;
+  for (let index = 0; index < rotatingSlots && index < tail.length; index += 1) {
+    selected.push(tail[(offset + index) % tail.length]);
+  }
+  return new Set(selected.map((candidate) => candidate.fingerprint));
+};
+
 const baseResult = (overrides = {}) => ({
   status: 'success',
   reason: null,
@@ -330,21 +483,50 @@ const baseResult = (overrides = {}) => ({
   briefsGenerated: 0,
   briefsReused: 0,
   briefsFallback: 0,
+  truncated: false,
   errors: [],
   ...overrides,
 });
 
 /** Rebuild the owner-scoped editorial topic radar without deleting prior topics. */
-export const rebuildTopicRadar = async ({ supabase, ownerId, now, generateContent } = {}) => {
+export const rebuildTopicRadar = async ({
+  supabase,
+  ownerId,
+  now,
+  generateContent,
+  currentSnapshotTag = '',
+  queryPageSize = DEFAULT_QUERY_PAGE_SIZE,
+  queryBatchSize = DEFAULT_QUERY_BATCH_SIZE,
+  queryMaxRows = DEFAULT_QUERY_MAX_ROWS,
+  maxModelCalls = DEFAULT_MAX_MODEL_CALLS,
+  modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS,
+  pipelineDeadlineMs = DEFAULT_PIPELINE_DEADLINE_MS,
+} = {}) => {
   if (!supabase || typeof supabase.from !== 'function') throw new TypeError('rebuildTopicRadar requires supabase');
   const scopedOwnerId = cleanId(ownerId);
   if (!scopedOwnerId) throw new TypeError('rebuildTopicRadar requires ownerId');
+  const pipelineStartedAt = Date.now();
   const clock = resolveNow(now);
   const cutoffIso = new Date(clock.timestamp - CARD_LOOKBACK_DAYS * DAY_MS).toISOString();
-  const rawCards = await readCards(supabase, scopedOwnerId, cutoffIso);
+  const queryOptions = {
+    pageSize: positiveInteger(queryPageSize, DEFAULT_QUERY_PAGE_SIZE),
+    batchSize: positiveInteger(queryBatchSize, DEFAULT_QUERY_BATCH_SIZE),
+    maxRows: positiveInteger(queryMaxRows, DEFAULT_QUERY_MAX_ROWS),
+  };
+  const cardRead = await readCards(
+    supabase,
+    scopedOwnerId,
+    cutoffIso,
+    currentSnapshotTag,
+    queryOptions
+  );
+  const rawCards = cardRead.rows;
   if (rawCards.length === 0) return baseResult({ status: 'skipped', reason: 'no_cards' });
 
-  const cards = rawCards.filter((row) => isUsableCard(row, scopedOwnerId)).map(toRuntimeCard);
+  const cards = rawCards
+    .filter((row) => isUsableCard(row, scopedOwnerId))
+    .map(toRuntimeCard)
+    .map(anchorRelativePublicationTime);
   if (cards.length === 0) {
     return baseResult({
       status: 'skipped',
@@ -353,11 +535,13 @@ export const rebuildTopicRadar = async ({ supabase, ownerId, now, generateConten
     });
   }
 
-  const topics = (await readTopics(supabase, scopedOwnerId))
+  const topicRead = await readTopics(supabase, scopedOwnerId, queryOptions);
+  const topics = topicRead.rows
     .filter((topic) => topic?.owner_id === scopedOwnerId && cleanId(topic?.id));
   const topicByFingerprint = new Map(topics.map((topic) => [topic.fingerprint, topic]));
   const topicIds = topics.map((topic) => topic.id);
-  const sources = (await readSources(supabase, topicIds))
+  const sourceRead = await readSources(supabase, topicIds, queryOptions);
+  const sources = sourceRead.rows
     .filter((source) => topicIds.includes(source?.topic_id) && cleanId(source?.card_id));
   const sourceCardIdsByTopic = new Map();
   for (const source of sources) {
@@ -369,9 +553,32 @@ export const rebuildTopicRadar = async ({ supabase, ownerId, now, generateConten
   const cardsById = new Map(cards.map((value) => [value.id, value]));
   const missingCardIds = [...new Set(sources.map((source) => source.card_id))]
     .filter((cardId) => !cardsById.has(cardId));
-  const referencedRows = await readReferencedCards(supabase, scopedOwnerId, missingCardIds);
-  for (const row of referencedRows) {
-    if (row?.owner_id === scopedOwnerId && cleanId(row.id)) cardsById.set(row.id, toRuntimeCard(row));
+  const referencedRead = await readReferencedCards(supabase, scopedOwnerId, missingCardIds, queryOptions);
+  for (const row of referencedRead.rows) {
+    if (row?.owner_id === scopedOwnerId && cleanId(row.id)) {
+      cardsById.set(row.id, anchorRelativePublicationTime(toRuntimeCard(row)));
+    }
+  }
+
+  const truncatedResources = [
+    ['cards', cardRead.truncated],
+    ['topics', topicRead.truncated],
+    ['topic_sources', sourceRead.truncated],
+    ['source_cards', referencedRead.truncated],
+  ].filter(([, truncated]) => truncated).map(([resource]) => resource);
+  if (truncatedResources.length > 0) {
+    return baseResult({
+      status: 'partial_failure',
+      reason: 'read_truncated',
+      cardsRead: rawCards.length,
+      cardsAccepted: cards.length,
+      truncated: true,
+      errors: [{
+        stage: 'read_truncated',
+        resources: truncatedResources,
+        errorKind: 'safety_limit',
+      }],
+    });
   }
 
   const existingTopics = buildExistingTopics(topics, sources, cardsById);
@@ -394,14 +601,30 @@ export const rebuildTopicRadar = async ({ supabase, ownerId, now, generateConten
   // No topic-preference persistence exists yet. Task 9 will connect saved,
   // ignored, and published feedback; until then the neutral default is explicit.
   const preferenceSignals = {};
-
-  for (const cluster of clusters) {
+  const scoredTopics = clusters.map((cluster) => {
     const scored = scoreTopicCluster(cluster, {
       now: clock.iso,
       sourceBaselines,
       preferenceSignals,
     });
-    const existing = topicByFingerprint.get(scored.fingerprint) || null;
+    return {
+      scored,
+      existing: topicByFingerprint.get(scored.fingerprint) || null,
+    };
+  });
+  const generationSelection = selectBriefGenerationFingerprints(
+    scoredTopics
+      .filter(({ scored, existing }) => shouldRegenerateBrief(existing, scored.evidenceSignature))
+      .map(({ scored, existing }) => ({
+        fingerprint: scored.fingerprint,
+        opportunityScore: scored.opportunityScore,
+        existingTopic: existing,
+      })),
+    { maxModelCalls, now: clock.iso }
+  );
+  const deadline = pipelineStartedAt + positiveInteger(pipelineDeadlineMs, DEFAULT_PIPELINE_DEADLINE_MS);
+
+  for (const { scored, existing } of scoredTopics) {
     const needsBrief = shouldRegenerateBrief(existing, scored.evidenceSignature);
     let brief;
     let generationStatus;
@@ -412,8 +635,22 @@ export const rebuildTopicRadar = async ({ supabase, ownerId, now, generateConten
       generationStatus = 'generated';
       generatedAt = existing.generated_at || null;
       result.briefsReused += 1;
+    } else if (!generationSelection.has(scored.fingerprint) || Date.now() >= deadline) {
+      const errorKind = generationSelection.has(scored.fingerprint)
+        ? 'pipeline_deadline_exhausted'
+        : 'model_budget_exhausted';
+      const preserveSuccessfulBrief = existing?.generation_status === 'generated' &&
+        !shouldRegenerateBrief({ ...existing, evidence_signature: scored.evidenceSignature }, scored.evidenceSignature);
+      brief = preserveSuccessfulBrief ? existingBrief(existing) : normalizeTopicBrief({}, scored);
+      generationStatus = 'fallback';
+      generatedAt = existing?.generated_at || null;
+      result.briefsFallback += 1;
+      result.errors.push({ stage: 'brief_generation', fingerprint: scored.fingerprint, errorKind });
     } else {
-      const generation = await generateTopicBrief(scored, { generateContent });
+      const generation = await generateTopicBrief(scored, {
+        generateContent,
+        timeoutMs: positiveInteger(modelTimeoutMs, DEFAULT_MODEL_TIMEOUT_MS),
+      });
       generationStatus = generation.generationStatus;
       if (generationStatus === 'generated') {
         brief = generation.brief;

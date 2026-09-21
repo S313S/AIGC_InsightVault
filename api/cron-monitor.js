@@ -7,6 +7,7 @@ import { buildXiaohongshuWebUrl } from '../shared/xiaohongshuUrls.js';
 import { extractHashtagsFromText, pickSemanticCover } from '../shared/semanticCovers.js';
 import { classifyMonitorRun } from '../shared/monitorRunHealth.js';
 import { rebuildTopicRadar } from '../server/topicRadarPipeline.js';
+import { cleanupOldTrendingSnapshots } from '../server/trendingSnapshotCleanup.js';
 
 // Search keywords: high-volume terms covering all 3 categories (used for API searches)
 const DEFAULT_MONITOR_KEYWORDS = [
@@ -278,12 +279,6 @@ const normalizeSourceUrl = (url) => {
 const isSnapshotTag = (tag) => typeof tag === 'string' && tag.startsWith('snapshot:');
 
 const stripSnapshotTags = (tags) => (Array.isArray(tags) ? tags : []).filter(tag => !isSnapshotTag(tag));
-
-const pickLatestSnapshotTag = (tags) => {
-  const snapshots = (Array.isArray(tags) ? tags : []).filter(isSnapshotTag);
-  if (snapshots.length === 0) return 'snapshot:legacy';
-  return snapshots.sort((a, b) => (a > b ? -1 : a < b ? 1 : 0))[0];
-};
 
 const isFallbackCoverPath = (url) => isFallbackCoverUrl(url);
 const isTwitterPlaceholderImage = (url) => {
@@ -770,6 +765,13 @@ export default async function handler(req, res) {
   let keywordExecution = {};
   let effectivePayload = {};
   let fallbackCoverCount = 0;
+  let snapshotCleanup = {
+    candidateCount: 0,
+    protectedCount: 0,
+    deletedCount: 0,
+    truncated: false,
+    errors: []
+  };
   let topicRadar = {
     status: 'skipped',
     reason: 'collection_not_completed',
@@ -911,33 +913,11 @@ export default async function handler(req, res) {
         throw new Error(refreshError.message || 'Failed to reload trending cards');
       }
 
-      const snapshotToIds = new Map();
-      for (const row of refreshedRows || []) {
-        const tags = Array.isArray(row.tags) ? row.tags : [];
-        const snap = pickLatestSnapshotTag(tags);
-        if (!snapshotToIds.has(snap)) snapshotToIds.set(snap, []);
-        snapshotToIds.get(snap).push(row.id);
-      }
-      const snapshots = Array.from(snapshotToIds.keys()).sort((a, b) => {
-        if (a === 'snapshot:legacy') return 1;
-        if (b === 'snapshot:legacy') return -1;
-        return a > b ? -1 : a < b ? 1 : 0;
+      snapshotCleanup = await cleanupOldTrendingSnapshots({
+        supabase,
+        ownerId,
+        keepCount: 5
       });
-      const keep = new Set(snapshots.slice(0, 5));
-      const idsToDelete = [];
-      for (const [snap, ids] of snapshotToIds.entries()) {
-        if (!keep.has(snap)) idsToDelete.push(...ids);
-      }
-      if (idsToDelete.length > 0) {
-        const { error: cleanupError } = await supabase
-          .from('knowledge_cards')
-          .delete()
-          .eq('owner_id', ownerId)
-          .in('id', idsToDelete);
-        if (cleanupError) {
-          throw new Error(cleanupError.message || 'Failed to cleanup old snapshots');
-        }
-      }
 
       return res.status(200).json({
         mode: 'rebuild',
@@ -945,6 +925,7 @@ export default async function handler(req, res) {
         totalTrending: (refreshedRows || []).length,
         snapshot: snapshotTag,
         owner: ownerContext.username,
+        snapshotCleanup,
         topicRadar: { ...topicRadar, reason: 'rebuild_only' },
         runHealth
       });
@@ -1683,46 +1664,18 @@ export default async function handler(req, res) {
       }
     }
 
-    // Keep only the latest 5 snapshots of trending data
-    const { data: trendRows, error: trendError } = await supabase
-      .from('knowledge_cards')
-      .select('id, tags')
-      .eq('owner_id', ownerId)
-      .eq('is_trending', true);
-
-    if (trendError) {
-      throw new Error(trendError.message || 'Failed to load trending snapshots');
-    }
-
-    const snapshotToIds = new Map();
-    for (const row of trendRows || []) {
-      const tags = Array.isArray(row.tags) ? row.tags : [];
-      const snap = pickLatestSnapshotTag(tags);
-      if (!snapshotToIds.has(snap)) snapshotToIds.set(snap, []);
-      snapshotToIds.get(snap).push(row.id);
-    }
-
-    const snapshots = Array.from(snapshotToIds.keys()).sort((a, b) => {
-      if (a === 'snapshot:legacy') return 1;
-      if (b === 'snapshot:legacy') return -1;
-      return a > b ? -1 : a < b ? 1 : 0;
+    // Keep only old, unreferenced snapshots; the helper pages the complete
+    // owner-scoped inventory and fails closed if reference reads are incomplete.
+    snapshotCleanup = await cleanupOldTrendingSnapshots({
+      supabase,
+      ownerId,
+      keepCount: 5
     });
-
-    const keep = new Set(snapshots.slice(0, 5));
-    const idsToDelete = [];
-    for (const [snap, ids] of snapshotToIds.entries()) {
-      if (!keep.has(snap)) idsToDelete.push(...ids);
-    }
-
-    if (idsToDelete.length > 0) {
-      const { error: cleanupError } = await supabase
-        .from('knowledge_cards')
-        .delete()
-        .eq('owner_id', ownerId)
-        .in('id', idsToDelete);
-      if (cleanupError) {
-        throw new Error(cleanupError.message || 'Failed to cleanup old snapshots');
-      }
+    if (snapshotCleanup.errors.length > 0 || snapshotCleanup.truncated) {
+      platformErrors = [...platformErrors, {
+        platform: 'topic_radar',
+        error: 'Snapshot cleanup was incomplete; referenced evidence was preserved'
+      }];
     }
 
     // Cards have already been committed at this point. Topic persistence is a
@@ -1732,7 +1685,8 @@ export default async function handler(req, res) {
       topicRadar = await rebuildTopicRadar({
         supabase,
         ownerId,
-        now: new Date().toISOString()
+        now: new Date().toISOString(),
+        currentSnapshotTag: snapshotTag
       });
       if (topicRadar.status === 'partial_failure') {
         platformErrors = [...platformErrors, {
@@ -1776,6 +1730,7 @@ export default async function handler(req, res) {
       runtimeMs: Date.now() - runStartedAt,
       runtimeGuardTriggered,
       engagementDebug: engagementDebug.slice(0, 20),
+      snapshotCleanup,
       topicRadar,
       platformErrors
     };
@@ -1793,6 +1748,7 @@ export default async function handler(req, res) {
       updatedTasks: updatedTasks.length,
       candidates: candidates.length,
       tasksRun: tasksToRun.length,
+      snapshotCleanup,
       topicRadar,
       runHealth
     };
@@ -1851,6 +1807,6 @@ export default async function handler(req, res) {
       success: false,
       error_message: err.message || 'Cron monitor failed'
     });
-    return res.status(500).json({ error: err.message || 'Cron monitor failed', runHealth });
+    return res.status(500).json({ error: err.message || 'Cron monitor failed', topicRadar, runHealth });
   }
 }
