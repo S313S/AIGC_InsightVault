@@ -55,6 +55,16 @@ import {
   createCollectionCardRequestPool,
   refreshCollectionCardsCacheFirst,
 } from './shared/collectionCardLoader.js';
+import {
+  beginTopicFeedbackRead,
+  buildTopicFeedbackKey,
+  createTopicFeedbackRequestRegistry,
+  createTopicFeedbackState,
+  mergeTopicFeedbackRead,
+  recordTopicFeedbackMutation,
+  resolveOwnerTopicFeedbackSnapshot,
+  resolveTopicFeedbackSettlement,
+} from './shared/topicFeedbackState.js';
 
 type ViewMode = 'dashboard' | 'grid' | 'monitoring' | 'chat';
 type CollectionLoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
@@ -145,19 +155,6 @@ const toOfflinePublicCollection = (collection: Collection): Collection => ({
   isPublic: true,
 });
 
-const updateTopicFeedback = (
-  values: EditorialTopic[],
-  topicId: string,
-  action: TopicFeedbackAction,
-  enabled: boolean
-) => values.map((topic) => {
-  if (topic.id !== topicId) return topic;
-  const feedback = new Set(topic.feedback || []);
-  if (enabled) feedback.add(action);
-  else feedback.delete(action);
-  return { ...topic, feedback: Array.from(feedback) };
-});
-
 const App: React.FC = () => {
   const [bootstrapRecord] = useState(() => readBootstrapSnapshot());
   const bootstrapSnapshot: LoadedSnapshot = bootstrapRecord?.snapshot || EMPTY_SNAPSHOT;
@@ -187,6 +184,9 @@ const App: React.FC = () => {
   const [lastCollectedAt, setLastCollectedAt] = useState<string | null>(bootstrapRecord?.collectedAt || null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(bootstrapRecord?.syncedAt || null);
   const [newTrendingCount, setNewTrendingCount] = useState(0);
+  const [pendingTopicFeedbackKeys, setPendingTopicFeedbackKeys] = useState<Set<string>>(
+    () => new Set()
+  );
   const [isRetryingLoad, setIsRetryingLoad] = useState(false);
   const [isLoadingMoreCards, setIsLoadingMoreCards] = useState(false);
   const [hasMoreCards, setHasMoreCards] = useState(false);
@@ -195,7 +195,11 @@ const App: React.FC = () => {
   const cardsRef = useRef<KnowledgeCard[]>(bootstrapSnapshot.cards);
   const trendingRef = useRef<KnowledgeCard[]>(bootstrapSnapshot.trending);
   const topicsRef = useRef<EditorialTopic[]>(bootstrapSnapshot.topics);
-  const topicFeedbackRequestsRef = useRef(new Set<string>());
+  const topicFeedbackStateRef = useRef(createTopicFeedbackState());
+  const topicFeedbackRequestsRef = useRef<ReturnType<typeof createTopicFeedbackRequestRegistry> | null>(null);
+  if (topicFeedbackRequestsRef.current === null) {
+    topicFeedbackRequestsRef.current = createTopicFeedbackRequestRegistry(setPendingTopicFeedbackKeys);
+  }
   const lastCollectedAtRef = useRef<string | null>(bootstrapRecord?.collectedAt || null);
   const lastSyncedAtRef = useRef<string | null>(bootstrapRecord?.syncedAt || null);
   const collectionsRef = useRef<Collection[]>(bootstrapSnapshot.collections);
@@ -333,6 +337,7 @@ const App: React.FC = () => {
         }
 
         let secondaryHadFailureForNotice = false;
+        const topicRead = beginTopicFeedbackRead(topicFeedbackStateRef.current, targetOwnerId);
         const primarySettlements = settlePrimaryLoadsIndependently({
           cards: runCloudRead(signal => db.getKnowledgeCards({ signal }), []),
           trending: runCloudRead(signal => db.getTrendingCards(signal), []),
@@ -348,11 +353,20 @@ const App: React.FC = () => {
 
           const topicsLoad = getLoadResult(topicsResult, [], 'Loading editorial topics');
           const dbTopics = topicsLoad.value;
-          const nextTopics = preserveOnFailedLoad(
+          let nextTopics = preserveOnFailedLoad(
             topicsLoad,
             dbTopics,
             baselineSnapshot.topics.length > 0
           ) ?? topicsRef.current;
+          if (topicsLoad.ok) {
+            const mergedFeedback = mergeTopicFeedbackRead(topicFeedbackStateRef.current, {
+              ownerId: targetOwnerId,
+              readRevision: topicRead.revision,
+              topics: nextTopics,
+            });
+            topicFeedbackStateRef.current = mergedFeedback.state;
+            nextTopics = mergedFeedback.topics;
+          }
           const topicSnapshot = mergeTopicsIntoCurrentSnapshot(() => ({
             cards: cardsRef.current,
             trending: trendingRef.current,
@@ -1445,26 +1459,58 @@ const App: React.FC = () => {
     }
   };
 
-  const persistTopicFeedbackSnapshot = useCallback((ownerId: string, nextTopics: EditorialTopic[]) => {
-    if (currentUserRef.current?.id !== ownerId) return false;
-    const nextSnapshot: LoadedSnapshot = {
-      cards: cardsRef.current,
-      trending: trendingRef.current,
-      topics: nextTopics,
-      collections: collectionsRef.current,
-      tasks: tasksRef.current,
-    };
-    topicsRef.current = nextTopics;
-    setTopics(nextTopics);
-    lastSuccessfulDataRef.current = nextSnapshot;
+  const persistResolvedTopicFeedback = useCallback((
+    ownerId: string,
+    update: { updatesCurrentOwner: boolean; snapshot: LoadedSnapshot } | null,
+    storedRecord: ReturnType<typeof readStoredSnapshotRecord>
+  ) => {
+    if (!update) return false;
+
+    const nextSnapshot = update.snapshot;
+    if (update.updatesCurrentOwner) {
+      topicsRef.current = nextSnapshot.topics;
+      setTopics(nextSnapshot.topics);
+      lastSuccessfulDataRef.current = nextSnapshot;
+    }
     writeStoredSnapshot(ownerId, nextSnapshot, {
-      collectedAt: lastCollectedAtRef.current,
-      syncedAt: lastSyncedAtRef.current,
+      collectedAt: update.updatesCurrentOwner
+        ? lastCollectedAtRef.current
+        : storedRecord?.collectedAt,
+      syncedAt: update.updatesCurrentOwner
+        ? lastSyncedAtRef.current
+        : storedRecord?.syncedAt,
+      activateOwner: false,
     });
     return true;
   }, []);
 
-  const handleToggleTopicFeedback = useCallback(async (
+  const persistOwnerTopicFeedback = useCallback((
+    ownerId: string,
+    topicId: string,
+    action: TopicFeedbackAction,
+    enabled: boolean
+  ) => {
+    const storedRecord = readStoredSnapshotRecord(ownerId);
+    const update = resolveOwnerTopicFeedbackSnapshot({
+      ownerId,
+      currentOwnerId: currentUserRef.current?.id || null,
+      loadedOwnerId: loadedOwnerIdRef.current,
+      currentSnapshot: {
+        cards: cardsRef.current,
+        trending: trendingRef.current,
+        topics: topicsRef.current,
+        collections: collectionsRef.current,
+        tasks: tasksRef.current,
+      },
+      storedSnapshot: storedRecord?.snapshot || null,
+      topicId,
+      action,
+      enabled,
+    });
+    return persistResolvedTopicFeedback(ownerId, update, storedRecord);
+  }, [persistResolvedTopicFeedback]);
+
+  const handleToggleTopicFeedback = useCallback((
     topicId: string,
     action: TopicFeedbackAction,
     enabled: boolean
@@ -1472,46 +1518,69 @@ const App: React.FC = () => {
     const ownerId = currentUserRef.current?.id;
     if (!ownerId) {
       openLoginModal();
-      return false;
+      return Promise.resolve(false);
     }
 
     const target = topicsRef.current.find((topic) => topic.id === topicId);
     if (!target || target.ownerId !== ownerId) {
       window.alert('只能标记你自己的话题。');
-      return false;
+      return Promise.resolve(false);
     }
 
+    const requestKey = buildTopicFeedbackKey(ownerId, topicId, action);
+    const pendingRequest = topicFeedbackRequestsRef.current!.get(requestKey);
+    if (pendingRequest) return pendingRequest;
     const previousEnabled = target.feedback?.includes(action) ?? false;
-    if (previousEnabled === enabled) return true;
-    const requestKey = `${topicId}:${action}`;
-    if (topicFeedbackRequestsRef.current.has(requestKey)) return true;
-    topicFeedbackRequestsRef.current.add(requestKey);
-    const optimisticTopics = updateTopicFeedback(topicsRef.current, topicId, action, enabled);
-    persistTopicFeedbackSnapshot(ownerId, optimisticTopics);
-
-    let saved = false;
-    try {
-      saved = enabled
-        ? await db.saveTopicFeedback(topicId, action)
-        : await db.removeTopicFeedback(topicId, action);
-    } catch (error) {
-      console.error('Topic feedback update failed:', error);
-    }
-
-    topicFeedbackRequestsRef.current.delete(requestKey);
-    if (saved) return true;
-    if (currentUserRef.current?.id === ownerId) {
-      const rollbackTopicFeedback = updateTopicFeedback(
-        topicsRef.current,
+    if (previousEnabled === enabled) return Promise.resolve(true);
+    return topicFeedbackRequestsRef.current!.run(requestKey, async () => {
+      const recorded = recordTopicFeedbackMutation(topicFeedbackStateRef.current, {
+        ownerId,
         topicId,
         action,
-        previousEnabled
-      );
-      persistTopicFeedbackSnapshot(ownerId, rollbackTopicFeedback);
-      window.alert('操作未保存，已恢复原状态。');
-    }
-    return false;
-  }, [openLoginModal, persistTopicFeedbackSnapshot]);
+        enabled,
+      });
+      topicFeedbackStateRef.current = recorded.state;
+      persistOwnerTopicFeedback(ownerId, topicId, action, enabled);
+
+      let saved = false;
+      try {
+        saved = enabled
+          ? await db.saveTopicFeedback(topicId, action)
+          : await db.removeTopicFeedback(topicId, action);
+      } catch (error) {
+        console.error('Topic feedback update failed:', error);
+      }
+
+      const storedRecord = readStoredSnapshotRecord(ownerId);
+      const settlement = resolveTopicFeedbackSettlement({
+        state: topicFeedbackStateRef.current,
+        mutation: recorded.mutation,
+        succeeded: saved,
+        previousEnabled,
+        currentOwnerId: currentUserRef.current?.id || null,
+        loadedOwnerId: loadedOwnerIdRef.current,
+        currentSnapshot: {
+          cards: cardsRef.current,
+          trending: trendingRef.current,
+          topics: topicsRef.current,
+          collections: collectionsRef.current,
+          tasks: tasksRef.current,
+        },
+        storedSnapshot: storedRecord?.snapshot || null,
+      });
+      topicFeedbackStateRef.current = settlement.state;
+      persistResolvedTopicFeedback(ownerId, settlement.update, storedRecord);
+      if (saved) return true;
+
+      if (
+        currentUserRef.current?.id === ownerId &&
+        loadedOwnerIdRef.current === ownerId
+      ) {
+        window.alert('操作未保存，已恢复原状态。');
+      }
+      return false;
+    });
+  }, [openLoginModal, persistOwnerTopicFeedback, persistResolvedTopicFeedback]);
 
   const handleSaveTrendingToVault = async (card: KnowledgeCard) => {
     if (!userCanMutate(card.ownerId)) {
@@ -2281,6 +2350,8 @@ const App: React.FC = () => {
                 onRepairSourceUrl={handleRepairTrendingSourceUrl}
                 canManageTasks={canManageData}
                 canGiveTopicFeedback={Boolean(currentUser)}
+                feedbackOwnerId={currentUser?.id || null}
+                pendingTopicFeedbackKeys={pendingTopicFeedbackKeys}
                 onToggleTopicFeedback={handleToggleTopicFeedback}
                 canMutateTrendingItem={(card) => userCanMutate(card.ownerId)}
                 onRequireLogin={openLoginModal}

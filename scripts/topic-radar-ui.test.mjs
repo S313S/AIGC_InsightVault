@@ -58,7 +58,9 @@ test('feedback controls are owner-only, guarded while pending, and callback-driv
   assert.match(topicCardSource, /忽略/);
   assert.match(topicCardSource, /已发布/);
   assert.match(topicCardSource, /登录后可标记/);
-  assert.match(topicCardSource, /disabled=\{!canGiveFeedback \|\| pendingAction !== null\}/);
+  assert.match(topicCardSource, /pendingFeedbackKeys/);
+  assert.match(topicCardSource, /buildTopicFeedbackKey\(feedbackOwnerId, topic\.id, action\)/);
+  assert.match(topicCardSource, /disabled=\{!canGiveFeedback \|\| pending\}/);
   assert.match(topicCardSource, /await onToggleFeedback\(topic\.id, action, !active\)/);
 });
 
@@ -88,6 +90,13 @@ test('app wires cached topics, auth, and optimistic feedback with rollback and o
   assert.match(appSource, /onToggleTopicFeedback=\{handleToggleTopicFeedback\}/);
   assert.match(appSource, /db\.saveTopicFeedback\(topicId, action\)/);
   assert.match(appSource, /db\.removeTopicFeedback\(topicId, action\)/);
-  assert.match(appSource, /rollbackTopicFeedback/);
+  assert.match(appSource, /resolveTopicFeedbackSettlement/);
   assert.match(appSource, /writeStoredSnapshot\(ownerId, nextSnapshot/);
+  assert.match(appSource, /beginTopicFeedbackRead\(topicFeedbackStateRef\.current, targetOwnerId\)/);
+  assert.match(appSource, /mergeTopicFeedbackRead\(/);
+  assert.match(appSource, /createTopicFeedbackRequestRegistry/);
+  assert.match(appSource, /const pendingRequest = topicFeedbackRequestsRef\.current!\.get\(requestKey\)/);
+  assert.match(appSource, /if \(pendingRequest\) return pendingRequest/);
+  assert.match(appSource, /readStoredSnapshotRecord\(ownerId\)/);
+  assert.match(appSource, /activateOwner:\s*false/);
 });

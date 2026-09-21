@@ -253,7 +253,7 @@ export const writeStoredSnapshot = (userId, snapshot, options = {}) => {
       syncedAt,
       collectedAt,
     }));
-    if (userId) {
+    if (userId && options.activateOwner !== false) {
       storage.setItem(ACTIVE_SNAPSHOT_OWNER_KEY, userId);
     }
   } catch {

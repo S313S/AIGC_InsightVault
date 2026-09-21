@@ -1,6 +1,7 @@
 import React, { memo, useId, useState } from 'react';
 import { EditorialTopic, TopicFeedbackAction, TopicSource } from '../types';
 import { Bookmark, Check, ChevronDown, ExternalLink, X } from './Icons';
+import { buildTopicFeedbackKey } from '../shared/topicFeedbackState.js';
 
 export type TopicLane = 'write' | 'study' | 'breaking';
 
@@ -8,6 +9,8 @@ interface TopicCardProps {
     topic: EditorialTopic;
     lane: TopicLane;
     canGiveFeedback: boolean;
+    feedbackOwnerId: string | null;
+    pendingFeedbackKeys: ReadonlySet<string>;
     onToggleFeedback: (
         topicId: string,
         action: TopicFeedbackAction,
@@ -67,10 +70,11 @@ export const TopicCard = memo(function TopicCard({
     topic,
     lane,
     canGiveFeedback,
+    feedbackOwnerId,
+    pendingFeedbackKeys,
     onToggleFeedback,
 }: TopicCardProps) {
     const [evidenceOpen, setEvidenceOpen] = useState(false);
-    const [pendingAction, setPendingAction] = useState<TopicFeedbackAction | null>(null);
     const [feedbackError, setFeedbackError] = useState('');
     const evidencePanelId = `topic-evidence-${useId().replace(/:/g, '')}`;
     const sources = topic.sources ?? EMPTY_SOURCES;
@@ -84,17 +88,17 @@ export const TopicCard = memo(function TopicCard({
             : topic.whyNow;
 
     const handleFeedback = async (action: TopicFeedbackAction) => {
-        if (!canGiveFeedback || pendingAction !== null) return;
+        const pending = pendingFeedbackKeys.has(
+            buildTopicFeedbackKey(feedbackOwnerId, topic.id, action)
+        );
+        if (!canGiveFeedback || pending) return;
         const active = feedback.includes(action);
-        setPendingAction(action);
         setFeedbackError('');
         try {
             const success = await onToggleFeedback(topic.id, action, !active);
             if (!success) setFeedbackError('操作未保存，已恢复原状态。');
         } catch {
             setFeedbackError('操作未保存，已恢复原状态。');
-        } finally {
-            setPendingAction(null);
         }
     };
 
@@ -189,12 +193,15 @@ export const TopicCard = memo(function TopicCard({
                 <div className="flex flex-wrap gap-2" aria-label="话题反馈">
                     {FEEDBACK_ACTIONS.map(({ action, label, icon: Icon }) => {
                         const active = feedback.includes(action);
+                        const pending = pendingFeedbackKeys.has(
+                            buildTopicFeedbackKey(feedbackOwnerId, topic.id, action)
+                        );
                         return (
                             <button
                                 key={action}
                                 type="button"
                                 aria-pressed={active}
-                                disabled={!canGiveFeedback || pendingAction !== null}
+                                disabled={!canGiveFeedback || pending}
                                 onClick={() => void handleFeedback(action)}
                                 title={canGiveFeedback ? label : '登录后可标记话题'}
                                 className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
@@ -204,7 +211,7 @@ export const TopicCard = memo(function TopicCard({
                                 } disabled:cursor-not-allowed disabled:opacity-50`}
                             >
                                 <Icon size={13} />
-                                {pendingAction === action ? '处理中…' : label}
+                                {pending ? '处理中…' : label}
                             </button>
                         );
                     })}

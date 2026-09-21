@@ -239,6 +239,17 @@ test('writeStoredSnapshot preserves previous sync and collection times for local
   assert.equal(record.savedAt, '2026-09-20T01:05:00.000Z');
 });
 
+test('background writes can update an old owner without changing the active owner', () => {
+  installStorage();
+  writeStoredSnapshot('owner-1', snapshot('owner-1-before'));
+  writeStoredSnapshot('owner-2', snapshot('owner-2-active'));
+  writeStoredSnapshot('owner-1', snapshot('owner-1-rollback'), { activateOwner: false });
+
+  assert.equal(readStoredSnapshotRecord('owner-1').snapshot.cards[0].id, 'owner-1-rollback');
+  assert.equal(readStoredSnapshotRecord('owner-2').snapshot.cards[0].id, 'owner-2-active');
+  assert.equal(window.localStorage.getItem(ACTIVE_SNAPSHOT_OWNER_KEY), 'owner-2');
+});
+
 test('writeStoredSnapshot can clear collection time after a successful empty result', () => {
   installStorage();
   writeStoredSnapshot('user-1', snapshot('first'), {

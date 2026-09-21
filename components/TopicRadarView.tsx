@@ -2,12 +2,15 @@ import React, { useMemo } from 'react';
 import { EditorialTopic, TopicFeedbackAction } from '../types';
 import { BookOpen, Newspaper, Zap } from './Icons';
 import { TopicCard, TopicLane } from './TopicCard';
+import { buildTopicFeedbackKey } from '../shared/topicFeedbackState.js';
 
 interface TopicRadarViewProps {
     topics: EditorialTopic[];
     isTopicsLoading: boolean;
     freshnessNow: number;
     canGiveFeedback: boolean;
+    feedbackOwnerId: string | null;
+    pendingFeedbackKeys: ReadonlySet<string>;
     onToggleFeedback: (
         topicId: string,
         action: TopicFeedbackAction,
@@ -114,6 +117,8 @@ export const TopicRadarView: React.FC<TopicRadarViewProps> = ({
     isTopicsLoading,
     freshnessNow,
     canGiveFeedback,
+    feedbackOwnerId,
+    pendingFeedbackKeys,
     onToggleFeedback,
 }) => {
     const lanes = useMemo(() => deriveTopicLanes(topics, freshnessNow), [topics, freshnessNow]);
@@ -170,6 +175,8 @@ export const TopicRadarView: React.FC<TopicRadarViewProps> = ({
                                             topic={topic}
                                             lane={key}
                                             canGiveFeedback={canGiveFeedback}
+                                            feedbackOwnerId={feedbackOwnerId}
+                                            pendingFeedbackKeys={pendingFeedbackKeys}
                                             onToggleFeedback={onToggleFeedback}
                                         />
                                     ))}
@@ -186,16 +193,22 @@ export const TopicRadarView: React.FC<TopicRadarViewProps> = ({
                         已忽略话题 · {lanes.ignored.length}
                     </summary>
                     <div className="mt-3 flex flex-wrap gap-2">
-                        {lanes.ignored.map((topic) => (
-                            <button
-                                key={topic.id}
-                                type="button"
-                                onClick={() => void onToggleFeedback(topic.id, 'ignored', false)}
-                                className="rounded-lg border border-[#1e3a5f]/60 px-3 py-2 text-xs text-gray-400 hover:border-indigo-500/50 hover:text-gray-200"
-                            >
-                                恢复：{topic.title}
-                            </button>
-                        ))}
+                        {lanes.ignored.map((topic) => {
+                            const pending = pendingFeedbackKeys.has(
+                                buildTopicFeedbackKey(feedbackOwnerId, topic.id, 'ignored')
+                            );
+                            return (
+                                <button
+                                    key={topic.id}
+                                    type="button"
+                                    disabled={pending}
+                                    onClick={() => void onToggleFeedback(topic.id, 'ignored', false)}
+                                    className="rounded-lg border border-[#1e3a5f]/60 px-3 py-2 text-xs text-gray-400 hover:border-indigo-500/50 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {pending ? '处理中…' : `恢复：${topic.title}`}
+                                </button>
+                            );
+                        })}
                     </div>
                 </details>
             )}

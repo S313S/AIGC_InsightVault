@@ -25,6 +25,8 @@ interface DashboardViewProps {
     onRepairSourceUrl: (card: KnowledgeCard) => Promise<{ updated: boolean; message: string }>;
     canManageTasks?: boolean;
     canGiveTopicFeedback: boolean;
+    feedbackOwnerId: string | null;
+    pendingTopicFeedbackKeys: ReadonlySet<string>;
     onToggleTopicFeedback: (
         topicId: string,
         action: TopicFeedbackAction,
@@ -50,6 +52,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     onRepairSourceUrl,
     canManageTasks = false,
     canGiveTopicFeedback,
+    feedbackOwnerId,
+    pendingTopicFeedbackKeys,
     onToggleTopicFeedback,
     canMutateTrendingItem = () => false,
     onRequireLogin
@@ -221,6 +225,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 isTopicsLoading={isTopicsLoading}
                 freshnessNow={freshnessNow}
                 canGiveFeedback={canGiveTopicFeedback}
+                feedbackOwnerId={feedbackOwnerId}
+                pendingFeedbackKeys={pendingTopicFeedbackKeys}
                 onToggleFeedback={onToggleTopicFeedback}
             />
 
