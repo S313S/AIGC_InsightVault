@@ -3,6 +3,7 @@ import { resolveOpenableSourceUrl } from './sourceUrls.js';
 
 const FACT_PLATFORMS = new Set(['github', 'official']);
 const SOCIAL_PLATFORMS = new Set(['twitter', 'x', 'xiaohongshu', 'manual']);
+const VERSION_ONLY_TITLE = /^v?\d+(?:\.\d+){1,4}(?:[-+][a-z0-9._-]+)?$/iu;
 
 const normalizedPlatform = (value) => String(value || '').trim().toLowerCase();
 
@@ -39,6 +40,31 @@ export const selectTopicLeadSource = (sources = []) => {
   }
 
   return best;
+};
+
+export const readableTopicDisplayText = (value, limit = 260) => {
+  if (typeof value !== 'string') return '';
+  const bounded = Array.from(value).slice(0, 4_000).join('');
+  const plain = bounded
+    .normalize('NFKC')
+    .replace(/```[\s\S]*?```/gu, ' ')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/gu, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/gu, '$1')
+    .replace(/https?:\/\/[^\s)>\]]+/giu, ' ')
+    .replace(/(?:^|\s)#{1,6}\s+/gu, ' ')
+    .replace(/(?:^|\s)(?:[-*+]|\d+[.)])\s+/gu, ' ')
+    .replace(/[*_~`>]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  return Array.from(plain).slice(0, Math.max(0, limit)).join('').trim();
+};
+
+export const qualifyTopicDisplayTitle = (value, sourceIdentity) => {
+  const title = readableTopicDisplayText(value, 120);
+  if (!title || !VERSION_ONLY_TITLE.test(title)) return title;
+  const source = readableTopicDisplayText(sourceIdentity, 40).replace(/^@+/u, '');
+  if (!source || title.toLowerCase().includes(source.toLowerCase())) return title;
+  return `${source} · ${title}`;
 };
 
 const RELATIVE_UNIT_MS = {

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  qualifyTopicDisplayTitle,
+  readableTopicDisplayText,
   partitionTopicEvidence,
   selectTopicLeadSource,
   sortByPublicationTime,
@@ -106,4 +108,18 @@ test('publication ordering understands persisted Chinese and English relative da
   const result = sortByPublicationTime(cards, Date.parse('2026-09-22T12:00:00.000Z'));
 
   assert.deepEqual(result.map((card) => card.id), ['two-hours', 'one-day', 'four-days', 'old-absolute']);
+});
+
+test('persisted fallback copy is made readable at presentation time', () => {
+  const raw = '## [7.17.0](https://github.com/openai/openai-node/compare/v7.16.0...v7.17.0) ### Features * **api:** add compaction progress events ([#2749](https://github.com/openai/openai-node/issues/2749))';
+
+  const result = readableTopicDisplayText(raw, 180);
+
+  assert.equal(result, '7.17.0 Features api: add compaction progress events (#2749)');
+  assert.doesNotMatch(result, /https?:\/\/|##|\*\*/u);
+});
+
+test('version-only persisted titles are qualified with their lead source', () => {
+  assert.equal(qualifyTopicDisplayTitle('v7.17.0', 'openai'), 'openai · v7.17.0');
+  assert.equal(qualifyTopicDisplayTitle('vertex-sdk: v0.19.10', 'anthropics'), 'vertex-sdk: v0.19.10');
 });

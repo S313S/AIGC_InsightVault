@@ -41,6 +41,10 @@ test('topic cards explain lane score and label fallback briefs truthfully', () =
 
 test('topic cards restore a visual lead source and a direct safe source action', () => {
   assert.match(topicCardSource, /selectTopicLeadSource\(sources\)/);
+  assert.match(topicCardSource, /readableTopicDisplayText/);
+  assert.match(topicCardSource, /qualifyTopicDisplayTitle/);
+  assert.match(topicCardSource, /displayTitle/);
+  assert.match(topicCardSource, /displaySummary/);
   assert.match(topicCardSource, /fallbackCoverFromSeed/);
   assert.match(topicCardSource, /<img/);
   assert.match(topicCardSource, /width=\{640\}/);

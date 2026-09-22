@@ -5,7 +5,11 @@ import { buildTopicFeedbackKey } from '../shared/topicFeedbackState.js';
 import { formatPublicationTime } from '../shared/publicationTime.js';
 import { resolveSafeHttpUrl } from '../shared/sourceUrls.js';
 import { fallbackCoverFromSeed, isRenderableCoverUrl, normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
-import { selectTopicLeadSource } from '../shared/topicPresentation.js';
+import {
+    qualifyTopicDisplayTitle,
+    readableTopicDisplayText,
+    selectTopicLeadSource,
+} from '../shared/topicPresentation.js';
 
 export type TopicLane = 'write' | 'study' | 'breaking';
 
@@ -60,18 +64,22 @@ export const TopicCard = memo(function TopicCard({
     const sources = topic.sources ?? EMPTY_SOURCES;
     const leadSource = selectTopicLeadSource(sources);
     const leadCard = leadSource?.card;
+    const displayTitle = qualifyTopicDisplayTitle(topic.title, leadCard?.author) || topic.title;
+    const displaySummary = readableTopicDisplayText(topic.summary, 260) || topic.summary;
+    const displayWhyNow = readableTopicDisplayText(topic.whyNow, 180) || topic.whyNow;
     const normalizedLeadCover = normalizeLegacyFallbackCover(leadCard?.coverImage || '');
     const leadCover = isRenderableCoverUrl(normalizedLeadCover)
         ? normalizedLeadCover
-        : fallbackCoverFromSeed(`${topic.id}|${topic.fingerprint}|${topic.title}`);
+        : fallbackCoverFromSeed(`${topic.id}|${topic.fingerprint}|${displayTitle}`);
     const feedback = topic.feedback ?? EMPTY_FEEDBACK;
     const laneCopy = LANE_COPY[lane];
     const laneScore = Number(topic[laneCopy.score]) || 0;
-    const laneExplanation = lane === 'write'
+    const rawLaneExplanation = lane === 'write'
         ? topic.contentAngles.quick || topic.contentAngles.viewpoint || topic.whyNow
         : lane === 'study'
             ? topic.durableKnowledge[0] || topic.contentAngles.tutorial || topic.whyNow
             : topic.whyNow;
+    const laneExplanation = readableTopicDisplayText(rawLaneExplanation, 220) || rawLaneExplanation;
 
     const handleFeedback = async (action: TopicFeedbackAction) => {
         const pending = pendingFeedbackKeys.has(
@@ -93,14 +101,14 @@ export const TopicCard = memo(function TopicCard({
             <div className="relative -mx-5 -mt-5 mb-4 h-36 overflow-hidden bg-[#1e3a5f]/30">
                 <img
                     src={leadCover}
-                    alt={topic.title}
+                    alt={displayTitle}
                     width={640}
                     height={360}
                     loading="lazy"
                     decoding="async"
                     referrerPolicy="no-referrer"
                     onError={(event) => {
-                        event.currentTarget.src = fallbackCoverFromSeed(`${topic.id}|${topic.title}`);
+                        event.currentTarget.src = fallbackCoverFromSeed(`${topic.id}|${displayTitle}`);
                     }}
                     className="h-full w-full object-cover"
                 />
@@ -136,9 +144,9 @@ export const TopicCard = memo(function TopicCard({
                 )}
             </div>
 
-            <h4 className="min-w-0 break-words text-base font-bold leading-snug text-gray-100">{topic.title}</h4>
-            <p className="mt-2 min-w-0 break-words text-sm leading-relaxed text-gray-400 line-clamp-3">{topic.summary}</p>
-            <p className="mt-2 min-w-0 break-words text-xs leading-relaxed text-gray-500 line-clamp-2">此刻信号：{topic.whyNow}</p>
+            <h4 className="min-w-0 break-words text-base font-bold leading-snug text-gray-100">{displayTitle}</h4>
+            <p className="mt-2 min-w-0 break-words text-sm leading-relaxed text-gray-400 line-clamp-3">{displaySummary}</p>
+            <p className="mt-2 min-w-0 break-words text-xs leading-relaxed text-gray-500 line-clamp-2">此刻信号：{displayWhyNow}</p>
             <div className="mt-3 rounded-xl border border-[#1e3a5f]/40 bg-[#111d33]/70 p-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{laneCopy.label}</p>
                 <p className="mt-1 min-w-0 break-words text-sm leading-relaxed text-gray-300 line-clamp-3">{laneExplanation}</p>
