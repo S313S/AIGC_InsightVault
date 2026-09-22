@@ -802,7 +802,7 @@ test('cron runs topic persistence after card collection and reports failures as 
   assert.match(source, /resultSummary\s*=\s*\{[\s\S]{0,500}?topicRadar/);
   const pipelineCall = source.indexOf('await rebuildTopicRadar({');
   const normalCleanupCall = source.lastIndexOf('await cleanupOldTrendingSnapshots({');
-  const cardInsert = source.indexOf(".from('knowledge_cards')\n        .insert(toInsert)");
+  const cardInsert = source.indexOf('await persistEvidenceRows({ supabase, rows: toInsert })');
   assert.ok(cardInsert >= 0 && pipelineCall > cardInsert, 'topic pipeline must run after collected cards are committed');
   assert.ok(normalCleanupCall > pipelineCall, 'snapshot cleanup must run only after topic evidence links are projected');
   assert.match(source, /reason:\s*'topic_pipeline_failed'/);

@@ -1,4 +1,4 @@
-**追踪小红书和 X 上真正在热的 AI 内容 —— 谁在说、说了什么、数据多少。**
+**追踪 AI 圈真正在升温的话题 —— 社交热度、官方发布和代码仓库证据放在一起看。**
 
 不是又一个「AI 资讯聚合」。它抓的是**原始帖子和它们的真实数据**，每一条都能点回原文，自己判断值不值得看。
 
@@ -22,11 +22,13 @@
 ## 它做什么
 
 ```text
-定时抓取  →  入库归档  →  看板呈现
-小红书 · X     Supabase      按账号 / 话题 / 热度看
+定时抓取  →  证据聚类  →  编辑雷达
+小红书 · X     Supabase      值得写 · 值得学 · 正在爆
+官方源 · GitHub
 ```
 
-- **两个平台** —— 小红书和 X（Twitter），两边的 AI 内容放在一起看
+- **四类证据** —— 小红书和 X 负责热度，官方 RSS 与 GitHub Releases 负责事实核验
+- **三个编辑队列** —— 「今日值得写」「值得沉淀」「突发雷达」分别排序，不用从原帖池里猜选题
 - **原帖 + 原数据** —— 保留作者、链接、时间和互动数据，结论可回溯
 - **定时跑** —— 不用手动刷，按计划抓取归档
 - **按人隔离** —— Supabase 行级安全（RLS），数据归属到账号
@@ -68,6 +70,7 @@ VITE_SUPABASE_ANON_KEY
 SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
 CRON_OWNER_USERNAME          # 默认 xiaoci
+GEMINI_API_KEY               # 话题摘要；缺失时使用可核验的规则回退
 
 # 数据源
 X_API_BEARER_TOKEN                       # X 抓取与搜索
@@ -77,6 +80,11 @@ JUSTONEAPI_TOKEN / TIKHUB_API_TOKEN      # 小红书，二选一或都填（支�
 XHS_NOTE_PROVIDER            # auto | justone | tikhub，默认 auto
 XHS_SEARCH_PROVIDER          # auto | justone | tikhub，默认 auto
 TIKHUB_XHS_SEARCH_PATH       # 默认 /api/v1/xiaohongshu/app/search_notes
+GITHUB_TOKEN                 # 可选；提高 GitHub API 限额
+TOPIC_OFFICIAL_MAX_FEEDS     # 默认 2；设为 0 可停用
+TOPIC_GITHUB_MAX_REPOS       # 默认 3；设为 0 可停用
+TOPIC_FACT_TIMEOUT_MS        # 单次事实源请求超时，默认 6000
+TOPIC_FACT_MAX_ENTRIES       # 每个来源最多读取条数，默认 10
 ```
 
 **3）初始化数据库**
@@ -85,9 +93,11 @@ TIKHUB_XHS_SEARCH_PATH       # 默认 /api/v1/xiaohongshu/app/search_notes
 
 ```text
 scripts/supabase-auth-rls.sql
+scripts/cron-run-logs.sql
+scripts/topic-radar-schema.sql
 ```
 
-这一步会建 `profiles` 表、写入初始账号、把已有数据补上归属关系，并开启 RLS。
+依次执行以上迁移：先建立账号与基础 RLS，再建立运行日志，最后建立话题、证据关联和反馈表。生产配置、状态含义与回滚边界见 [`docs/topic-radar-operations.md`](docs/topic-radar-operations.md)。
 
 **4）跑起来**
 
