@@ -41,13 +41,39 @@ export const selectTopicLeadSource = (sources = []) => {
   return best;
 };
 
-const publicationTimestamp = (card) => {
-  const timestamp = Date.parse(String(card?.date || ''));
-  return Number.isFinite(timestamp) ? timestamp : null;
+const RELATIVE_UNIT_MS = {
+  second: 1_000,
+  minute: 60_000,
+  hour: 60 * 60_000,
+  day: 24 * 60 * 60_000,
+  week: 7 * 24 * 60 * 60_000,
+  month: 30 * 24 * 60 * 60_000,
+  year: 365 * 24 * 60 * 60_000,
+  '秒': 1_000,
+  '分钟': 60_000,
+  '小时': 60 * 60_000,
+  '天': 24 * 60 * 60_000,
+  '周': 7 * 24 * 60 * 60_000,
+  '个月': 30 * 24 * 60 * 60_000,
+  '年': 365 * 24 * 60 * 60_000,
 };
 
-export const sortByPublicationTime = (cards = []) => cards
-  .map((card, index) => ({ card, index, timestamp: publicationTimestamp(card) }))
+const publicationTimestamp = (card, now) => {
+  const value = String(card?.date || '').normalize('NFKC').trim();
+  const timestamp = Date.parse(value);
+  if (Number.isFinite(timestamp)) return timestamp;
+
+  const english = /^(\d+(?:\.\d+)?)\s*(second|minute|hour|day|week|month|year)(?:\(s\)|s)?\s+ago$/iu.exec(value);
+  if (english) return now - Number(english[1]) * RELATIVE_UNIT_MS[english[2].toLowerCase()];
+
+  const chinese = /^(\d+(?:\.\d+)?)\s*(秒|分钟|小时|天|周|个月|年)前$/u.exec(value);
+  if (chinese) return now - Number(chinese[1]) * RELATIVE_UNIT_MS[chinese[2]];
+
+  return null;
+};
+
+export const sortByPublicationTime = (cards = [], now = Date.now()) => cards
+  .map((card, index) => ({ card, index, timestamp: publicationTimestamp(card, now) }))
   .sort((left, right) => {
     if (left.timestamp !== null && right.timestamp !== null) {
       return right.timestamp - left.timestamp || left.index - right.index;

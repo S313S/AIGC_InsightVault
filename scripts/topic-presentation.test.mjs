@@ -94,3 +94,16 @@ test('publication ordering is newest first and keeps invalid dates last without 
   assert.deepEqual(result.map((card) => card.id), ['newer', 'older', 'missing', 'invalid']);
   assert.deepEqual(cards.map((card) => card.id), ['missing', 'older', 'invalid', 'newer']);
 });
+
+test('publication ordering understands persisted Chinese and English relative dates', () => {
+  const cards = [
+    { id: 'old-absolute', date: '2026-06-23T17:36:27.000Z' },
+    { id: 'four-days', date: '4 day(s) ago' },
+    { id: 'one-day', date: '1 day(s) ago' },
+    { id: 'two-hours', date: '2小时前' },
+  ];
+
+  const result = sortByPublicationTime(cards, Date.parse('2026-09-22T12:00:00.000Z'));
+
+  assert.deepEqual(result.map((card) => card.id), ['two-hours', 'one-day', 'four-days', 'old-absolute']);
+});
