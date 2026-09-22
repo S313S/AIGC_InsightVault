@@ -131,6 +131,12 @@ test('category rankings are linkable, ranked, and never use unrelated fallback i
   assert.doesNotMatch(dashboardSource, /fallback = sortedByHot/);
 });
 
+test('hot-post heading keeps the all-post action inside narrow viewports', () => {
+  assert.match(dashboardSource, /mb-5 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between/);
+  assert.match(dashboardSource, /查看全部原帖[\s\S]{0,120}ArrowRight/);
+  assert.match(dashboardSource, /shrink-0[^"]*focus-visible:ring-2/);
+});
+
 test('raw post actions and all-hotspots modal are keyboard and focus accessible', () => {
   assert.match(dashboardSource, /type="button"[\s\S]{0,260}onClick=\{\(\) => openSourceUrl\(item\.sourceUrl\)\}/);
   assert.doesNotMatch(dashboardSource, /<div[\s\S]{0,160}onClick=\{\(\) => openSourceUrl\(item\.sourceUrl\)\}/);

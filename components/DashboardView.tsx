@@ -276,7 +276,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             {/* 2. Hot Posts (Visual cards first, matching the original homepage rhythm) */}
             <section aria-labelledby="hot-posts-title">
-                <div className="flex items-center justify-between mb-5">
+                <div className="mb-5 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex items-center gap-2">
                         <div className="p-1.5 bg-red-500/20 rounded-lg">
                             <Flame size={18} className="text-red-400" fill="currentColor" />
@@ -290,7 +290,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         ref={modalTriggerRef}
                         type="button"
                         onClick={() => setShowAllTrending(true)}
-                        className="flex items-center gap-1 text-sm font-medium text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                        className="flex shrink-0 items-center gap-1 text-sm font-medium text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                     >
                         查看全部原帖 <ArrowRight size={14} />
                     </button>
