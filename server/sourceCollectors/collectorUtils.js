@@ -7,15 +7,15 @@ export const stableHash = (value) => createHash('sha256').update(String(value)).
 export const cleanText = (value, maxChars = 4_000) => {
   const bounded = String(value ?? '').slice(0, Math.max(256, maxChars * 4));
   return bounded
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/giu, ' ')
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/giu, ' ')
-    .replace(/<[^>]+>/gu, ' ')
     .replace(/&nbsp;/giu, ' ')
     .replace(/&amp;/giu, '&')
     .replace(/&lt;/giu, '<')
     .replace(/&gt;/giu, '>')
     .replace(/&quot;/giu, '"')
     .replace(/&#39;/giu, "'")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/giu, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/giu, ' ')
+    .replace(/<[^>]+>/gu, ' ')
     .normalize('NFKC')
     .replace(/\s+/gu, ' ')
     .trim()
@@ -58,7 +58,7 @@ export const parseStrictDate = (value) => {
 
 export const classifyPublicationDate = (value, nowMs) => {
   const timestamp = parseStrictDate(value);
-  if (timestamp === null || timestamp > nowMs + 5 * 60 * 1000) {
+  if (timestamp === null || timestamp > nowMs) {
     return { timestamp: null, publishedAt: null, reviewOnly: true, breakingEligible: false };
   }
   return { timestamp, publishedAt: new Date(timestamp).toISOString(), reviewOnly: false, breakingEligible: true };
@@ -103,9 +103,16 @@ export const readBoundedText = async (response, maxChars) => {
 
 export const fetchWithTimeout = async (fetchImpl, url, options, timeoutMs) => {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
+  let timeout;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort(new Error('timeout'));
+      reject(Object.assign(new Error('timeout'), { kind: 'timeout' }));
+    }, timeoutMs);
+  });
   try {
-    return await fetchImpl(url, { ...options, signal: controller.signal });
+    const request = Promise.resolve().then(() => fetchImpl(url, { ...options, signal: controller.signal }));
+    return await Promise.race([request, timeoutPromise]);
   } finally {
     clearTimeout(timeout);
   }

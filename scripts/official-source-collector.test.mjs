@@ -44,6 +44,25 @@ test('collects RSS and Atom entries into bounded fact evidence', async () => {
   const atomSignal = result.signals.find((item) => item.sourceId === 'atom');
   assert.equal(atomSignal.sourceUrl, 'https://example.com/posts/gemini');
   assert.match(atomSignal.rawContent, /100 requests/u);
+  assert.equal(atomSignal.desc, atomSignal.rawContent);
+  assert.equal(atomSignal.publishTime, atomSignal.publishedAt);
+  assert.deepEqual(atomSignal.metrics, { likes: 0, bookmarks: 0, comments: 0, shares: 0, views: 0 });
+});
+
+test('parses RSS 1.0 RDF and namespaced encoded content', async () => {
+  const rdf = `<?xml version="1.0"?><rdf:RDF xmlns:rdf="urn:rdf" xmlns:content="urn:content">
+    <item><title>RDF update</title><link>https://example.com/rdf</link>
+      <dc:date xmlns:dc="urn:dc">2026-09-21T12:00:00Z</dc:date>
+      <content:encoded><![CDATA[<p>Detailed <b>release</b> notes.</p>]]></content:encoded>
+    </item></rdf:RDF>`;
+  const result = await collectOfficialFeedSignals({
+    fetchImpl: async () => new Response(rdf),
+    now: NOW,
+    sources: [{ id: 'rdf', name: 'RDF Lab', url: 'https://example.com/rdf.xml' }],
+  });
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.signals[0].rawContent, 'Detailed release notes.');
+  assert.equal(result.signals[0].breakingEligible, true);
 });
 
 test('keeps missing, invalid, and future dates review-only and stable', async () => {
@@ -58,6 +77,28 @@ test('keeps missing, invalid, and future dates review-only and stable', async ()
   assert.equal(first.signals.length, 3);
   assert.ok(first.signals.every((item) => item.reviewOnly && !item.breakingEligible));
   assert.deepEqual(first.signals.map((item) => item.id), second.signals.map((item) => item.id));
+});
+
+test('treats even slightly future publication timestamps as review-only', async () => {
+  const xml = `<rss><channel><item><guid>future</guid><title>Future</title><link>https://example.com/future</link><pubDate>2026-09-22T08:03:00Z</pubDate></item></channel></rss>`;
+  const result = await collectOfficialFeedSignals({ fetchImpl: async () => new Response(xml), now: NOW, sources: [{ id: 'lab', name: 'Lab', url: 'https://example.com/rss' }] });
+  assert.equal(result.signals[0].breakingEligible, false);
+  assert.equal(result.signals[0].reviewOnly, true);
+});
+
+test('times out even when an injected fetch ignores AbortSignal', async () => {
+  const never = new Promise(() => {});
+  const result = await Promise.race([
+    collectOfficialFeedSignals({
+      fetchImpl: () => never,
+      now: NOW,
+      sources: [{ id: 'stuck', name: 'Stuck', url: 'https://example.com/stuck' }],
+      limits: { timeoutMs: 10 },
+    }),
+    new Promise((resolve) => setTimeout(() => resolve('still_pending'), 80)),
+  ]);
+  assert.notEqual(result, 'still_pending');
+  assert.equal(result.errors[0].errorKind, 'timeout');
 });
 
 test('filters old dated entries but retains unknown dates for review', async () => {
@@ -114,4 +155,11 @@ test('caps entries, content, and response size', async () => {
   });
   assert.equal(tooLarge.signals.length, 0);
   assert.equal(tooLarge.errors[0].errorKind, 'response_too_large');
+});
+
+test('does not reintroduce entity-encoded script markup into text evidence', async () => {
+  const xml = `<rss><channel><item><guid>encoded</guid><title>Encoded</title><link>https://example.com/encoded</link><pubDate>2026-09-21T00:00:00Z</pubDate><description>&amp;lt;script&amp;gt;bad()&amp;lt;/script&amp;gt; Safe notes</description></item></channel></rss>`;
+  const result = await collectOfficialFeedSignals({ fetchImpl: async () => new Response(xml), now: NOW, sources: [{ id: 'lab', name: 'Lab', url: 'https://example.com/rss' }] });
+  assert.doesNotMatch(result.signals[0].rawContent, /script|bad\(\)|[<>]/iu);
+  assert.match(result.signals[0].rawContent, /Safe notes/u);
 });

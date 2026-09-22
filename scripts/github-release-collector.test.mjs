@@ -23,15 +23,32 @@ test('collects stable releases with safe headers and fact roles', async () => {
   assert.equal(result.signals[0].evidenceRole, 'fact');
   assert.equal(result.signals[0].sourceUrl, 'https://github.com/openai/openai-node/releases/tag/v2.0.0');
   assert.equal(result.signals[0].breakingEligible, true);
+  assert.equal(result.signals[0].desc, result.signals[0].rawContent);
+  assert.equal(result.signals[0].publishTime, result.signals[0].publishedAt);
+  assert.deepEqual(result.signals[0].metrics, { likes: 0, bookmarks: 0, comments: 0, shares: 0, views: 0 });
   assert.match(calls[0].options.headers.Authorization, /^Bearer /u);
   assert.ok(calls[0].options.headers.Accept);
   assert.ok(calls[0].options.headers['User-Agent']);
   assert.doesNotMatch(JSON.stringify(result), /secret/u);
 });
 
+test('times out an injected GitHub fetch that ignores AbortSignal', async () => {
+  const result = await Promise.race([
+    collectGithubReleaseSignals({
+      fetchImpl: () => new Promise(() => {}),
+      now: NOW,
+      repositories: ['acme/tool'],
+      limits: { timeoutMs: 10 },
+    }),
+    new Promise((resolve) => setTimeout(() => resolve('still_pending'), 80)),
+  ]);
+  assert.notEqual(result, 'still_pending');
+  assert.equal(result.errors[0].errorKind, 'timeout');
+});
+
 test('marks missing, invalid, and future release dates review-only', async () => {
   const releases = [
-    { id: 1, tag_name: 'a', html_url: 'https://github.com/acme/tool/releases/tag/a', published_at: null },
+    { id: 1, tag_name: 'a', html_url: 'https://github.com/acme/tool/releases/tag/a', published_at: null, created_at: '2026-09-21T00:00:00Z' },
     { id: 2, tag_name: 'b', html_url: 'https://github.com/acme/tool/releases/tag/b', published_at: 'not-a-date' },
     { id: 3, tag_name: 'c', html_url: 'https://github.com/acme/tool/releases/tag/c', published_at: '2027-01-01T00:00:00Z' },
   ];
@@ -46,15 +63,22 @@ test('falls back from hostile release URLs to canonical repository URLs', async 
   assert.equal(result.signals[0].sourceUrl, 'https://github.com/acme/tool/releases/tag/v1');
 });
 
+test('requires HTTPS for GitHub canonical release links', async () => {
+  const release = { id: 43, tag_name: 'v2', html_url: 'http://github.com/acme/tool/releases/tag/v2', published_at: '2026-09-21T00:00:00Z' };
+  const result = await collectGithubReleaseSignals({ fetchImpl: async () => new Response(JSON.stringify([release])), now: NOW, repositories: ['acme/tool'] });
+  assert.equal(result.signals[0].sourceUrl, 'https://github.com/acme/tool/releases/tag/v2');
+});
+
 test('reports rate limits safely and continues other repositories', async () => {
   const fetchImpl = async (url) => {
-    if (String(url).includes('/blocked/')) return new Response('token secret server body', { status: 429, headers: { 'retry-after': '60' } });
+    if (String(url).includes('/blocked/')) return new Response('token secret server body', { status: 429, headers: { 'retry-after': '60', 'x-ratelimit-reset': '1790000000' } });
     return new Response(JSON.stringify([{ id: 1, tag_name: 'v1', html_url: 'https://github.com/ok/repo/releases/tag/v1', published_at: '2026-09-21T00:00:00Z' }]));
   };
   const result = await collectGithubReleaseSignals({ fetchImpl, now: NOW, repositories: ['blocked/repo', 'ok/repo'], token: 'secret' });
   assert.equal(result.signals.length, 1);
   assert.equal(result.errors[0].errorKind, 'rate_limited');
   assert.equal(result.errors[0].repository, 'blocked/repo');
+  assert.equal(result.errors[0].rateLimitReset, '1790000000');
   assert.doesNotMatch(JSON.stringify(result.errors), /secret|server body/u);
 });
 

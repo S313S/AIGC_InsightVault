@@ -37,6 +37,7 @@ const extractEntries = (document) => {
   const channel = asArray(document?.rss?.channel)[0];
   if (channel) return asArray(channel.item).map((entry) => ({ entry, format: 'rss' }));
   if (document?.feed) return asArray(document.feed.entry).map((entry) => ({ entry, format: 'atom' }));
+  if (document?.RDF) return asArray(document.RDF.item).map((entry) => ({ entry, format: 'rdf' }));
   throw Object.assign(new Error('unsupported_feed'), { kind: 'invalid_xml' });
 };
 
@@ -47,7 +48,8 @@ const normalizeEntry = ({ entry, format }, source, nowMs, limits) => {
   const rawDate = scalarText(entry?.pubDate || entry?.published || entry?.updated || entry?.date);
   const publication = classifyPublicationDate(rawDate, nowMs);
   if (publication.timestamp !== null && nowMs - publication.timestamp > source.recentDays * 86_400_000) return null;
-  const content = cleanText(entry?.description || entry?.content || entry?.summary, limits.maxContentChars);
+  const contentValue = entry?.description || entry?.encoded || entry?.content || entry?.summary;
+  const content = cleanText(scalarText(contentValue), limits.maxContentChars);
   const externalIdentity = cleanText(entry?.guid || entry?.id, 500) || sourceUrl || title;
   const hash = stableHash(`${source.id}\n${externalIdentity}`);
 
@@ -57,17 +59,21 @@ const normalizeEntry = ({ entry, format }, source, nowMs, limits) => {
     evidenceKey: `official:${hash}`,
     title,
     rawContent: content,
+    desc: content,
     summary: content,
     sourceUrl,
     platform: 'Official',
     author: source.name,
     date: publication.publishedAt || rawDate || '',
     publishedAt: publication.publishedAt,
+    publishTime: publication.publishedAt || '',
     breakingEligible: publication.breakingEligible,
     reviewOnly: publication.reviewOnly,
     sourceType: 'official',
     evidenceRole: 'fact',
-    metrics: {},
+    metrics: { likes: 0, bookmarks: 0, comments: 0, shares: 0, views: 0 },
+    coverImage: '',
+    images: [],
     tags: ['official-source'],
     isTrending: true,
   };

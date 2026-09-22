@@ -16,6 +16,7 @@ import {
 const releaseUrlFor = (repo, tag) => `https://github.com/${repo}/releases/tag/${encodeURIComponent(String(tag || 'latest'))}`;
 
 const safeReleaseUrl = (value, repo, tag) => canonicalHttpUrl(value, 'https://github.com', (url) => (
+  url.protocol === 'https:' &&
   url.hostname.toLowerCase() === 'github.com' &&
   url.pathname.toLowerCase().startsWith(`/${repo.toLowerCase()}/releases/`)
 )) || releaseUrlFor(repo, tag);
@@ -32,7 +33,7 @@ const parseNextLink = (header, repo) => {
 const normalizeRelease = (release, config, nowMs, limits) => {
   if (!release || release.draft || release.prerelease) return null;
   const tag = cleanText(release.tag_name, 200) || 'latest';
-  const publication = classifyPublicationDate(String(release.published_at || release.created_at || ''), nowMs);
+  const publication = classifyPublicationDate(String(release.published_at || ''), nowMs);
   if (publication.timestamp !== null && nowMs - publication.timestamp > config.recentDays * 86_400_000) return null;
   const sourceUrl = safeReleaseUrl(release.html_url, config.repo, tag);
   const identity = release.id ?? tag ?? sourceUrl;
@@ -45,17 +46,21 @@ const normalizeRelease = (release, config, nowMs, limits) => {
     evidenceKey: `github:${hash}`,
     title,
     rawContent: body,
+    desc: body,
     summary: body,
     sourceUrl,
     platform: 'GitHub',
     author: config.repo.split('/')[0],
     date: publication.publishedAt || String(release.published_at || ''),
     publishedAt: publication.publishedAt,
+    publishTime: publication.publishedAt || '',
     breakingEligible: publication.breakingEligible,
     reviewOnly: publication.reviewOnly,
     sourceType: 'repository',
     evidenceRole: 'fact',
-    metrics: {},
+    metrics: { likes: 0, bookmarks: 0, comments: 0, shares: 0, views: 0 },
+    coverImage: '',
+    images: [],
     tags: ['github-release', tag],
     version: tag,
     isTrending: true,
@@ -78,6 +83,7 @@ const collectRepository = async (fetchImpl, config, token, nowMs, limits) => {
       error.status = Number(response?.status) || null;
       error.kind = error.status === 403 || error.status === 429 ? 'rate_limited' : 'http_error';
       error.retryAfter = response?.headers?.get?.('retry-after') || null;
+      error.rateLimitReset = response?.headers?.get?.('x-ratelimit-reset') || null;
       throw error;
     }
     const text = await readBoundedText(response, limits.maxResponseChars);
@@ -118,6 +124,7 @@ export const collectGithubReleaseSignals = async ({
           errorKind: safeErrorKind(error),
           ...(Number.isInteger(error?.status) ? { status: error.status } : {}),
           ...(error?.retryAfter ? { retryAfter: String(error.retryAfter).slice(0, 40) } : {}),
+          ...(error?.rateLimitReset ? { rateLimitReset: String(error.rateLimitReset).slice(0, 40) } : {}),
         },
       };
     }
