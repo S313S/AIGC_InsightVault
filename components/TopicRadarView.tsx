@@ -150,7 +150,7 @@ export const TopicRadarView: React.FC<TopicRadarViewProps> = ({
             {topics.length === 0 || visibleCount === 0 ? (
                 <div className="rounded-2xl border border-[#1e3a5f]/40 bg-[#0d1526]/50 p-8 text-center">
                     <p className="text-sm font-medium text-gray-300">暂无可用话题</p>
-                    <p className="mt-2 text-xs text-gray-500">可以继续展开下方「原始帖子池」查看采集结果。</p>
+                    <p className="mt-2 text-xs text-gray-500">可以继续查看上方「近期热门原帖」中的采集结果。</p>
                 </div>
             ) : (
                 <div className="space-y-8">

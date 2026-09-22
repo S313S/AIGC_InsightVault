@@ -5,11 +5,12 @@ import { hasPromptEvidence } from '../shared/promptTagging.js';
 import { fallbackCoverFromSeed, isRenderableCoverUrl, normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
 import { hasXiaohongshuXsecToken, isXiaohongshuUrl, normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
 import { getSourceUrlOpenBlockReason, resolveOpenableSourceUrl } from '../shared/sourceUrls.js';
-import { getCollectionFreshness, getCollectionLabel } from '../shared/collectionFreshness.js';
+import { getCollectionFreshness, getCollectionLabel, getLatestSnapshotByPlatform } from '../shared/collectionFreshness.js';
 import { getSyncLabel } from '../shared/syncFreshness.js';
 import { TopicRadarView } from './TopicRadarView';
 import { handleDialogKeyDown } from '../shared/dialogFocus.js';
 import { partitionTopicEvidence } from '../shared/topicPresentation.js';
+import { buildCategoryRankings, dedupeDashboardCards, selectHotPosts } from '../shared/dashboardRankings.js';
 
 const PLATFORM_BADGE_COLORS: Record<Platform, string> = {
     [Platform.Twitter]: 'bg-blue-500/20 text-blue-400',
@@ -24,6 +25,15 @@ const PlatformBadge: React.FC<{ platform: Platform }> = ({ platform }) => (
         {platform}
     </span>
 );
+
+const RANKING_ACCENT_CLASSES: Record<string, string> = {
+    indigo: 'bg-indigo-500',
+    emerald: 'bg-emerald-500',
+    purple: 'bg-purple-500',
+    rose: 'bg-rose-500',
+};
+
+const SOCIAL_PLATFORMS = [Platform.Twitter, Platform.Xiaohongshu, Platform.Manual];
 
 interface DashboardViewProps {
     tasks: TrackingTask[];
@@ -85,7 +95,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     });
     const syncLabel = getSyncLabel({ isSyncing, lastSyncedAt });
     const [showAllTrending, setShowAllTrending] = useState(false);
-    const [rawPoolOpen, setRawPoolOpen] = useState(false);
     const [repairingCardId, setRepairingCardId] = useState<string | null>(null);
     const dialogRef = useRef<HTMLDivElement>(null);
     const dialogCloseRef = useRef<HTMLButtonElement>(null);
@@ -120,12 +129,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         };
     }, [showAllTrending]);
 
-    const normalizeSourceUrl = (url: string) => {
-        if (!url) return '';
-        const [base] = url.split('?');
-        return base.trim();
-    };
-
     const buildFallbackCover = (item: KnowledgeCard) => {
         const seed = `${item.id}|${item.sourceUrl}|${item.title}|${item.author}|${item.date}`;
         return fallbackCoverFromSeed(seed);
@@ -137,28 +140,45 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         return isRenderableCoverUrl(value) ? value : buildFallbackCover(item);
     };
 
-    const uniqueTrending = useMemo(() => {
-        const seen = new Set<string>();
-        const unique: KnowledgeCard[] = [];
-        for (const item of trendingItems) {
-            const key = normalizeSourceUrl(item.sourceUrl) || `${item.title}|${item.author}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            unique.push(item);
-        }
-        return unique;
-    }, [trendingItems]);
+    const uniqueTrending = useMemo(
+        () => dedupeDashboardCards(trendingItems) as KnowledgeCard[],
+        [trendingItems]
+    );
     const { socialPosts, factEvidence } = useMemo(
         () => partitionTopicEvidence(uniqueTrending),
         [uniqueTrending]
     );
 
-    // 1. Hot Picks Data (Top 6 items for the 2x3 grid)
-    const hotPicks = socialPosts.slice(0, 6);
+    const hotPicks = useMemo(
+        () => selectHotPosts(socialPosts, 6) as KnowledgeCard[],
+        [socialPosts]
+    );
+    const categoryRankings = useMemo(
+        () => buildCategoryRankings(socialPosts, { limit: 3 }) as Array<{
+            id: string;
+            label: string;
+            accent: string;
+            items: KnowledgeCard[];
+        }>,
+        [socialPosts]
+    );
+    const socialSnapshotAt = useMemo(
+        () => getLatestSnapshotByPlatform(socialPosts, SOCIAL_PLATFORMS) as Record<Platform, string | null>,
+        [socialPosts]
+    );
 
     const formatLikes = (count: number) => {
         return count >= 1000 ? (count / 1000).toFixed(1) + 'k' : count;
     };
+
+    const formatSnapshotTime = (value: string) => new Intl.DateTimeFormat('zh-CN', {
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Shanghai',
+    }).format(new Date(value));
 
     const openSourceUrl = (url: string) => {
         const candidateUrl = normalizeXiaohongshuSourceUrl(url) || url;
@@ -254,54 +274,43 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
             </div>
 
-            <TopicRadarView
-                topics={topics}
-                isTopicsLoading={isTopicsLoading}
-                freshnessNow={freshnessNow}
-                canGiveFeedback={canGiveTopicFeedback}
-                feedbackOwnerId={feedbackOwnerId}
-                pendingFeedbackKeys={pendingTopicFeedbackKeys}
-                onToggleFeedback={onToggleTopicFeedback}
-            />
-
-            {/* Raw cards stay available as evidence, but do not displace editorial lanes. */}
-            <section className="rounded-2xl border border-[#1e3a5f]/40 bg-[#0d1526]/35 p-4 sm:p-5">
-                <button
-                    type="button"
-                    aria-expanded={rawPoolOpen}
-                    aria-controls="raw-post-pool"
-                    onClick={() => setRawPoolOpen((open) => !open)}
-                    className="flex w-full items-center justify-between gap-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
-                >
-                    <span>
-                        <span className="block text-base font-bold text-gray-100">原始帖子池</span>
-                        <span className="mt-1 block text-xs text-gray-500">
-                            原始帖子 {socialPosts.length} 条 · 事实证据 {factEvidence.length} 条，按需展开核对
-                        </span>
-                    </span>
-                    <span className="text-sm font-medium text-indigo-300">{rawPoolOpen ? '收起' : '展开'}</span>
-                </button>
-
-                <div id="raw-post-pool">
-                {rawPoolOpen && (
-                    <div className="mt-6 space-y-8">
-            {/* 2. Hot Picks (Vertical Cards 2 Rows x 3 Cols) */}
-            <div>
-                <div className="flex items-center justify-between mb-5">
+            {/* 2. Hot Posts (Visual cards first, matching the original homepage rhythm) */}
+            <section aria-labelledby="hot-posts-title">
+                <div className="mb-5 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex items-center gap-2">
                         <div className="p-1.5 bg-red-500/20 rounded-lg">
                             <Flame size={18} className="text-red-400" fill="currentColor" />
                         </div>
-                        <h3 className="text-lg font-bold text-gray-100">近期热点</h3>
+                        <div>
+                            <h2 id="hot-posts-title" className="text-xl font-bold text-gray-100">近期热门原帖</h2>
+                            <p className="mt-1 text-xs text-gray-500">按互动热度排序，保留各平台最近一次成功采集结果</p>
+                        </div>
                     </div>
                     <button
                         ref={modalTriggerRef}
                         type="button"
                         onClick={() => setShowAllTrending(true)}
-                        className="flex items-center gap-1 text-sm font-medium text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                        className="flex shrink-0 items-center gap-1 text-sm font-medium text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                     >
-                        查看全部 <ArrowRight size={14} />
+                        查看全部原帖 <ArrowRight size={14} />
                     </button>
+                </div>
+
+                <div className="mb-5 flex flex-wrap gap-2" aria-label="各平台最后成功采集时间">
+                    {SOCIAL_PLATFORMS.map((platform) => {
+                        const collectedAt = socialSnapshotAt[platform];
+                        const count = socialPosts.filter((item) => item.platform === platform).length;
+                        if (count === 0) return null;
+                        const freshness = getCollectionFreshness({ collectedAt, now: freshnessNow });
+                        return (
+                            <span
+                                key={platform}
+                                className={`rounded-full border px-3 py-1 text-xs ${freshness.status === 'stale' ? 'border-amber-500/35 bg-amber-500/10 text-amber-300' : 'border-[#1e3a5f]/60 bg-[#0d1526]/60 text-gray-400'}`}
+                            >
+                                {platform} · {count} 条 · {collectedAt ? `${formatSnapshotTime(collectedAt)} 采集` : '采集时间未知'}
+                            </span>
+                        );
+                    })}
                 </div>
 
                 {/* 2x3 Grid using vertical cards to match 'Picture 1' style */}
@@ -423,7 +432,79 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         ))}
                     </div>
                 )}
-            </div>
+            </section>
+
+            {/* 3. Categorized rankings use only genuine matches; no unrelated fallback fill. */}
+            {categoryRankings.length > 0 && (
+                <section aria-labelledby="category-rankings-title">
+                    <div className="mb-5">
+                        <h2 id="category-rankings-title" className="text-xl font-bold text-gray-100">分类热榜</h2>
+                        <p className="mt-1 text-sm text-gray-500">按真实内容分类并依据互动热度排序，不用无关帖子补足榜单。</p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
+                        {categoryRankings.map((category) => (
+                            <section key={category.id} aria-labelledby={`ranking-${category.id}`} className="rounded-2xl border border-[#1e3a5f]/40 bg-[#0d1526]/60 p-5 shadow-sm backdrop-blur-md">
+                                <div className="mb-3 flex items-center justify-between border-b border-[#1e3a5f]/40 pb-3">
+                                    <div className="flex items-center gap-2">
+                                        <span className={`h-5 w-1 rounded-full ${RANKING_ACCENT_CLASSES[category.accent] || 'bg-indigo-500'}`} />
+                                        <h3 id={`ranking-${category.id}`} className="font-bold text-gray-100">{category.label} · 热门精选</h3>
+                                    </div>
+                                    <span className="text-xs text-gray-500">Top {category.items.length}</span>
+                                </div>
+                                <div>
+                                    {category.items.map((item, index) => (
+                                        <button
+                                            key={item.id}
+                                            type="button"
+                                            onClick={() => openSourceUrl(item.sourceUrl)}
+                                            aria-label={`打开榜单第 ${index + 1} 名原文：${item.title}`}
+                                            className="group flex w-full items-center gap-3 border-b border-[#1e3a5f]/30 p-3 text-left last:border-0 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400"
+                                        >
+                                            <span className={`w-6 shrink-0 text-center text-lg font-bold italic ${index === 0 ? 'text-red-400' : index === 1 ? 'text-orange-400' : 'text-amber-400'}`}>
+                                                {index + 1}
+                                            </span>
+                                            <img
+                                                src={safeCover(item)}
+                                                alt=""
+                                                width={48}
+                                                height={48}
+                                                loading="lazy"
+                                                decoding="async"
+                                                referrerPolicy="no-referrer"
+                                                onError={(event) => {
+                                                    event.currentTarget.src = buildFallbackCover(item);
+                                                }}
+                                                className="h-12 w-12 shrink-0 rounded-lg object-cover"
+                                            />
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block truncate text-sm font-medium text-gray-200 group-hover:text-indigo-300">{item.title}</span>
+                                                <span className="mt-1 flex items-center gap-2 text-[10px] text-gray-500">
+                                                    <PlatformBadge platform={item.platform} />
+                                                    <span className="truncate">@{item.author || '来源未知'}</span>
+                                                </span>
+                                            </span>
+                                            <span className="flex shrink-0 items-center gap-1 text-sm font-bold text-red-400">
+                                                <Flame size={12} fill="currentColor" />
+                                                {formatLikes(item.metrics.likes)}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </section>
+                        ))}
+                    </div>
+                </section>
+            )}
+
+            <TopicRadarView
+                topics={topics}
+                isTopicsLoading={isTopicsLoading}
+                freshnessNow={freshnessNow}
+                canGiveFeedback={canGiveTopicFeedback}
+                feedbackOwnerId={feedbackOwnerId}
+                pendingFeedbackKeys={pendingTopicFeedbackKeys}
+                onToggleFeedback={onToggleTopicFeedback}
+            />
 
             {factEvidence.length > 0 && (
                 <section aria-labelledby="fact-evidence-title">
@@ -461,11 +542,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </section>
             )}
 
-                    </div>
-                )}
-                </div>
-            </section>
-
             {/* All Trending Modal */}
             {showAllTrending && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -479,9 +555,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     >
                         <div className="p-6 border-b border-[#1e3a5f]/40 flex items-center justify-between">
                             <div className="min-w-0">
-                                <h2 id="all-trending-title" className="break-words text-xl font-bold text-gray-100">近期热点 · 全部</h2>
+                                <h2 id="all-trending-title" className="break-words text-xl font-bold text-gray-100">全部原帖 · {socialPosts.length} 条</h2>
                                 <p className="text-sm text-gray-500 mt-1">
-                                    当前社交原帖 {socialPosts.length} 条（原始证据共 {uniqueTrending.length} 条）
+                                    已按原文链接去重；GitHub 与官方资料在主页「事实证据」中单独展示
                                 </p>
                             </div>
                             <button

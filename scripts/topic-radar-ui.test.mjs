@@ -92,27 +92,49 @@ test('topic loading stays local and collection freshness remains collection-owne
   assert.match(dashboardSource, /collectionFreshness\.status === 'stale'/);
 });
 
-test('raw posts remain reachable in a collapsed accessible pool and topic-empty fallback', () => {
-  assert.match(dashboardSource, /原始帖子池/);
-  assert.match(dashboardSource, /aria-expanded=\{rawPoolOpen\}/);
-  assert.match(dashboardSource, /aria-controls="raw-post-pool"/);
-  assert.match(dashboardSource, /id="raw-post-pool"/);
-  assert.match(dashboardSource, /rawPoolOpen &&/);
+test('dashboard restores hot-post-first reading order before rankings and topic radar', () => {
+  const hotPostsIndex = dashboardSource.indexOf('近期热门原帖');
+  const rankingsIndex = dashboardSource.indexOf('分类热榜');
+  const topicRadarIndex = dashboardSource.indexOf('<TopicRadarView');
+  const factEvidenceIndex = dashboardSource.indexOf('id="fact-evidence-title"');
+
+  assert.ok(hotPostsIndex > -1);
+  assert.ok(rankingsIndex > hotPostsIndex);
+  assert.ok(topicRadarIndex > rankingsIndex);
+  assert.ok(factEvidenceIndex > topicRadarIndex);
+  assert.doesNotMatch(dashboardSource, /rawPoolOpen/);
   assert.match(dashboardSource, /setShowAllTrending\(true\)/);
   assert.match(radarSource, /暂无可用话题/);
+  assert.match(radarSource, /上方「近期热门原帖」/);
 });
 
-test('raw social posts stay visual while GitHub and official sources move to fact evidence', () => {
+test('social posts power the visual hot cards and truthful category rankings', () => {
   assert.match(dashboardSource, /partitionTopicEvidence\(uniqueTrending\)/);
   assert.match(dashboardSource, /const \{ socialPosts, factEvidence \}/);
-  assert.match(dashboardSource, /const hotPicks = socialPosts\.slice\(0, 6\)/);
-  assert.match(dashboardSource, /原始帖子 \{socialPosts\.length\} 条/);
-  assert.match(dashboardSource, /事实证据 \{factEvidence\.length\} 条/);
+  assert.match(dashboardSource, /selectHotPosts\(socialPosts, 6\)/);
+  assert.match(dashboardSource, /buildCategoryRankings\(socialPosts/);
+  assert.match(dashboardSource, /getLatestSnapshotByPlatform\(socialPosts/);
+  assert.match(dashboardSource, /全部原帖 · \{socialPosts\.length\} 条/);
   assert.match(dashboardSource, /事实证据/);
   assert.match(dashboardSource, /factEvidence[\s\S]{0,160}\.map/);
   assert.match(dashboardSource, /href=\{resolveOpenableSourceUrl\(item\.sourceUrl\)\}/);
   assert.match(dashboardSource, /socialPosts\.map/);
   assert.doesNotMatch(dashboardSource, /uniqueTrending\.map\(item/);
+});
+
+test('category rankings are linkable, ranked, and never use unrelated fallback items', () => {
+  assert.match(dashboardSource, /categoryRankings\.map/);
+  assert.match(dashboardSource, /category\.items\.map/);
+  assert.match(dashboardSource, /aria-label=\{`打开榜单第 \$\{index \+ 1\} 名原文/);
+  assert.match(dashboardSource, /openSourceUrl\(item\.sourceUrl\)/);
+  assert.doesNotMatch(dashboardSource, /pickRankings/);
+  assert.doesNotMatch(dashboardSource, /fallback = sortedByHot/);
+});
+
+test('hot-post heading keeps the all-post action inside narrow viewports', () => {
+  assert.match(dashboardSource, /mb-5 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between/);
+  assert.match(dashboardSource, /查看全部原帖[\s\S]{0,120}ArrowRight/);
+  assert.match(dashboardSource, /shrink-0[^"]*focus-visible:ring-2/);
 });
 
 test('raw post actions and all-hotspots modal are keyboard and focus accessible', () => {
