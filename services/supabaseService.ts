@@ -575,13 +575,16 @@ export const getTrendingCards = async (signal?: AbortSignal): Promise<KnowledgeC
     const rows: any[] = [];
     let offset = 0;
 
-    for (let pageIndex = 0; pageIndex < TRENDING_CARD_MAX_PAGES; pageIndex += 1) {
+    for (let pageIndex = 0; pageIndex <= TRENDING_CARD_MAX_PAGES; pageIndex += 1) {
+        const isOverflowProbe = pageIndex === TRENDING_CARD_MAX_PAGES;
+        const pageEnd = isOverflowProbe ? offset : offset + TRENDING_CARD_PAGE_SIZE - 1;
         let query = supabase
             .from('knowledge_cards')
             .select(CARD_LIST_SELECT_FIELDS)
             .eq('is_trending', true)
             .order('created_at', { ascending: false })
-            .range(offset, offset + TRENDING_CARD_PAGE_SIZE - 1);
+            .order('id', { ascending: true })
+            .range(offset, pageEnd);
         if (signal) query = query.abortSignal(signal);
 
         const { data, error } = await query;
@@ -592,11 +595,14 @@ export const getTrendingCards = async (signal?: AbortSignal): Promise<KnowledgeC
         }
 
         const page = data || [];
+        if (isOverflowProbe) {
+            if (page.length > 0) {
+                throw new Error('Trending card inventory exceeds the safe pagination limit');
+            }
+            break;
+        }
         rows.push(...page);
         if (page.length < TRENDING_CARD_PAGE_SIZE) break;
-        if (pageIndex === TRENDING_CARD_MAX_PAGES - 1) {
-            throw new Error('Trending card inventory exceeds the safe pagination limit');
-        }
         offset += TRENDING_CARD_PAGE_SIZE;
     }
 

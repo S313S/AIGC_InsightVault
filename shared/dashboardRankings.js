@@ -1,4 +1,5 @@
 import { normalizeEvidenceUrl } from './topicNormalization.js';
+import { resolveOpenableSourceUrl } from './sourceUrls.js';
 
 export const DASHBOARD_RANKING_CATEGORIES = Object.freeze([
   Object.freeze({
@@ -86,6 +87,7 @@ export const dedupeDashboardCards = (cards = []) => {
   const sorted = [...(Array.isArray(cards) ? cards : [])].sort(compareDashboardHotness);
   const seen = new Set();
   return sorted.filter(card => {
+    if (!resolveOpenableSourceUrl(card?.sourceUrl)) return false;
     const identity = normalizeEvidenceUrl(card?.sourceUrl) || fallbackIdentity(card);
     if (seen.has(identity)) return false;
     seen.add(identity);
@@ -99,7 +101,6 @@ export const selectHotPosts = (cards = [], limit = 6) =>
 const searchableCardText = (card) => [
   ...(Array.isArray(card?.tags) ? card.tags : []),
   card?.title,
-  card?.rawContent,
   card?.aiAnalysis?.summary,
   ...(Array.isArray(card?.aiAnalysis?.toolTags) ? card.aiAnalysis.toolTags : []),
 ]

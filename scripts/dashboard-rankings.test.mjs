@@ -50,7 +50,7 @@ test('category rankings include only genuine matches and omit empty categories',
   const cards = [
     card({ id: 'vibe', tags: ['Vibe Coding'], likes: 50 }),
     card({ id: 'image', title: 'FLUX image generation workflow', likes: 20 }),
-    card({ id: 'video', rawContent: '用 Veo 生成短视频', likes: 30 }),
+    card({ id: 'video', title: '用 Veo 生成短视频', likes: 30 }),
     card({ id: 'tool', tags: ['AI Tools'], title: 'MCP productivity agent', likes: 40 }),
     card({ id: 'unrelated', title: 'Weekend cooking notes', likes: 999 }),
   ];
@@ -77,10 +77,13 @@ test('category rankings cap every list and keep deterministic hotness order', as
   assert.deepEqual(ranking.items.map(item => item.id), ['high', 'mid']);
 });
 
-test('ranking helpers tolerate missing tags, text, metrics, and invalid URLs', async () => {
+test('ranking helpers exclude cards without an openable source URL', async () => {
   const { buildCategoryRankings, selectHotPosts } = await loadRankings();
-  const malformed = [{ id: 'broken', sourceUrl: '#', tags: null, metrics: null }];
+  const malformed = [
+    { id: 'missing', title: 'Vibe Coding', sourceUrl: '#', tags: null, metrics: null },
+    { id: 'unsafe', title: 'AI Tools', sourceUrl: 'javascript:alert(1)', tags: [], metrics: null },
+  ];
 
-  assert.deepEqual(selectHotPosts(malformed, 6), malformed);
+  assert.deepEqual(selectHotPosts(malformed, 6), []);
   assert.deepEqual(buildCategoryRankings(malformed), []);
 });

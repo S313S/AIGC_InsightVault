@@ -43,8 +43,11 @@ test('trending card loading pages the complete retained inventory and delegates 
   const body = extractFunctionBody('getTrendingCards');
 
   assert.equal(source.includes("import { selectHomepageTrendingCards } from '../shared/collectionFreshness.js';"), true);
-  assert.equal(body.includes('.range(offset, offset + TRENDING_CARD_PAGE_SIZE - 1)'), true);
+  assert.equal(body.includes('.range(offset, pageEnd)'), true);
   assert.equal(body.includes('offset += TRENDING_CARD_PAGE_SIZE'), true);
+  assert.equal(body.includes(".order('created_at', { ascending: false })\n            .order('id', { ascending: true })"), true);
+  assert.equal(body.includes('const isOverflowProbe = pageIndex === TRENDING_CARD_MAX_PAGES'), true);
+  assert.equal(body.includes('if (page.length > 0)'), true);
   assert.equal(body.includes('.limit(CARD_LIST_LIMIT)'), false);
   assert.equal(body.includes('return selectHomepageTrendingCards(cards);'), true);
   assert.equal(body.includes('pickLatestSnapshotTag'), false);
