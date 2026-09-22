@@ -2,6 +2,8 @@
 export enum Platform {
   Twitter = 'Twitter',
   Xiaohongshu = 'Xiaohongshu',
+  Official = 'Official',
+  GitHub = 'GitHub',
   Manual = 'Manual'
 }
 

@@ -6,6 +6,7 @@ import { isFallbackCoverUrl, normalizeLegacyFallbackCover } from '../shared/fall
 import { buildXiaohongshuWebUrl } from '../shared/xiaohongshuUrls.js';
 import { extractHashtagsFromText, pickSemanticCover } from '../shared/semanticCovers.js';
 import { classifyMonitorRun } from '../shared/monitorRunHealth.js';
+import { collectPrimarySourceEvidence } from '../server/factSourceIntegration.js';
 import { rebuildTopicRadar } from '../server/topicRadarPipeline.js';
 import { cleanupOldTrendingSnapshots } from '../server/trendingSnapshotCleanup.js';
 
@@ -1476,6 +1477,32 @@ export default async function handler(req, res) {
       }
 
       // No tracking_tasks updates in keyword-pool mode
+    }
+
+    const factEvidence = await collectPrimarySourceEvidence({
+      now: snapshotId,
+      env: process.env,
+      fetchImpl: globalThis.fetch,
+    });
+    intendedPlatforms = [...effectivePlatforms, ...factEvidence.intendedPlatforms];
+    platformTotals = {
+      ...platformTotals,
+      ...factEvidence.platformTotals,
+    };
+    platformErrors.push(...factEvidence.platformErrors);
+    allResults.push(...factEvidence.signals);
+    effectivePayload = {
+      ...effectivePayload,
+      factSources: factEvidence.config,
+    };
+    for (const platform of factEvidence.intendedPlatforms) {
+      const totals = factEvidence.platformTotals[platform];
+      platformStats.push({
+        platform,
+        count: totals?.output || 0,
+        configuredCalls: totals?.configuredCalls || 0,
+        completedCalls: totals?.completedCalls || 0,
+      });
     }
 
     const uniqueByUrl = new Map();

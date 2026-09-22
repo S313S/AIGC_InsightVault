@@ -15,6 +15,8 @@ const PlatformBadge: React.FC<{ platform: Platform }> = ({ platform }) => {
   const colors = {
     [Platform.Twitter]: 'bg-blue-500/20 text-blue-400',
     [Platform.Xiaohongshu]: 'bg-red-500/20 text-red-400',
+    [Platform.Official]: 'bg-emerald-500/20 text-emerald-300',
+    [Platform.GitHub]: 'bg-violet-500/20 text-violet-300',
     [Platform.Manual]: 'bg-gray-500/20 text-gray-400',
   };
 
