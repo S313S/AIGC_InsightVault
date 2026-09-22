@@ -4,6 +4,14 @@
 
 create extension if not exists pgcrypto;
 
+-- Fact-source evidence shares the existing knowledge-card store. Expand the
+-- legacy social-only platform constraint before those rows are persisted.
+alter table public.knowledge_cards
+  drop constraint if exists knowledge_cards_platform_check;
+alter table public.knowledge_cards
+  add constraint knowledge_cards_platform_check
+  check (platform in ('Twitter', 'Xiaohongshu', 'Manual', 'Official', 'GitHub'));
+
 create table if not exists public.topics (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null default auth.uid() references auth.users (id),

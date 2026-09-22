@@ -49,6 +49,11 @@ test('topic radar migration defines the owner-scoped topic records and editorial
   assert.match(sql, /platform_count integer not null default 0/);
 });
 
+test('topic radar migration allows curated fact platforms in the evidence store', () => {
+  assert.match(sql, /alter table public\.knowledge_cards drop constraint if exists knowledge_cards_platform_check/);
+  assert.match(sql, /alter table public\.knowledge_cards add constraint knowledge_cards_platform_check check \(platform in \('twitter', 'xiaohongshu', 'manual', 'official', 'github'\)\)/);
+});
+
 test('topic radar migration constrains scores, trends, links, and feedback', () => {
   for (const score of [
     'write_score',
