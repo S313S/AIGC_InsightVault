@@ -22,6 +22,21 @@ export const factPlatformKey = (platform) => {
   return normalized === 'official' || normalized === 'github' ? normalized : null;
 };
 
+export const settleEvidencePersistence = async (platform, operation) => {
+  const factPlatform = factPlatformKey(platform);
+  if (!factPlatform) return { value: await operation(), platform: null, error: null };
+  try {
+    const value = await operation();
+    return {
+      value,
+      platform: factPlatform,
+      error: value?.error ? 'persistence_failed' : null,
+    };
+  } catch {
+    return { value: null, platform: factPlatform, error: 'persistence_failed' };
+  }
+};
+
 export const persistEvidenceRows = async ({ supabase, rows = [] } = {}) => {
   if (!supabase?.from || !Array.isArray(rows)) throw new TypeError('valid supabase client and rows are required');
   const socialRows = [];
@@ -42,8 +57,10 @@ export const persistEvidenceRows = async ({ supabase, rows = [] } = {}) => {
   const platformErrors = [];
   for (const platform of ['official', 'github']) {
     if (factRows[platform].length === 0) continue;
-    const { error } = await supabase.from('knowledge_cards').insert(factRows[platform]);
-    if (error) {
+    const result = await settleEvidencePersistence(platform, () => (
+      supabase.from('knowledge_cards').insert(factRows[platform])
+    ));
+    if (result.error) {
       platformErrors.push({ platform, source: platform, error: 'persistence_failed' });
       continue;
     }

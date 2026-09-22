@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { collectPrimarySourceEvidence, persistEvidenceRows } from '../server/factSourceIntegration.js';
+import {
+  collectPrimarySourceEvidence,
+  persistEvidenceRows,
+  settleEvidencePersistence,
+} from '../server/factSourceIntegration.js';
 import { scoreTopicCluster } from '../shared/topicScoring.js';
 
 const rootUrl = new URL('../', import.meta.url);
@@ -74,9 +78,8 @@ test('persists social rows before isolated fact batches and continues after fact
       return {
         async insert(rows) {
           calls.push(rows.map((row) => row.platform));
-          return rows[0]?.platform === 'Official'
-            ? { error: { message: 'fact constraint rejected' } }
-            : { error: null };
+          if (rows[0]?.platform === 'Official') throw new Error('database credentials leaked here');
+          return { error: null };
         },
       };
     },
@@ -95,6 +98,21 @@ test('persists social rows before isolated fact batches and continues after fact
   assert.deepEqual(result.platformErrors, [
     { platform: 'official', source: 'official', error: 'persistence_failed' },
   ]);
+  assert.doesNotMatch(JSON.stringify(result), /credentials|database/u);
+});
+
+test('settles rejected fact updates safely but preserves social failures', async () => {
+  const fact = await settleEvidencePersistence('GitHub', async () => {
+    throw new Error('sensitive database detail');
+  });
+  assert.deepEqual(fact, { value: null, platform: 'github', error: 'persistence_failed' });
+
+  await assert.rejects(
+    settleEvidencePersistence('Twitter', async () => {
+      throw new Error('social write failed');
+    }),
+    /social write failed/u
+  );
 });
 
 test('fact evidence raises confidence without inventing social momentum', () => {

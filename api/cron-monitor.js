@@ -10,6 +10,7 @@ import {
   collectPrimarySourceEvidence,
   factPlatformKey,
   persistEvidenceRows,
+  settleEvidencePersistence,
 } from '../server/factSourceIntegration.js';
 import { rebuildTopicRadar } from '../server/topicRadarPipeline.js';
 import { cleanupOldTrendingSnapshots } from '../server/trendingSnapshotCleanup.js';
@@ -1670,30 +1671,43 @@ export default async function handler(req, res) {
           ...stripSnapshotTags(tags),
           snapshotTag
         ]));
-        const { error: updateError } = await supabase
-          .from('knowledge_cards')
-          .update({
-            owner_id: ownerId,
-            is_public: true,
-            title: updatedRow.title,
-            source_url: updatedRow.source_url,
-            platform: updatedRow.platform,
-            author: updatedRow.author,
-            date: updatedRow.date,
-            cover_image: updatedRow.cover_image,
-            metrics: updatedRow.metrics,
-            content_type: updatedRow.content_type,
-            raw_content: updatedRow.raw_content,
-            ai_analysis: updatedRow.ai_analysis,
-            tags: mergedTags,
-            user_notes: updatedRow.user_notes,
-            collections: updatedRow.collections,
-            is_trending: true
-          })
-          .eq('owner_id', ownerId)
-          .eq('id', row.id);
-        if (updateError) {
-          const factPlatform = factPlatformKey(updatedRow.platform);
+        const factPlatform = factPlatformKey(updatedRow.platform);
+        const updateResult = await settleEvidencePersistence(updatedRow.platform, () => (
+          supabase
+            .from('knowledge_cards')
+            .update({
+              owner_id: ownerId,
+              is_public: true,
+              title: updatedRow.title,
+              source_url: updatedRow.source_url,
+              platform: updatedRow.platform,
+              author: updatedRow.author,
+              date: updatedRow.date,
+              cover_image: updatedRow.cover_image,
+              metrics: updatedRow.metrics,
+              content_type: updatedRow.content_type,
+              raw_content: updatedRow.raw_content,
+              ai_analysis: updatedRow.ai_analysis,
+              tags: mergedTags,
+              user_notes: updatedRow.user_notes,
+              collections: updatedRow.collections,
+              is_trending: true
+            })
+            .eq('owner_id', ownerId)
+            .eq('id', row.id)
+        ));
+        if (updateResult.error) {
+          if (!factPersistenceFailures.has(factPlatform)) {
+            factPersistenceFailures.add(factPlatform);
+            platformErrors.push({
+              platform: factPlatform,
+              source: factPlatform,
+              error: 'persistence_failed',
+            });
+          }
+          continue;
+        }
+        if (updateResult.value?.error) {
           if (factPlatform) {
             if (!factPersistenceFailures.has(factPlatform)) {
               factPersistenceFailures.add(factPlatform);
@@ -1705,7 +1719,7 @@ export default async function handler(req, res) {
             }
             continue;
           }
-          throw new Error(updateError.message || 'Failed to update existing trending cards');
+          throw new Error(updateResult.value.error.message || 'Failed to update existing trending cards');
         }
         updatedExisting += 1;
       }
