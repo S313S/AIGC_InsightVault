@@ -98,6 +98,19 @@ test('raw posts remain reachable in a collapsed accessible pool and topic-empty 
   assert.match(radarSource, /暂无可用话题/);
 });
 
+test('raw social posts stay visual while GitHub and official sources move to fact evidence', () => {
+  assert.match(dashboardSource, /partitionTopicEvidence\(uniqueTrending\)/);
+  assert.match(dashboardSource, /const \{ socialPosts, factEvidence \}/);
+  assert.match(dashboardSource, /const hotPicks = socialPosts\.slice\(0, 6\)/);
+  assert.match(dashboardSource, /原始帖子 \{socialPosts\.length\} 条/);
+  assert.match(dashboardSource, /事实证据 \{factEvidence\.length\} 条/);
+  assert.match(dashboardSource, /事实证据/);
+  assert.match(dashboardSource, /factEvidence[\s\S]{0,160}\.map/);
+  assert.match(dashboardSource, /href=\{resolveOpenableSourceUrl\(item\.sourceUrl\)\}/);
+  assert.match(dashboardSource, /socialPosts\.map/);
+  assert.doesNotMatch(dashboardSource, /uniqueTrending\.map\(item/);
+});
+
 test('raw post actions and all-hotspots modal are keyboard and focus accessible', () => {
   assert.match(dashboardSource, /type="button"[\s\S]{0,260}onClick=\{\(\) => openSourceUrl\(item\.sourceUrl\)\}/);
   assert.doesNotMatch(dashboardSource, /<div[\s\S]{0,160}onClick=\{\(\) => openSourceUrl\(item\.sourceUrl\)\}/);

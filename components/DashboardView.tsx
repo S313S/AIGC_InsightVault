@@ -9,6 +9,7 @@ import { getCollectionFreshness, getCollectionLabel } from '../shared/collection
 import { getSyncLabel } from '../shared/syncFreshness.js';
 import { TopicRadarView } from './TopicRadarView';
 import { handleDialogKeyDown } from '../shared/dialogFocus.js';
+import { partitionTopicEvidence } from '../shared/topicPresentation.js';
 
 const PLATFORM_BADGE_COLORS: Record<Platform, string> = {
     [Platform.Twitter]: 'bg-blue-500/20 text-blue-400',
@@ -147,9 +148,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         }
         return unique;
     }, [trendingItems]);
+    const { socialPosts, factEvidence } = useMemo(
+        () => partitionTopicEvidence(uniqueTrending),
+        [uniqueTrending]
+    );
 
     // 1. Hot Picks Data (Top 6 items for the 2x3 grid)
-    const hotPicks = uniqueTrending.slice(0, 6);
+    const hotPicks = socialPosts.slice(0, 6);
 
     const formatLikes = (count: number) => {
         return count >= 1000 ? (count / 1000).toFixed(1) + 'k' : count;
@@ -270,7 +275,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 >
                     <span>
                         <span className="block text-base font-bold text-gray-100">原始帖子池</span>
-                        <span className="mt-1 block text-xs text-gray-500">保留 {uniqueTrending.length} 条原始证据，按需展开核对</span>
+                        <span className="mt-1 block text-xs text-gray-500">
+                            原始帖子 {socialPosts.length} 条 · 事实证据 {factEvidence.length} 条，按需展开核对
+                        </span>
                     </span>
                     <span className="text-sm font-medium text-indigo-300">{rawPoolOpen ? '收起' : '展开'}</span>
                 </button>
@@ -316,8 +323,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </div>
                 ) : hotPicks.length === 0 ? (
                     <div className="rounded-xl border border-[#1e3a5f]/40 bg-[#0d1526]/40 p-8 text-center">
-                        <p className="text-gray-300 text-sm">当前暂无热点内容</p>
-                        <p className="text-gray-500 text-xs mt-2">请先触发 /api/cron-monitor，或到「热点搜索」导入内容</p>
+                        <p className="text-gray-300 text-sm">当前暂无社交原帖</p>
+                        <p className="text-gray-500 text-xs mt-2">GitHub 与官方资料仍保留在下方事实证据中</p>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -418,6 +425,42 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 )}
             </div>
 
+            {factEvidence.length > 0 && (
+                <section aria-labelledby="fact-evidence-title">
+                    <div className="mb-4">
+                        <h3 id="fact-evidence-title" className="text-lg font-bold text-gray-100">事实证据</h3>
+                        <p className="mt-1 text-xs text-gray-500">官方公告与代码仓库资料，用于核验话题，不占用社交原帖卡位。</p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                        {factEvidence.filter((item) => resolveOpenableSourceUrl(item.sourceUrl)).map((item) => (
+                            <article key={item.id} className="rounded-xl border border-[#1e3a5f]/40 bg-[#111d33]/55 p-4">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2 text-[10px] text-gray-500">
+                                            <PlatformBadge platform={item.platform} />
+                                            <span>{item.author || '来源未知'}</span>
+                                            <span>{item.date}</span>
+                                        </div>
+                                        <h4 className="mt-2 break-words text-sm font-semibold leading-snug text-gray-200 line-clamp-2">{item.title}</h4>
+                                        {item.rawContent ? (
+                                            <p className="mt-2 break-words text-xs leading-relaxed text-gray-500 line-clamp-2">{item.rawContent}</p>
+                                        ) : null}
+                                    </div>
+                                    <a
+                                        href={resolveOpenableSourceUrl(item.sourceUrl)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="shrink-0 text-xs font-medium text-indigo-300 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                                    >
+                                        查看来源
+                                    </a>
+                                </div>
+                            </article>
+                        ))}
+                    </div>
+                </section>
+            )}
+
                     </div>
                 )}
                 </div>
@@ -438,7 +481,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             <div className="min-w-0">
                                 <h2 id="all-trending-title" className="break-words text-xl font-bold text-gray-100">近期热点 · 全部</h2>
                                 <p className="text-sm text-gray-500 mt-1">
-                                    当前快照 {uniqueTrending.length} 条（原始命中 {trendingItems.length} 条）
+                                    当前社交原帖 {socialPosts.length} 条（原始证据共 {uniqueTrending.length} 条）
                                 </p>
                             </div>
                             <button
@@ -452,7 +495,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         </div>
                         <div className="flex-1 overflow-y-auto overscroll-contain p-6">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {uniqueTrending.map(item => (
+                                {socialPosts.map(item => (
                                     <article
                                         key={item.id}
                                         className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-[#1e3a5f]/40 bg-[#0d1526]/60 shadow-sm backdrop-blur-md transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:shadow-lg motion-reduce:transform-none motion-reduce:transition-none"
