@@ -67,6 +67,55 @@ test('returns all unclassifiable cards instead of letting an invalid tag win', a
   assert.deepEqual(selectLatestSnapshotCards(cards), cards);
 });
 
+test('homepage restores the newest successful snapshot for every social platform', async () => {
+  const { selectHomepageTrendingCards } = await loadFreshnessHelpers();
+  const cards = [
+    { id: 'twitter-new', platform: 'Twitter', tags: ['snapshot:2026-09-22T06:00:00.000Z'] },
+    { id: 'github-new', platform: 'GitHub', tags: ['snapshot:2026-09-22T06:00:00.000Z'] },
+    { id: 'official-new', platform: 'Official', tags: ['snapshot:2026-09-22T06:00:00.000Z'] },
+    { id: 'twitter-old', platform: 'Twitter', tags: ['snapshot:2026-06-26T11:00:00.000Z'] },
+    { id: 'xhs-old-a', platform: 'Xiaohongshu', tags: ['snapshot:2026-06-26T11:00:00.000Z'] },
+    { id: 'xhs-old-b', platform: 'Xiaohongshu', tags: ['snapshot:2026-06-26T11:00:00.000Z'] },
+    { id: 'github-old', platform: 'GitHub', tags: ['snapshot:2026-06-26T11:00:00.000Z'] },
+  ];
+
+  assert.deepEqual(
+    selectHomepageTrendingCards(cards).map(card => card.id),
+    ['twitter-new', 'github-new', 'official-new', 'xhs-old-a', 'xhs-old-b']
+  );
+});
+
+test('homepage keeps legacy social data only for platforms without a valid snapshot', async () => {
+  const { selectHomepageTrendingCards } = await loadFreshnessHelpers();
+  const cards = [
+    { id: 'twitter-new', platform: 'Twitter', tags: ['snapshot:2026-09-22T06:00:00.000Z'] },
+    { id: 'twitter-legacy', platform: 'Twitter', tags: ['snapshot:legacy'] },
+    { id: 'manual-legacy', platform: 'Manual', tags: ['manual'] },
+    { id: 'xhs-invalid', platform: 'Xiaohongshu', tags: ['snapshot:not-a-date'] },
+  ];
+
+  assert.deepEqual(
+    selectHomepageTrendingCards(cards).map(card => card.id),
+    ['twitter-new', 'manual-legacy', 'xhs-invalid']
+  );
+});
+
+test('reports the selected collection timestamp independently for each social platform', async () => {
+  const { getLatestSnapshotByPlatform } = await loadFreshnessHelpers();
+  const cards = [
+    { platform: 'Twitter', tags: ['snapshot:2026-09-22T06:00:00.000Z'] },
+    { platform: 'Twitter', tags: ['snapshot:2026-09-21T06:00:00.000Z'] },
+    { platform: 'Xiaohongshu', tags: ['snapshot:2026-06-26T11:00:00.000Z'] },
+    { platform: 'GitHub', tags: ['snapshot:2026-09-22T06:00:00.000Z'] },
+  ];
+
+  assert.deepEqual(getLatestSnapshotByPlatform(cards, ['Twitter', 'Xiaohongshu', 'Manual']), {
+    Twitter: '2026-09-22T06:00:00.000Z',
+    Xiaohongshu: '2026-06-26T11:00:00.000Z',
+    Manual: null,
+  });
+});
+
 test('rejects calendar-invalid snapshot timestamps', async () => {
   const { getLatestCollectionAt } = await loadFreshnessHelpers();
 

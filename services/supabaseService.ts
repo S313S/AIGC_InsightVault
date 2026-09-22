@@ -18,13 +18,15 @@ import {
 import { normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
 import { normalizeXiaohongshuSourceUrl } from '../shared/xiaohongshuUrls.js';
 import { buildCardIdentityKey, countCollectionItems } from '../shared/collectionCounts.js';
-import { selectLatestSnapshotCards } from '../shared/collectionFreshness.js';
+import { selectHomepageTrendingCards } from '../shared/collectionFreshness.js';
 
 // ============ 类型转换工具 ============
 
 const CARD_LIST_LIMIT = 60;
 const COLLECTION_CARD_PAGE_SIZE = 1000;
 const COLLECTION_COUNT_PAGE_SIZE = 1000;
+const TRENDING_CARD_PAGE_SIZE = 1000;
+const TRENDING_CARD_MAX_PAGES = 10;
 const CARD_LIST_SELECT_FIELDS = [
     'id',
     'owner_id',
@@ -570,23 +572,36 @@ export const getKnowledgeCardsByCollectionIds = async (
 export const getTrendingCards = async (signal?: AbortSignal): Promise<KnowledgeCard[]> => {
     if (!isSupabaseConnected() || !supabase) return [];
 
-    let query = supabase
-        .from('knowledge_cards')
-        .select(CARD_LIST_SELECT_FIELDS)
-        .eq('is_trending', true)
-        .order('created_at', { ascending: false })
-        .limit(CARD_LIST_LIMIT);
-    if (signal) query = query.abortSignal(signal);
+    const rows: any[] = [];
+    let offset = 0;
 
-    const { data, error } = await query;
+    for (let pageIndex = 0; pageIndex < TRENDING_CARD_MAX_PAGES; pageIndex += 1) {
+        let query = supabase
+            .from('knowledge_cards')
+            .select(CARD_LIST_SELECT_FIELDS)
+            .eq('is_trending', true)
+            .order('created_at', { ascending: false })
+            .range(offset, offset + TRENDING_CARD_PAGE_SIZE - 1);
+        if (signal) query = query.abortSignal(signal);
 
-    if (error) {
-        console.error('Error fetching trending cards:', error);
-        throw error;
+        const { data, error } = await query;
+
+        if (error) {
+            console.error('Error fetching trending cards:', error);
+            throw error;
+        }
+
+        const page = data || [];
+        rows.push(...page);
+        if (page.length < TRENDING_CARD_PAGE_SIZE) break;
+        if (pageIndex === TRENDING_CARD_MAX_PAGES - 1) {
+            throw new Error('Trending card inventory exceeds the safe pagination limit');
+        }
+        offset += TRENDING_CARD_PAGE_SIZE;
     }
 
-    const cards = dedupeCards((data || []).map(row => dbToCard(row, { isDetailLoaded: false })));
-    return selectLatestSnapshotCards(cards);
+    const cards = dedupeCards(rows.map(row => dbToCard(row, { isDetailLoaded: false })));
+    return selectHomepageTrendingCards(cards);
 };
 
 export const getEditorialTopics = async (signal?: AbortSignal): Promise<EditorialTopic[]> => {

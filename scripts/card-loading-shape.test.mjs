@@ -39,11 +39,14 @@ test('trending card list loading avoids full-row select star', () => {
   assert.equal(body.includes('images'), false);
 });
 
-test('trending card loading delegates snapshot batch selection to the shared rules', () => {
+test('trending card loading pages the complete retained inventory and delegates homepage selection', () => {
   const body = extractFunctionBody('getTrendingCards');
 
-  assert.equal(source.includes("import { selectLatestSnapshotCards } from '../shared/collectionFreshness.js';"), true);
-  assert.equal(body.includes('return selectLatestSnapshotCards(cards);'), true);
+  assert.equal(source.includes("import { selectHomepageTrendingCards } from '../shared/collectionFreshness.js';"), true);
+  assert.equal(body.includes('.range(offset, offset + TRENDING_CARD_PAGE_SIZE - 1)'), true);
+  assert.equal(body.includes('offset += TRENDING_CARD_PAGE_SIZE'), true);
+  assert.equal(body.includes('.limit(CARD_LIST_LIMIT)'), false);
+  assert.equal(body.includes('return selectHomepageTrendingCards(cards);'), true);
   assert.equal(body.includes('pickLatestSnapshotTag'), false);
 });
 

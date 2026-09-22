@@ -1,4 +1,6 @@
 const SNAPSHOT_PREFIX = 'snapshot:';
+const DEFAULT_SOCIAL_PLATFORMS = ['Twitter', 'Xiaohongshu', 'Manual'];
+const DEFAULT_FACT_PLATFORMS = ['Official', 'GitHub'];
 const ISO_TIMESTAMP_PATTERN = /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})T(?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})(?:\.\d+)?(?<timezone>Z|[+-](?<offsetHour>\d{2}):(?<offsetMinute>\d{2}))$/;
 const DEFAULT_STALE_AFTER_MS = 36 * 60 * 60 * 1000;
 
@@ -57,15 +59,27 @@ const getValidSnapshotTimestamps = (card) => {
   return timestamps;
 };
 
-export const selectLatestSnapshotCards = (cards = []) => {
-  const availableCards = Array.isArray(cards) ? cards : [];
+const latestTimestampForCards = (cards) => {
   let latestTimestamp = -Infinity;
-
-  for (const card of availableCards) {
+  for (const card of cards) {
     for (const timestamp of getValidSnapshotTimestamps(card)) {
       latestTimestamp = Math.max(latestTimestamp, timestamp);
     }
   }
+  return latestTimestamp;
+};
+
+const isLegacyOrUnclassifiable = (card) => {
+  const snapshotTags = (Array.isArray(card?.tags) ? card.tags : [])
+    .filter(tag => typeof tag === 'string' && tag.startsWith(SNAPSHOT_PREFIX));
+  return snapshotTags.length === 0 ||
+    snapshotTags.includes(`${SNAPSHOT_PREFIX}legacy`) ||
+    getValidSnapshotTimestamps(card).length === 0;
+};
+
+export const selectLatestSnapshotCards = (cards = []) => {
+  const availableCards = Array.isArray(cards) ? cards : [];
+  const latestTimestamp = latestTimestampForCards(availableCards);
 
   if (Number.isFinite(latestTimestamp)) {
     return availableCards.filter(card =>
@@ -80,6 +94,79 @@ export const selectLatestSnapshotCards = (cards = []) => {
   });
 
   return legacyCards.length > 0 ? legacyCards : availableCards;
+};
+
+export const getLatestSnapshotByPlatform = (
+  cards = [],
+  platforms = DEFAULT_SOCIAL_PLATFORMS
+) => {
+  const availableCards = Array.isArray(cards) ? cards : [];
+  const result = {};
+
+  for (const platform of platforms) {
+    const platformCards = availableCards.filter(card => card?.platform === platform);
+    const latestTimestamp = latestTimestampForCards(platformCards);
+    if (!Number.isFinite(latestTimestamp)) {
+      result[platform] = null;
+      continue;
+    }
+
+    const matchingCard = platformCards.find(card =>
+      getValidSnapshotTimestamps(card).includes(latestTimestamp)
+    );
+    const matchingTag = (Array.isArray(matchingCard?.tags) ? matchingCard.tags : [])
+      .find(tag => typeof tag === 'string' &&
+        tag.startsWith(SNAPSHOT_PREFIX) &&
+        parseIsoTimestamp(tag.slice(SNAPSHOT_PREFIX.length)) === latestTimestamp);
+    result[platform] = matchingTag?.slice(SNAPSHOT_PREFIX.length) || null;
+  }
+
+  return result;
+};
+
+export const selectHomepageTrendingCards = (
+  cards = [],
+  {
+    socialPlatforms = DEFAULT_SOCIAL_PLATFORMS,
+    factPlatforms = DEFAULT_FACT_PLATFORMS,
+  } = {}
+) => {
+  const availableCards = Array.isArray(cards) ? cards : [];
+  const socialSet = new Set(socialPlatforms);
+  const factSet = new Set(factPlatforms);
+  const selected = new Set();
+
+  for (const platform of socialPlatforms) {
+    const platformCards = availableCards.filter(card => card?.platform === platform);
+    const latestTimestamp = latestTimestampForCards(platformCards);
+    if (Number.isFinite(latestTimestamp)) {
+      for (const card of platformCards) {
+        if (getValidSnapshotTimestamps(card).includes(latestTimestamp)) selected.add(card);
+      }
+      continue;
+    }
+    for (const card of platformCards) {
+      if (isLegacyOrUnclassifiable(card)) selected.add(card);
+    }
+  }
+
+  const factCards = availableCards.filter(card => factSet.has(card?.platform));
+  const latestFactTimestamp = latestTimestampForCards(factCards);
+  if (Number.isFinite(latestFactTimestamp)) {
+    for (const card of factCards) {
+      if (getValidSnapshotTimestamps(card).includes(latestFactTimestamp)) selected.add(card);
+    }
+  } else {
+    for (const card of factCards) {
+      if (isLegacyOrUnclassifiable(card)) selected.add(card);
+    }
+  }
+
+  for (const card of availableCards) {
+    if (!socialSet.has(card?.platform) && !factSet.has(card?.platform)) selected.add(card);
+  }
+
+  return availableCards.filter(card => selected.has(card));
 };
 
 export const getLatestCollectionAt = (cards = []) => {
