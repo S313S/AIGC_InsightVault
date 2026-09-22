@@ -96,6 +96,32 @@ const cleanText = (value, limit) => {
   return sliceCodePoints(normalized, limit).trim();
 };
 
+const VERSION_ONLY_TITLE = /^(?:(?:[a-z][\w.-]{1,30})\s*:\s*)?v?\d+(?:\.\d+){1,4}(?:[-+][a-z0-9._-]+)?$/iu;
+
+const readableFallbackText = (value, limit) => {
+  if (typeof value !== 'string') return '';
+  const bounded = sliceCodePoints(value, TOPIC_BRIEF_RAW_FIELD_MAX_CHARS);
+  const plain = bounded
+    .replace(/```[\s\S]*?```/gu, ' ')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/gu, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/gu, '$1')
+    .replace(/https?:\/\/[^\s)>\]]+/giu, ' ')
+    .replace(/^\s{0,3}#{1,6}\s*/gmu, '')
+    .replace(/^\s*(?:[-*+]|\d+[.)])\s+/gmu, '')
+    .replace(/[*_~`>]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  return cleanText(plain, Math.min(limit, 220));
+};
+
+const qualifyFallbackTitle = (value, card) => {
+  const title = cleanText(value, TOPIC_BRIEF_FIELD_LIMITS.title);
+  if (!VERSION_ONLY_TITLE.test(title)) return title;
+  const source = cleanText(card?.author ?? card?.sourceId ?? card?.source_id, 40);
+  if (!source || title.toLowerCase().includes(source.toLowerCase())) return title;
+  return cleanText(`${source} · ${title}`, TOPIC_BRIEF_FIELD_LIMITS.title);
+};
+
 const evidenceValues = (cluster) => (
   Array.isArray(cluster?.evidence) && cluster.evidence.length > 0
     ? cluster.evidence
@@ -141,10 +167,10 @@ const fallbackBrief = (cluster) => {
   const factCards = cards.filter(isFactEvidence);
   const hasFactEvidence = factCards.length > 0;
   const summaryCard = factCards[0] || first;
-  const title = cleanText(cluster?.title, TOPIC_BRIEF_FIELD_LIMITS.title) ||
-    cleanText(first.title, TOPIC_BRIEF_FIELD_LIMITS.title) ||
+  const title = qualifyFallbackTitle(cluster?.title, summaryCard) ||
+    qualifyFallbackTitle(first.title, summaryCard) ||
     '待研判的 AI 话题';
-  const evidenceSummary = cleanText(
+  const evidenceSummary = readableFallbackText(
     summaryCard.rawContent ?? summaryCard.raw_content ?? summaryCard.summary ?? summaryCard.title,
     TOPIC_BRIEF_FIELD_LIMITS.summary
   );

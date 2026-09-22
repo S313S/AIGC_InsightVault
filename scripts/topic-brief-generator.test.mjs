@@ -460,3 +460,30 @@ test('official or repository fallback may identify verified fact evidence', () =
   assert.match(JSON.stringify(result), /可验证|已确认/);
   assert.doesNotMatch(result.summary, /社交来源称|待核验/);
 });
+
+test('repository fallback turns release Markdown into readable editorial copy', () => {
+  const result = normalizeTopicBrief({}, {
+    title: 'v7.17.0',
+    evidence: [{
+      platform: 'GitHub',
+      author: 'openai',
+      sourceType: 'repository',
+      evidenceRole: 'fact',
+      rawContent: [
+        '## v7.17.0 (2026-09-16)',
+        '[Full Changelog](https://github.com/openai/openai-node/compare/v7.16.0...v7.17.0)',
+        '### Features',
+        '- **api:** add compaction progress events ([#2749](https://github.com/openai/openai-node/issues/2749))',
+        '```ts',
+        'const secret = "not editorial copy";',
+        '```',
+      ].join('\n'),
+    }],
+  });
+
+  assert.equal(result.title, 'openai · v7.17.0');
+  assert.ok(result.summary.length <= TOPIC_BRIEF_FIELD_LIMITS.summary);
+  assert.match(result.summary, /v7\.17\.0|Features|compaction/u);
+  assert.doesNotMatch(result.summary, /https?:\/\/|\]\(|```|^\s*#{1,6}|\*\*/u);
+  assert.doesNotMatch(result.summary, /not editorial copy/u);
+});
