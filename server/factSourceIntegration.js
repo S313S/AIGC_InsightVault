@@ -13,7 +13,45 @@ const safePlatformError = (platform, error, sourceKey) => ({
   source: String(error?.[sourceKey] || platform).slice(0, 160),
   error: String(error?.errorKind || 'collector_failed').slice(0, 80),
   ...(Number.isInteger(error?.status) ? { status: error.status } : {}),
+  ...(error?.retryAfter ? { retryAfter: String(error.retryAfter).slice(0, 40) } : {}),
+  ...(error?.rateLimitReset ? { rateLimitReset: String(error.rateLimitReset).slice(0, 40) } : {}),
 });
+
+export const factPlatformKey = (platform) => {
+  const normalized = String(platform || '').trim().toLowerCase();
+  return normalized === 'official' || normalized === 'github' ? normalized : null;
+};
+
+export const persistEvidenceRows = async ({ supabase, rows = [] } = {}) => {
+  if (!supabase?.from || !Array.isArray(rows)) throw new TypeError('valid supabase client and rows are required');
+  const socialRows = [];
+  const factRows = { official: [], github: [] };
+  for (const row of rows) {
+    const platform = factPlatformKey(row?.platform);
+    if (platform) factRows[platform].push(row);
+    else socialRows.push(row);
+  }
+
+  let inserted = 0;
+  if (socialRows.length > 0) {
+    const { error } = await supabase.from('knowledge_cards').insert(socialRows);
+    if (error) throw new Error(error.message || 'Failed to insert trending cards');
+    inserted += socialRows.length;
+  }
+
+  const platformErrors = [];
+  for (const platform of ['official', 'github']) {
+    if (factRows[platform].length === 0) continue;
+    const { error } = await supabase.from('knowledge_cards').insert(factRows[platform]);
+    if (error) {
+      platformErrors.push({ platform, source: platform, error: 'persistence_failed' });
+      continue;
+    }
+    inserted += factRows[platform].length;
+  }
+
+  return { inserted, platformErrors };
+};
 
 const runCollector = async ({ platform, sourceKey, configuredCount, collect }) => {
   try {

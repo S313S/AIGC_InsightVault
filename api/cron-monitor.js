@@ -6,7 +6,11 @@ import { isFallbackCoverUrl, normalizeLegacyFallbackCover } from '../shared/fall
 import { buildXiaohongshuWebUrl } from '../shared/xiaohongshuUrls.js';
 import { extractHashtagsFromText, pickSemanticCover } from '../shared/semanticCovers.js';
 import { classifyMonitorRun } from '../shared/monitorRunHealth.js';
-import { collectPrimarySourceEvidence } from '../server/factSourceIntegration.js';
+import {
+  collectPrimarySourceEvidence,
+  factPlatformKey,
+  persistEvidenceRows,
+} from '../server/factSourceIntegration.js';
 import { rebuildTopicRadar } from '../server/topicRadarPipeline.js';
 import { cleanupOldTrendingSnapshots } from '../server/trendingSnapshotCleanup.js';
 
@@ -1631,13 +1635,15 @@ export default async function handler(req, res) {
       .filter(c => !existingNorms.has(normalizeSourceUrl(c.sourceUrl)))
       .map(c => buildTrendingRow(c, snapshotTag, ownerId));
     let updatedExisting = 0;
+    let inserted = 0;
+    const factPersistenceFailures = new Set();
 
     if (toInsert.length > 0) {
-      const { error: insertError } = await supabase
-        .from('knowledge_cards')
-        .insert(toInsert);
-      if (insertError) {
-        throw new Error(insertError.message || 'Failed to insert trending cards');
+      const persistence = await persistEvidenceRows({ supabase, rows: toInsert });
+      inserted = persistence.inserted;
+      for (const error of persistence.platformErrors) {
+        factPersistenceFailures.add(error.platform);
+        platformErrors.push(error);
       }
     }
 
@@ -1687,6 +1693,18 @@ export default async function handler(req, res) {
           .eq('owner_id', ownerId)
           .eq('id', row.id);
         if (updateError) {
+          const factPlatform = factPlatformKey(updatedRow.platform);
+          if (factPlatform) {
+            if (!factPersistenceFailures.has(factPlatform)) {
+              factPersistenceFailures.add(factPlatform);
+              platformErrors.push({
+                platform: factPlatform,
+                source: factPlatform,
+                error: 'persistence_failed',
+              });
+            }
+            continue;
+          }
           throw new Error(updateError.message || 'Failed to update existing trending cards');
         }
         updatedExisting += 1;
@@ -1773,7 +1791,7 @@ export default async function handler(req, res) {
     console.log('[cron-monitor] engagement debug sample', engagementDebug.slice(0, 10));
     const apiCallsSummary = summarizeApiCalls(apiCallTrace);
     const responsePayload = {
-      inserted: toInsert.length,
+      inserted,
       updatedExisting,
       updatedTasks: updatedTasks.length,
       candidates: candidates.length,
@@ -1803,7 +1821,7 @@ export default async function handler(req, res) {
     });
     responsePayload.runHealth = runHealth;
     resultSummary = {
-      inserted: toInsert.length,
+      inserted,
       updatedExisting,
       updatedTasks: updatedTasks.length,
       candidates: candidates.length,

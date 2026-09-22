@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { collectPrimarySourceEvidence } from '../server/factSourceIntegration.js';
+import { collectPrimarySourceEvidence, persistEvidenceRows } from '../server/factSourceIntegration.js';
 import { scoreTopicCluster } from '../shared/topicScoring.js';
 
 const rootUrl = new URL('../', import.meta.url);
@@ -66,6 +66,37 @@ test('reports per-source errors without dropping another primary source', async 
   ]);
 });
 
+test('persists social rows before isolated fact batches and continues after fact failure', async () => {
+  const calls = [];
+  const supabase = {
+    from(table) {
+      assert.equal(table, 'knowledge_cards');
+      return {
+        async insert(rows) {
+          calls.push(rows.map((row) => row.platform));
+          return rows[0]?.platform === 'Official'
+            ? { error: { message: 'fact constraint rejected' } }
+            : { error: null };
+        },
+      };
+    },
+  };
+  const result = await persistEvidenceRows({
+    supabase,
+    rows: [
+      { id: 'social-1', platform: 'Twitter' },
+      { id: 'official-1', platform: 'Official' },
+      { id: 'github-1', platform: 'GitHub' },
+    ],
+  });
+
+  assert.deepEqual(calls, [['Twitter'], ['Official'], ['GitHub']]);
+  assert.equal(result.inserted, 2);
+  assert.deepEqual(result.platformErrors, [
+    { platform: 'official', source: 'official', error: 'persistence_failed' },
+  ]);
+});
+
 test('fact evidence raises confidence without inventing social momentum', () => {
   const social = {
     id: 'social',
@@ -101,6 +132,7 @@ test('cron persists fact evidence and exposes primary-source health', async () =
   assert.match(source, /intendedPlatforms\s*=\s*\[\.\.\.effectivePlatforms,\s*\.\.\.factEvidence\.intendedPlatforms\]/s);
   assert.match(source, /platformTotals\s*=\s*\{[\s\S]*?\.\.\.factEvidence\.platformTotals/);
   assert.match(source, /platformErrors\.push\(\.\.\.factEvidence\.platformErrors\)/);
+  assert.match(source, /persistEvidenceRows\(\{ supabase, rows: toInsert \}\)/);
 });
 
 test('platform contracts and badges include Official and GitHub', async () => {
