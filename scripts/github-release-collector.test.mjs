@@ -96,3 +96,28 @@ test('uses bounded pagination, content, and stable identifiers', async () => {
   const ids = first.signals.map((item) => item.id);
   assert.equal(new Set(ids).size, ids.length);
 });
+
+test('never follows insecure pagination links with an authorization token', async () => {
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return new Response(JSON.stringify([{ id: 1, tag_name: 'v1', html_url: 'https://github.com/acme/tool/releases/tag/v1', published_at: '2026-09-21T00:00:00Z' }]), {
+      headers: { link: '<http://api.github.com/repos/acme/tool/releases?page=2>; rel="next"' },
+    });
+  };
+  const result = await collectGithubReleaseSignals({ fetchImpl, now: NOW, repositories: ['acme/tool'], token: 'TOP_SECRET' });
+  assert.equal(calls, 1);
+  assert.equal(result.signals.length, 1);
+});
+
+test('deduplicates duplicate repository configuration and repeated releases', async () => {
+  let calls = 0;
+  const release = { id: 1, tag_name: 'v1', html_url: 'https://github.com/acme/tool/releases/tag/v1', published_at: '2026-09-21T00:00:00Z' };
+  const result = await collectGithubReleaseSignals({
+    fetchImpl: async () => { calls += 1; return new Response(JSON.stringify([release, release])); },
+    now: NOW,
+    repositories: ['acme/tool', 'ACME/tool'],
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.signals.length, 1);
+});

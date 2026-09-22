@@ -64,7 +64,7 @@ export const classifyPublicationDate = (value, nowMs) => {
   return { timestamp, publishedAt: new Date(timestamp).toISOString(), reviewOnly: false, breakingEligible: true };
 };
 
-export const readBoundedText = async (response, maxChars) => {
+export const readBoundedText = async (response, maxChars, signal) => {
   const contentLength = Number(response?.headers?.get?.('content-length'));
   if (Number.isFinite(contentLength) && contentLength > maxChars * 4) {
     const error = new Error('response_too_large');
@@ -83,6 +83,10 @@ export const readBoundedText = async (response, maxChars) => {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let text = '';
+  const cancelReader = () => {
+    reader.cancel(signal?.reason).catch(() => {});
+  };
+  signal?.addEventListener('abort', cancelReader, { once: true });
   try {
     while (true) {
       const { value, done } = await reader.read();
@@ -91,17 +95,19 @@ export const readBoundedText = async (response, maxChars) => {
       if (text.length > maxChars) {
         const error = new Error('response_too_large');
         error.kind = 'response_too_large';
+        await reader.cancel(error).catch(() => {});
         throw error;
       }
     }
     text += decoder.decode();
     return text;
   } finally {
+    signal?.removeEventListener('abort', cancelReader);
     reader.releaseLock?.();
   }
 };
 
-export const fetchWithTimeout = async (fetchImpl, url, options, timeoutMs) => {
+export const fetchBoundedTextWithTimeout = async (fetchImpl, url, options, timeoutMs, maxChars) => {
   const controller = new AbortController();
   let timeout;
   const timeoutPromise = new Promise((_, reject) => {
@@ -111,7 +117,12 @@ export const fetchWithTimeout = async (fetchImpl, url, options, timeoutMs) => {
     }, timeoutMs);
   });
   try {
-    const request = Promise.resolve().then(() => fetchImpl(url, { ...options, signal: controller.signal }));
+    const request = Promise.resolve()
+      .then(() => fetchImpl(url, { ...options, redirect: 'error', signal: controller.signal }))
+      .then(async (response) => ({
+        response,
+        text: response?.ok ? await readBoundedText(response, maxChars, controller.signal) : '',
+      }));
     return await Promise.race([request, timeoutPromise]);
   } finally {
     clearTimeout(timeout);

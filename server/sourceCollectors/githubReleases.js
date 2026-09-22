@@ -7,8 +7,7 @@ import {
   canonicalHttpUrl,
   classifyPublicationDate,
   cleanText,
-  fetchWithTimeout,
-  readBoundedText,
+  fetchBoundedTextWithTimeout,
   safeErrorKind,
   stableHash,
 } from './collectorUtils.js';
@@ -25,6 +24,7 @@ const parseNextLink = (header, repo) => {
   const match = String(header || '').match(/<([^>]+)>;\s*rel="next"/iu);
   if (!match) return null;
   return canonicalHttpUrl(match[1], 'https://api.github.com', (url) => (
+    url.protocol === 'https:' && url.port === '' &&
     url.hostname === 'api.github.com' &&
     url.pathname.toLowerCase() === `/repos/${repo.toLowerCase()}/releases`
   ));
@@ -77,7 +77,7 @@ const collectRepository = async (fetchImpl, config, token, nowMs, limits) => {
   let nextUrl = `https://api.github.com/repos/${config.repo}/releases?per_page=${Math.min(100, config.maxReleases)}`;
   const releases = [];
   for (let page = 0; nextUrl && page < config.maxPages && releases.length < config.maxReleases; page += 1) {
-    const response = await fetchWithTimeout(fetchImpl, nextUrl, { headers }, limits.timeoutMs);
+    const { response, text } = await fetchBoundedTextWithTimeout(fetchImpl, nextUrl, { headers }, limits.timeoutMs, limits.maxResponseChars);
     if (!response?.ok) {
       const error = new Error('github_http_error');
       error.status = Number(response?.status) || null;
@@ -86,7 +86,9 @@ const collectRepository = async (fetchImpl, config, token, nowMs, limits) => {
       error.rateLimitReset = response?.headers?.get?.('x-ratelimit-reset') || null;
       throw error;
     }
-    const text = await readBoundedText(response, limits.maxResponseChars);
+    if (response.url && !canonicalHttpUrl(response.url, nextUrl, (url) => (
+      url.protocol === 'https:' && url.port === '' && url.hostname === 'api.github.com'
+    ))) throw Object.assign(new Error('untrusted_redirect'), { kind: 'untrusted_redirect' });
     let pageItems;
     try {
       pageItems = JSON.parse(text);
@@ -130,8 +132,12 @@ export const collectGithubReleaseSignals = async ({
     }
   }));
 
+  const uniqueSignals = new Map();
+  for (const signal of results.flatMap((result) => result.signals)) {
+    if (!uniqueSignals.has(signal.evidenceKey)) uniqueSignals.set(signal.evidenceKey, signal);
+  }
   return {
-    signals: results.flatMap((result) => result.signals).sort((a, b) => a.id.localeCompare(b.id)),
+    signals: [...uniqueSignals.values()].sort((a, b) => a.id.localeCompare(b.id)),
     errors: results.flatMap((result) => result.error ? [result.error] : []),
   };
 };

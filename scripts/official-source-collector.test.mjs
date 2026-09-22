@@ -101,6 +101,55 @@ test('times out even when an injected fetch ignores AbortSignal', async () => {
   assert.equal(result.errors[0].errorKind, 'timeout');
 });
 
+test('times out and cancels a response body that never finishes', async () => {
+  let cancelled = false;
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('<rss><channel>'));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const result = await collectOfficialFeedSignals({
+    fetchImpl: async () => new Response(body),
+    now: NOW,
+    sources: [{ id: 'slow', name: 'Slow', url: 'https://example.com/slow' }],
+    limits: { timeoutMs: 10 },
+  });
+  assert.equal(result.errors[0].errorKind, 'timeout');
+  assert.equal(cancelled, true);
+});
+
+test('keeps fallback identities distinct and deduplicates repeated evidence', async () => {
+  const xml = `<rss><channel>
+    <item><title>Alpha</title><link>javascript:a</link><pubDate>2026-09-21T01:00:00Z</pubDate></item>
+    <item><title>Beta</title><link>javascript:b</link><pubDate>2026-09-21T02:00:00Z</pubDate></item>
+    <item><title>Alpha</title><link>javascript:a</link><pubDate>2026-09-21T01:00:00Z</pubDate></item>
+  </channel></rss>`;
+  const result = await collectOfficialFeedSignals({ fetchImpl: async () => new Response(xml), now: NOW, sources: [{ id: 'lab', name: 'Lab', url: 'https://example.com/rss' }] });
+  assert.equal(result.signals.length, 2);
+  assert.equal(new Set(result.signals.map((item) => item.id)).size, 2);
+});
+
+test('rejects insecure/private feed sources and untrusted article hosts', async () => {
+  let calls = 0;
+  const ignored = await collectOfficialFeedSignals({
+    fetchImpl: async () => { calls += 1; return new Response(''); },
+    now: NOW,
+    sources: [
+      { id: 'http', name: 'HTTP', url: 'http://example.com/rss' },
+      { id: 'loopback', name: 'Loopback', url: 'https://127.0.0.1/rss' },
+    ],
+  });
+  assert.equal(calls, 0);
+  assert.deepEqual(ignored.signals, []);
+
+  const xml = `<rss><channel><item><guid>x</guid><title>External</title><link>https://attacker.example/post</link><pubDate>2026-09-21T00:00:00Z</pubDate></item></channel></rss>`;
+  const result = await collectOfficialFeedSignals({ fetchImpl: async () => new Response(xml), now: NOW, sources: [{ id: 'lab', name: 'Lab', url: 'https://example.com/rss' }] });
+  assert.equal(result.signals[0].sourceUrl, 'https://example.com/rss');
+});
+
 test('filters old dated entries but retains unknown dates for review', async () => {
   const xml = `<rss><channel>
     <item><guid>old</guid><title>Old</title><link>https://example.com/old</link><pubDate>2026-01-01T00:00:00Z</pubDate></item>

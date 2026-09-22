@@ -10,8 +10,7 @@ import {
   canonicalHttpUrl,
   classifyPublicationDate,
   cleanText,
-  fetchWithTimeout,
-  readBoundedText,
+  fetchBoundedTextWithTimeout,
   safeErrorKind,
   scalarText,
   stableHash,
@@ -44,13 +43,16 @@ const extractEntries = (document) => {
 const normalizeEntry = ({ entry, format }, source, nowMs, limits) => {
   const title = cleanText(entry?.title, 300) || 'Untitled official update';
   const linkValue = format === 'atom' ? entryLink(entry) : scalarText(entry?.link);
-  const sourceUrl = canonicalHttpUrl(linkValue, source.url) || source.url;
+  const articleUrl = canonicalHttpUrl(linkValue, source.url, (url) => (
+    url.protocol === 'https:' && url.port === '' && source.allowedHosts.includes(url.hostname.toLowerCase())
+  ));
+  const sourceUrl = articleUrl || source.url;
   const rawDate = scalarText(entry?.pubDate || entry?.published || entry?.updated || entry?.date);
   const publication = classifyPublicationDate(rawDate, nowMs);
   if (publication.timestamp !== null && nowMs - publication.timestamp > source.recentDays * 86_400_000) return null;
   const contentValue = entry?.description || entry?.encoded || entry?.content || entry?.summary;
   const content = cleanText(scalarText(contentValue), limits.maxContentChars);
-  const externalIdentity = cleanText(entry?.guid || entry?.id, 500) || sourceUrl || title;
+  const externalIdentity = cleanText(entry?.guid || entry?.id, 500) || articleUrl || `${title}\n${rawDate}`;
   const hash = stableHash(`${source.id}\n${externalIdentity}`);
 
   return {
@@ -80,16 +82,21 @@ const normalizeEntry = ({ entry, format }, source, nowMs, limits) => {
 };
 
 const collectSource = async (fetchImpl, source, nowMs, limits) => {
-  const response = await fetchWithTimeout(fetchImpl, source.url, {
+  const { response, text: xml } = await fetchBoundedTextWithTimeout(fetchImpl, source.url, {
     headers: { Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9' },
-  }, limits.timeoutMs);
+  }, limits.timeoutMs, limits.maxResponseChars);
   if (!response?.ok) {
     const error = new Error('http_error');
     error.kind = 'http_error';
     error.status = Number(response?.status) || null;
     throw error;
   }
-  const xml = await readBoundedText(response, limits.maxResponseChars);
+  if (response.url) {
+    const finalUrl = canonicalHttpUrl(response.url, source.url, (url) => (
+      url.protocol === 'https:' && url.port === '' && source.allowedHosts.includes(url.hostname.toLowerCase())
+    ));
+    if (!finalUrl) throw Object.assign(new Error('untrusted_redirect'), { kind: 'untrusted_redirect' });
+  }
   if (XMLValidator.validate(xml) !== true) throw Object.assign(new Error('invalid_xml'), { kind: 'invalid_xml' });
   const entries = extractEntries(parser.parse(xml));
   return entries.slice(0, source.maxEntries).map((entry) => normalizeEntry(entry, source, nowMs, limits)).filter(Boolean);
@@ -122,8 +129,12 @@ export const collectOfficialFeedSignals = async ({
     }
   }));
 
+  const uniqueSignals = new Map();
+  for (const signal of results.flatMap((result) => result.signals)) {
+    if (!uniqueSignals.has(signal.evidenceKey)) uniqueSignals.set(signal.evidenceKey, signal);
+  }
   return {
-    signals: results.flatMap((result) => result.signals).sort((a, b) => a.id.localeCompare(b.id)),
+    signals: [...uniqueSignals.values()].sort((a, b) => a.id.localeCompare(b.id)),
     errors: results.flatMap((result) => result.error ? [result.error] : []),
   };
 };
