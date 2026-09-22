@@ -35,8 +35,21 @@ test('topic cards explain lane score and label fallback briefs truthfully', () =
   assert.match(topicCardSource, /topic\.contentAngles\.quick/);
   assert.match(topicCardSource, /topic\.durableKnowledge\[0\]/);
   assert.match(topicCardSource, /topic\.generationStatus === 'fallback'/);
-  assert.match(topicCardSource, /自动摘要/);
-  assert.match(topicCardSource, /待核验/);
+  assert.match(topicCardSource, /规则摘要/);
+  assert.match(topicCardSource, /模型未生成/);
+});
+
+test('topic cards restore a visual lead source and a direct safe source action', () => {
+  assert.match(topicCardSource, /selectTopicLeadSource\(sources\)/);
+  assert.match(topicCardSource, /fallbackCoverFromSeed/);
+  assert.match(topicCardSource, /<img/);
+  assert.match(topicCardSource, /width=\{640\}/);
+  assert.match(topicCardSource, /height=\{360\}/);
+  assert.match(topicCardSource, /loading="lazy"/);
+  assert.match(topicCardSource, /referrerPolicy="no-referrer"/);
+  assert.match(topicCardSource, /href=\{leadSource\.href\}/);
+  assert.match(topicCardSource, /查看原文/);
+  assert.match(topicCardSource, /line-clamp-3/);
 });
 
 test('topic evidence is expandable, role-aware, and only links safe web URLs', () => {

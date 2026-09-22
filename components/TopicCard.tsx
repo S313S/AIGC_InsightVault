@@ -4,6 +4,8 @@ import { Bookmark, Check, ChevronDown, ExternalLink, X } from './Icons';
 import { buildTopicFeedbackKey } from '../shared/topicFeedbackState.js';
 import { formatPublicationTime } from '../shared/publicationTime.js';
 import { resolveSafeHttpUrl } from '../shared/sourceUrls.js';
+import { fallbackCoverFromSeed, isRenderableCoverUrl, normalizeLegacyFallbackCover } from '../shared/fallbackCovers.js';
+import { selectTopicLeadSource } from '../shared/topicPresentation.js';
 
 export type TopicLane = 'write' | 'study' | 'breaking';
 
@@ -56,6 +58,12 @@ export const TopicCard = memo(function TopicCard({
     const [feedbackError, setFeedbackError] = useState('');
     const evidencePanelId = `topic-evidence-${useId().replace(/:/g, '')}`;
     const sources = topic.sources ?? EMPTY_SOURCES;
+    const leadSource = selectTopicLeadSource(sources);
+    const leadCard = leadSource?.card;
+    const normalizedLeadCover = normalizeLegacyFallbackCover(leadCard?.coverImage || '');
+    const leadCover = isRenderableCoverUrl(normalizedLeadCover)
+        ? normalizedLeadCover
+        : fallbackCoverFromSeed(`${topic.id}|${topic.fingerprint}|${topic.title}`);
     const feedback = topic.feedback ?? EMPTY_FEEDBACK;
     const laneCopy = LANE_COPY[lane];
     const laneScore = Number(topic[laneCopy.score]) || 0;
@@ -81,14 +89,45 @@ export const TopicCard = memo(function TopicCard({
     };
 
     return (
-        <article className="flex h-full flex-col rounded-2xl border border-[#1e3a5f]/50 bg-[#0d1526]/70 p-5 shadow-sm transition-colors hover:border-indigo-500/40">
+        <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-[#1e3a5f]/50 bg-[#0d1526]/70 p-5 shadow-sm transition-colors hover:border-indigo-500/40">
+            <div className="relative -mx-5 -mt-5 mb-4 h-36 overflow-hidden bg-[#1e3a5f]/30">
+                <img
+                    src={leadCover}
+                    alt={topic.title}
+                    width={640}
+                    height={360}
+                    loading="lazy"
+                    decoding="async"
+                    referrerPolicy="no-referrer"
+                    onError={(event) => {
+                        event.currentTarget.src = fallbackCoverFromSeed(`${topic.id}|${topic.title}`);
+                    }}
+                    className="h-full w-full object-cover"
+                />
+                <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 bg-gradient-to-t from-[#0d1526] via-[#0d1526]/75 to-transparent px-4 pb-3 pt-8">
+                    <div className="min-w-0 text-[11px] text-gray-300">
+                        <span className="font-medium">{leadCard?.platform || '话题证据'}</span>
+                        {leadCard?.author ? <span className="ml-2 truncate text-gray-400">@{leadCard.author}</span> : null}
+                    </div>
+                    {leadSource ? (
+                        <a
+                            href={leadSource.href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-indigo-500/90 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+                        >
+                            查看原文 <ExternalLink size={12} />
+                        </a>
+                    ) : null}
+                </div>
+            </div>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <span className={`text-xs font-semibold ${laneCopy.accent}`}>
                     {laneCopy.label} · {Math.round(laneScore)} 分
                 </span>
                 {topic.generationStatus === 'fallback' ? (
                     <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-200">
-                        自动摘要 · 待核验
+                        规则摘要 · 模型未生成
                     </span>
                 ) : (
                     <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-300">
@@ -98,11 +137,11 @@ export const TopicCard = memo(function TopicCard({
             </div>
 
             <h4 className="min-w-0 break-words text-base font-bold leading-snug text-gray-100">{topic.title}</h4>
-            <p className="mt-2 min-w-0 break-words text-sm leading-relaxed text-gray-400">{topic.summary}</p>
-            <p className="mt-2 min-w-0 break-words text-xs leading-relaxed text-gray-500">此刻信号：{topic.whyNow}</p>
+            <p className="mt-2 min-w-0 break-words text-sm leading-relaxed text-gray-400 line-clamp-3">{topic.summary}</p>
+            <p className="mt-2 min-w-0 break-words text-xs leading-relaxed text-gray-500 line-clamp-2">此刻信号：{topic.whyNow}</p>
             <div className="mt-3 rounded-xl border border-[#1e3a5f]/40 bg-[#111d33]/70 p-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{laneCopy.label}</p>
-                <p className="mt-1 min-w-0 break-words text-sm leading-relaxed text-gray-300">{laneExplanation}</p>
+                <p className="mt-1 min-w-0 break-words text-sm leading-relaxed text-gray-300 line-clamp-3">{laneExplanation}</p>
             </div>
 
             <div className="mt-4 border-t border-[#1e3a5f]/40 pt-4">
