@@ -1,4 +1,9 @@
-const freezeEntries = (entries) => Object.freeze(entries.map((entry) => Object.freeze({ ...entry })));
+import { isIP } from 'node:net';
+
+const freezeEntries = (entries) => Object.freeze(entries.map((entry) => Object.freeze({
+  ...entry,
+  ...(Array.isArray(entry.allowedHosts) ? { allowedHosts: Object.freeze([...entry.allowedHosts]) } : {}),
+})));
 
 export const DEFAULT_OFFICIAL_FEEDS = freezeEntries([
   { id: 'openai-news', name: 'OpenAI News', url: 'https://openai.com/news/rss.xml', allowedHosts: ['openai.com', 'www.openai.com'] },
@@ -22,11 +27,13 @@ export const DEFAULT_SOURCE_LIMITS = Object.freeze({
 
 const isPrivateHostname = (hostname) => {
   const host = hostname.toLowerCase().replace(/^\[|\]$/gu, '');
-  if (host === 'localhost' || host.endsWith('.localhost') || host === '::1') return true;
-  if (/^127\./u.test(host) || /^10\./u.test(host) || /^169\.254\./u.test(host) || /^192\.168\./u.test(host)) return true;
-  const private172 = host.match(/^172\.(\d+)\./u);
-  if (private172 && Number(private172[1]) >= 16 && Number(private172[1]) <= 31) return true;
-  return false;
+  if (isIP(host)) return true;
+  return host === 'localhost'
+    || host.endsWith('.localhost')
+    || host.endsWith('.local')
+    || host.endsWith('.internal')
+    || host.endsWith('.home')
+    || host.endsWith('.lan');
 };
 
 const safeHttpsUrl = (value) => {

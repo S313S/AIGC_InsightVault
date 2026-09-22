@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { collectOfficialFeedSignals } from '../server/sourceCollectors/officialFeeds.js';
+import { DEFAULT_OFFICIAL_FEEDS } from '../server/topicSources.js';
 
 const NOW = '2026-09-22T08:00:00.000Z';
 
@@ -140,6 +141,11 @@ test('rejects insecure/private feed sources and untrusted article hosts', async 
     sources: [
       { id: 'http', name: 'HTTP', url: 'http://example.com/rss' },
       { id: 'loopback', name: 'Loopback', url: 'https://127.0.0.1/rss' },
+      { id: 'unspecified', name: 'Unspecified', url: 'https://0.0.0.0/rss' },
+      { id: 'ula', name: 'ULA', url: 'https://[fc00::1]/rss' },
+      { id: 'link-local', name: 'Link local', url: 'https://[fe80::1]/rss' },
+      { id: 'mapped-loopback', name: 'Mapped loopback', url: 'https://[::ffff:127.0.0.1]/rss' },
+      { id: 'local-domain', name: 'Local domain', url: 'https://service.local/rss' },
     ],
   });
   assert.equal(calls, 0);
@@ -148,6 +154,44 @@ test('rejects insecure/private feed sources and untrusted article hosts', async 
   const xml = `<rss><channel><item><guid>x</guid><title>External</title><link>https://attacker.example/post</link><pubDate>2026-09-21T00:00:00Z</pubDate></item></channel></rss>`;
   const result = await collectOfficialFeedSignals({ fetchImpl: async () => new Response(xml), now: NOW, sources: [{ id: 'lab', name: 'Lab', url: 'https://example.com/rss' }] });
   assert.equal(result.signals[0].sourceUrl, 'https://example.com/rss');
+});
+
+test('deep-freezes the curated official feed allowlist', () => {
+  assert.equal(Object.isFrozen(DEFAULT_OFFICIAL_FEEDS), true);
+  assert.equal(Object.isFrozen(DEFAULT_OFFICIAL_FEEDS[0]), true);
+  assert.equal(Object.isFrozen(DEFAULT_OFFICIAL_FEEDS[0].allowedHosts), true);
+  assert.throws(() => DEFAULT_OFFICIAL_FEEDS[0].allowedHosts.push('attacker.example'), TypeError);
+});
+
+test('cancels early-exit response bodies for oversized and non-success responses', async () => {
+  let oversizedCancelled = false;
+  const oversizedBody = new ReadableStream({
+    cancel() {
+      oversizedCancelled = true;
+    },
+  });
+  const oversized = await collectOfficialFeedSignals({
+    fetchImpl: async () => new Response(oversizedBody, { headers: { 'content-length': '1000' } }),
+    now: NOW,
+    sources: [{ id: 'large', name: 'Large', url: 'https://example.com/large' }],
+    limits: { maxResponseChars: 100 },
+  });
+  assert.equal(oversized.errors[0].errorKind, 'response_too_large');
+  assert.equal(oversizedCancelled, true);
+
+  let failedCancelled = false;
+  const failedBody = new ReadableStream({
+    cancel() {
+      failedCancelled = true;
+    },
+  });
+  const failed = await collectOfficialFeedSignals({
+    fetchImpl: async () => new Response(failedBody, { status: 503 }),
+    now: NOW,
+    sources: [{ id: 'failed', name: 'Failed', url: 'https://example.com/failed' }],
+  });
+  assert.equal(failed.errors[0].errorKind, 'http_error');
+  assert.equal(failedCancelled, true);
 });
 
 test('filters old dated entries but retains unknown dates for review', async () => {

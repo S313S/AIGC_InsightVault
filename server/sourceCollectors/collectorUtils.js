@@ -69,6 +69,7 @@ export const readBoundedText = async (response, maxChars, signal) => {
   if (Number.isFinite(contentLength) && contentLength > maxChars * 4) {
     const error = new Error('response_too_large');
     error.kind = 'response_too_large';
+    await response?.body?.cancel?.(error).catch(() => {});
     throw error;
   }
   if (!response?.body?.getReader) {
@@ -119,10 +120,16 @@ export const fetchBoundedTextWithTimeout = async (fetchImpl, url, options, timeo
   try {
     const request = Promise.resolve()
       .then(() => fetchImpl(url, { ...options, redirect: 'error', signal: controller.signal }))
-      .then(async (response) => ({
-        response,
-        text: response?.ok ? await readBoundedText(response, maxChars, controller.signal) : '',
-      }));
+      .then(async (response) => {
+        if (!response?.ok) {
+          await response?.body?.cancel?.().catch(() => {});
+          return { response, text: '' };
+        }
+        return {
+          response,
+          text: await readBoundedText(response, maxChars, controller.signal),
+        };
+      });
     return await Promise.race([request, timeoutPromise]);
   } finally {
     clearTimeout(timeout);
